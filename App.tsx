@@ -1332,6 +1332,10 @@ const App = () => {
                             <Shield size={18} /> Admin
                         </button>
                     )}
+
+                    <button onClick={() => setView('SCRAP')} className={navItemClass(view === 'SCRAP')}>
+                        <AlertTriangle size={18} /> Card de Scrap
+                    </button>
                 </nav>
 
                 <div className="p-4 border-t border-zinc-800 bg-zinc-900/50">
@@ -1975,11 +1979,14 @@ const App = () => {
                     {managementTab === 'LINES' && renderConfigList('Linhas de Produção', lines, handleAddLine, handleDeleteLine)}
                     {managementTab === 'ROLES' && renderConfigList('Cargos e Funções', availableRoles, handleAddRole, handleDeleteRole)}
                     {managementTab === 'MODELS' && (
-                        <MaterialsManager
-                            materials={materials}
-                            setMaterials={setMaterials}
-                            onRefresh={async () => setMaterials(await getMaterials())}
-                        />
+                        <div className="space-y-8">
+                            <MaterialsManager
+                                materials={materials}
+                                setMaterials={setMaterials}
+                                onRefresh={async () => setMaterials(await getMaterials())}
+                            />
+                            {renderGenericList('Nomes de Modelos (Opções de Dropdown)', models, setModels, saveModels)}
+                        </div>
                     )}
                     {managementTab === 'STATIONS' && renderGenericList('Postos de Trabalho', stations, setStations, saveStations)}
                 </div>
