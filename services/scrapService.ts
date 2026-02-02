@@ -46,7 +46,7 @@ export const updateScrap = async (id: string, updates: Partial<ScrapData>) => {
     }
 };
 
-export const getMaterials = async (): Promise<{ id: string, code: string, description: string, price: number }[]> => {
+export const getMaterials = async (): Promise<import('../types').Material[]> => {
     try {
         return await apiFetch('/materials');
     } catch (e) {
@@ -55,14 +55,14 @@ export const getMaterials = async (): Promise<{ id: string, code: string, descri
     }
 };
 
-export const saveMaterial = async (data: { code: string, description: string, unitValue: number }) => {
+export const saveMaterials = async (materials: import('../types').Material[]) => {
     try {
-        await apiFetch('/materials', {
+        await apiFetch('/materials/bulk', {
             method: 'POST',
-            body: JSON.stringify(data)
+            body: JSON.stringify({ materials })
         });
     } catch (e) {
-        console.error("Erro ao salvar material", e);
+        console.error("Erro ao salvar materiais", e);
         throw e;
     }
 };

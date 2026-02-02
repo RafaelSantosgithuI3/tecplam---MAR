@@ -188,6 +188,11 @@ const initDatabase = async () => {
         await addColumn('logs_lider', 'items_snapshot', 'TEXT');
         await addColumn('logs_manutencao', 'items_snapshot', 'TEXT');
 
+        // Migrations for Scrap Data
+        await addColumn('scrap_data', 'line', 'TEXT');
+        await addColumn('scrap_data', 'pqc', 'TEXT');
+        await addColumn('scrap_data', 'used_model', 'TEXT');
+
         // Seed Admin
         const adminExists = await dbGet("SELECT matricula FROM users WHERE matricula = 'admin'");
         if (!adminExists) {

@@ -130,7 +130,7 @@ export interface ScrapData {
   rootCause: string; // CAUSA_RAIZ
   countermeasure?: string; // CONTRA_MEDIDA (Pode ser nulo)
 
-  line?: string; // Extra field implied by requirements (Rankings by LINHA)
+  line: string; // Nova Linha (Select)
 }
 
 export interface Material {
@@ -141,4 +141,19 @@ export interface Material {
   item: string;
   plant: string;
   price: number;
+}
+
+export interface LineStatus {
+  status: 'OK' | 'NG' | 'PENDING';
+  logIds: string[];
+  leaderName?: string;
+}
+
+export interface LeaderStatus {
+  user: User;
+  statuses: {
+    date: string;
+    status: 'OK' | 'NG' | 'PENDING';
+    logId?: string;
+  }[];
 }

@@ -3,7 +3,8 @@ import { Card } from './Card';
 import { Button } from './Button';
 import { Input } from './Input';
 import { ChecklistItem, ChecklistLog, User, LeaderStatus, LineStatus } from '../types';
-import { getLogs, getChecklistItems, saveChecklistItems, getLogsByWeekNumber, fileToBase64, exportLogToExcel, downloadShiftExcel } from '../services/storageService';
+import { getLogs, getChecklistItems, saveChecklistItems, getLogsByWeekNumber, fileToBase64 } from '../services/storageService';
+import { exportLogToExcel, downloadShiftExcel } from '../services/excelService';
 import { ArrowLeft, Search, Download, Eye, X, Edit3, Trash2, Plus, Save } from 'lucide-react';
 import jsQR from 'jsqr';
 

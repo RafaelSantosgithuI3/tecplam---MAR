@@ -210,6 +210,9 @@ const App = () => {
     // QR Logic Manual
     const [qrCodeManual, setQrCodeManual] = useState('');
 
+    // Scrap Navigation
+    const [scrapTab, setScrapTab] = useState<any>(undefined);
+
     // Refs
     const categoryRefs = useRef<{ [key: string]: HTMLDivElement | null }>({});
     const passwordInputRef = useRef<HTMLInputElement>(null);
@@ -1495,13 +1498,13 @@ const App = () => {
                 {/* ALERTS SECTION */}
                 <div className="mb-8 space-y-4">
                     {pendingScrapCount > 0 && (
-                        <div className="bg-orange-900/20 border border-orange-500/50 p-4 rounded-xl flex items-center gap-4 animate-pulse">
-                            <div className="p-2 bg-orange-500 rounded-full text-white"><AlertTriangle size={20} /></div>
+                        <div className="bg-red-900/20 border border-red-500/50 p-4 rounded-xl flex items-center gap-4 animate-pulse">
+                            <div className="p-2 bg-red-500 rounded-full text-white"><AlertTriangle size={20} /></div>
                             <div className="flex-1">
-                                <h3 className="font-bold text-orange-400">Pendências de Scrap</h3>
-                                <p className="text-xs text-orange-300">Você possui {pendingScrapCount} itens de scrap sem contra medida.</p>
+                                <h3 className="font-bold text-red-400">Pendências de Scrap</h3>
+                                <p className="text-xs text-red-300">Você possui {pendingScrapCount} itens de scrap sem contra medida.</p>
                             </div>
-                            <Button size="sm" onClick={() => { setView('SCRAP'); }}>Resolver</Button>
+                            <Button size="sm" onClick={() => { setScrapTab('PENDING'); setView('SCRAP'); }}>Resolver</Button>
                         </div>
                     )}
                     {pendingLineStopsCount > 0 && (
@@ -2108,7 +2111,7 @@ const App = () => {
     if (view === 'MEETING_HISTORY') return <Layout sidebar={<SidebarContent />}><header className="flex items-center justify-between mb-8 pb-6 border-b border-zinc-800"><h1 className="text-2xl font-bold text-zinc-100">Histórico de Atas</h1><Button variant="outline" onClick={() => setView('MEETING_MENU')}><ArrowLeft size={16} /> Voltar</Button></header><div className="space-y-4">{meetingHistory.map(m => (<div key={m.id} className="bg-zinc-900 border border-zinc-800 rounded-xl p-5 flex flex-col md:flex-row justify-between items-center gap-4 hover:border-zinc-700 transition-colors"><div><p className="font-bold text-white text-lg">{m.title || 'Sem Título'}</p><p className="font-medium text-zinc-400 text-sm flex items-center gap-2"><Calendar size={14} /> {new Date(m.date).toLocaleDateString()} • {m.startTime} - {m.endTime}</p><div className="flex gap-4 mt-2"><span className="text-xs text-zinc-500 bg-zinc-950 px-2 py-1 rounded">Criado por: {m.createdBy}</span><span className="text-xs text-zinc-500 bg-zinc-950 px-2 py-1 rounded">{m.participants.length} participantes</span></div></div><div className="flex gap-2"><Button variant="secondary" onClick={() => setPreviewMeeting(m)}><Eye size={16} /></Button><Button variant="outline" onClick={() => exportMeetingToExcel(m)}><Download size={16} /> Excel</Button></div></div>))}</div>{renderMeetingPreviewModal()}</Layout>;
     if (view === 'MAINTENANCE_QR') return <Layout sidebar={<SidebarContent />}><header className="flex items-center justify-between mb-8 pb-6 border-b border-zinc-800"><h1 className="text-2xl font-bold text-zinc-100">Ler QR Code Máquina</h1></header><div className="max-w-md mx-auto"><div className="bg-zinc-900 border border-zinc-800 rounded-xl p-6 text-center"><div id="reader-hidden" className="hidden"></div><label className="cursor-pointer flex flex-col items-center justify-center h-48 w-full border-2 border-dashed border-zinc-700 hover:border-blue-500 rounded-xl transition-all mb-6 bg-zinc-950"><Camera size={48} className={`mb-4 ${isProcessingPhoto ? 'text-blue-500 animate-pulse' : 'text-zinc-500'}`} /><span className="text-lg font-bold text-zinc-300">{isProcessingPhoto ? 'Processando Imagem...' : 'Tirar Foto do QR Code'}</span><span className="text-sm text-zinc-500 mt-2">Clique aqui para abrir a câmera</span><input type="file" accept="image/*" capture="environment" className="hidden" disabled={isProcessingPhoto} onChange={(e) => { if (e.target.files?.[0]) { handleMaintenanceQrPhoto(e.target.files[0]); e.target.value = ''; } }} /></label><div className="border-t border-zinc-800 pt-6 mt-6"><p className="text-xs font-bold text-zinc-500 mb-3 uppercase">Inserção Manual</p><div className="flex gap-2"><Input placeholder="Código (Ex: PRENSA_01)" value={qrCodeManual} onChange={e => setQrCodeManual(e.target.value)} /><Button onClick={() => handleMaintenanceCode(qrCodeManual)}>Ir</Button></div></div></div></div></Layout>;
 
-    if (view === 'SCRAP') return <Layout sidebar={<SidebarContent />}><ScrapModule currentUser={currentUser!} onBack={() => setView('MENU')} /></Layout>;
+    if (view === 'SCRAP') return <Layout sidebar={<SidebarContent />}><ScrapModule currentUser={currentUser!} onBack={() => { setView('MENU'); setScrapTab(undefined); }} initialTab={scrapTab} /></Layout>;
 
     return null;
 };
