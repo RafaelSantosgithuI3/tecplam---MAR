@@ -52,8 +52,11 @@ const SECTORS_LIST = [
 ];
 
 const MODULE_NAMES: Record<string, string> = {
+    CHECKLIST: 'Checklist (Líder)',
     LINE_STOP: 'Parada de Linha',
     MEETING: 'Reuniões',
+    MAINTENANCE: 'Manutenção',
+    AUDIT: 'Auditoria',
     ADMIN: 'Administração',
     MANAGEMENT: 'Gestão',
     SCRAP: 'Card de Scrap'
@@ -142,9 +145,6 @@ const App = () => {
     const [activeLineStopLog, setActiveLineStopLog] = useState<ChecklistLog | null>(null);
     const [justificationInput, setJustificationInput] = useState('');
 
-    // Scrap State
-    const [scrapInitialTab, setScrapInitialTab] = useState<"FORM" | "PENDING" | "HISTORY" | "OPERATIONAL" | "MY_RESULTS" | "ADVANCED" | undefined>(undefined);
-
     // Maintenance Mode & QR
     const [isMaintenanceMode, setIsMaintenanceMode] = useState(false);
     const [maintenanceTarget, setMaintenanceTarget] = useState('');
@@ -225,9 +225,13 @@ const App = () => {
         if (perm) return perm.allowed;
 
         // Defaults
-        if (module === 'LINE_STOP') return true;
+        if (module === 'CHECKLIST') return true;
         if (module === 'MEETING') return true;
+        if (module === 'MAINTENANCE') return true;
+        if (module === 'LINE_STOP') return true;
         if (module === 'SCRAP') return true;
+        if (module === 'AUDIT' || module === 'ADMIN' || module === 'MANAGEMENT') return false;
+
         return false;
     }
 
@@ -1277,7 +1281,14 @@ const App = () => {
                         <LayoutDashboard size={18} /> Menu Principal
                     </button>
 
-
+                    {hasPermission('CHECKLIST') && (
+                        <>
+                            <div className="text-xs font-bold text-zinc-600 uppercase tracking-widest mt-6 mb-2 px-4">Operação</div>
+                            <button onClick={handleStartChecklist} className={navItemClass(view === 'CHECKLIST_MENU' || view === 'DASHBOARD' || view === 'PERSONAL')}>
+                                <CheckSquare size={18} /> Checklist
+                            </button>
+                        </>
+                    )}
 
                     {hasPermission('LINE_STOP') && (
                         <button onClick={() => setView('LINE_STOP_DASHBOARD')} className={navItemClass(view === 'LINE_STOP_DASHBOARD')}>
@@ -1285,7 +1296,11 @@ const App = () => {
                         </button>
                     )}
 
-
+                    {hasPermission('MAINTENANCE') && (
+                        <button onClick={() => setView('MAINTENANCE_QR')} className={navItemClass(view === 'MAINTENANCE_QR')}>
+                            <Hammer size={18} /> Manutenção
+                        </button>
+                    )}
 
                     {hasPermission('MEETING') && (
                         <button onClick={() => { initMeetingForm(); setView('MEETING_MENU'); }} className={navItemClass(view === 'MEETING_MENU' || view === 'MEETING_FORM' || view === 'MEETING_HISTORY')}>
@@ -1293,17 +1308,15 @@ const App = () => {
                         </button>
                     )}
 
-                    {hasPermission('SCRAP') && (
-                        <button onClick={() => setView('SCRAP')} className={navItemClass(view === 'SCRAP')}>
-                            <AlertTriangle size={18} /> Scrap
-                        </button>
-                    )}
-
                     {(hasPermission('AUDIT') || hasPermission('ADMIN') || hasPermission('MANAGEMENT')) && (
                         <div className="text-xs font-bold text-zinc-600 uppercase tracking-widest mt-6 mb-2 px-4">Gestão</div>
                     )}
 
-
+                    {hasPermission('AUDIT') && (
+                        <button onClick={() => { setView('AUDIT_MENU'); setAuditTab('LEADER_HISTORY'); }} className={navItemClass(view === 'AUDIT_MENU')}>
+                            <Search size={18} /> Auditoria
+                        </button>
+                    )}
 
                     {hasPermission('MANAGEMENT') && (
                         <button onClick={() => setView('MANAGEMENT')} className={navItemClass(view === 'MANAGEMENT')}>
@@ -1481,15 +1494,14 @@ const App = () => {
 
                 {/* ALERTS SECTION */}
                 <div className="mb-8 space-y-4">
-                    {pendingScrapCount > 0 && (hasPermission('SCRAP')) && (
-                        <div className="bg-red-900/20 border border-red-500/50 p-4 rounded-xl flex items-center gap-4 animate-pulse cursor-pointer hover:bg-red-900/30 transition-colors"
-                            onClick={() => { setScrapInitialTab('PENDING'); setView('SCRAP'); }}>
-                            <div className="p-2 bg-red-500 rounded-full text-white"><AlertTriangle size={20} /></div>
+                    {pendingScrapCount > 0 && (
+                        <div className="bg-orange-900/20 border border-orange-500/50 p-4 rounded-xl flex items-center gap-4 animate-pulse">
+                            <div className="p-2 bg-orange-500 rounded-full text-white"><AlertTriangle size={20} /></div>
                             <div className="flex-1">
-                                <h3 className="font-bold text-red-400">PENDÊNCIAS DE SCRAP</h3>
-                                <p className="text-xs text-red-300">Você possui {pendingScrapCount} scraps aguardando contra medida.</p>
+                                <h3 className="font-bold text-orange-400">Pendências de Scrap</h3>
+                                <p className="text-xs text-orange-300">Você possui {pendingScrapCount} itens de scrap sem contra medida.</p>
                             </div>
-                            <Button size="sm" className="bg-red-600 hover:bg-red-700 border-none text-white" onClick={(e) => { e.stopPropagation(); setScrapInitialTab('PENDING'); setView('SCRAP'); }}>RESOLVER</Button>
+                            <Button size="sm" onClick={() => { setView('SCRAP'); }}>Resolver</Button>
                         </div>
                     )}
                     {pendingLineStopsCount > 0 && (
@@ -1522,7 +1534,18 @@ const App = () => {
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-
+                    {hasPermission('CHECKLIST') && (
+                        // CORREÇÃO AQUI: Chama a função que prepara o modal e reseta a linha
+                        <div onClick={handleStartChecklist} className="group bg-zinc-900 p-6 rounded-2xl border border-zinc-800 hover:border-blue-600/50 hover:bg-zinc-800 transition-all cursor-pointer relative overflow-hidden h-40 flex flex-col justify-center">
+                            <div className="flex items-center gap-4">
+                                <div className="w-12 h-12 bg-blue-600/20 text-blue-500 rounded-xl flex items-center justify-center group-hover:scale-110 transition-transform"><CheckSquare size={24} /></div>
+                                <div>
+                                    <h3 className="font-bold text-xl text-zinc-100">Checklist</h3>
+                                    <p className="text-xs text-zinc-500 mt-1">Liderança & Operação</p>
+                                </div>
+                            </div>
+                        </div>
+                    )}
 
                     {hasPermission('LINE_STOP') && (
                         <div onClick={() => setView('LINE_STOP_DASHBOARD')} className="group bg-zinc-900 p-6 rounded-2xl border border-zinc-800 hover:border-red-600/50 hover:bg-zinc-800 transition-all cursor-pointer relative overflow-hidden h-40 flex flex-col justify-center">
@@ -1536,7 +1559,17 @@ const App = () => {
                         </div>
                     )}
 
-
+                    {hasPermission('MAINTENANCE') && (
+                        <div onClick={() => setView('MAINTENANCE_QR')} className="group bg-zinc-900 p-6 rounded-2xl border border-zinc-800 hover:border-orange-600/50 hover:bg-zinc-800 transition-all cursor-pointer relative overflow-hidden h-40 flex flex-col justify-center">
+                            <div className="flex items-center gap-4">
+                                <div className="w-12 h-12 bg-orange-600/20 text-orange-500 rounded-xl flex items-center justify-center group-hover:scale-110 transition-transform"><Hammer size={24} /></div>
+                                <div>
+                                    <h3 className="font-bold text-xl text-zinc-100">Manutenção</h3>
+                                    <p className="text-xs text-zinc-500 mt-1">Inspeção de Máquinas</p>
+                                </div>
+                            </div>
+                        </div>
+                    )}
 
                     {hasPermission('MEETING') && (
                         <div onClick={() => { initMeetingForm(); setView('MEETING_MENU'); }} className="group bg-zinc-900 p-6 rounded-2xl border border-zinc-800 hover:border-emerald-600/50 hover:bg-zinc-800 transition-all cursor-pointer relative overflow-hidden h-40 flex flex-col justify-center">
@@ -1550,7 +1583,17 @@ const App = () => {
                         </div>
                     )}
 
-
+                    {hasPermission('AUDIT') && (
+                        <div onClick={() => { setView('AUDIT_MENU'); setAuditTab('LEADER_HISTORY'); }} className="group bg-zinc-900 p-6 rounded-2xl border border-zinc-800 hover:border-yellow-600/50 hover:bg-zinc-800 transition-all cursor-pointer relative overflow-hidden h-40 flex flex-col justify-center">
+                            <div className="flex items-center gap-4">
+                                <div className="w-12 h-12 bg-yellow-600/20 text-yellow-500 rounded-xl flex items-center justify-center group-hover:scale-110 transition-transform"><Search size={24} /></div>
+                                <div>
+                                    <h3 className="font-bold text-xl text-zinc-100">Auditoria</h3>
+                                    <p className="text-xs text-zinc-500 mt-1">Gestão e Relatórios</p>
+                                </div>
+                            </div>
+                        </div>
+                    )}
 
                     {hasPermission('MANAGEMENT') && (
                         <div onClick={() => setView('MANAGEMENT')} className="group bg-zinc-900 p-6 rounded-2xl border border-zinc-800 hover:border-cyan-600/50 hover:bg-zinc-800 transition-all cursor-pointer relative overflow-hidden h-40 flex flex-col justify-center">
@@ -1591,6 +1634,234 @@ const App = () => {
     }
 
     // --- AUDIT MENU ---
+    if (view === 'AUDIT_MENU') {
+        if (auditTab === 'MAINTENANCE_EDITOR' || auditTab === 'LEADER_EDITOR') {
+            const isMaint = auditTab === 'MAINTENANCE_EDITOR';
+            const targetList = isMaint ? maintenanceItems : leaderItems;
+            const setTargetList = isMaint ? setMaintenanceItems : setLeaderItems;
+            const filteredList = isMaint ? targetList.filter(item => item.category.startsWith(maintenanceLine)) : targetList;
+
+            return (
+                <Layout sidebar={<SidebarContent />}>
+                    <div className="w-full max-w-7xl mx-auto space-y-6">
+                        <header className="flex flex-col gap-4 mb-8 pb-6 border-b border-zinc-800">
+                            <div className="flex items-center justify-between">
+                                <h1 className="text-2xl font-bold text-zinc-100 flex items-center gap-2"><Search className="text-yellow-500" /> Auditoria</h1>
+                                <Button variant="outline" onClick={() => { setView('AUDIT_MENU'); setAuditTab('LEADER_HISTORY'); }}><ArrowLeft size={16} /> Voltar</Button>
+                            </div>
+                        </header>
+                        <Card className="w-full md:max-w-4xl mx-auto">
+                            <div className="flex justify-between items-center mb-6">
+                                <div>
+                                    <h3 className="text-lg font-bold">{isMaint ? 'Configurar Máquinas (QR Code)' : 'Editor de Checklist (Líder)'}</h3>
+                                    {isMaint && <p className="text-xs text-zinc-400">Adicione postos de manutenção para cada linha.</p>}
+                                </div>
+                                <Button onClick={() => handleSaveEditor(targetList, isMaint ? 'MAINTENANCE' : 'LEADER')}><Save size={16} /> Salvar Tudo</Button>
+                            </div>
+                            {isMaint && (
+                                <div className="mb-6 bg-zinc-950 p-4 rounded-lg border border-zinc-800">
+                                    <label className="text-xs font-bold text-zinc-500 uppercase mb-2 block">Selecione a Linha para Editar/Criar</label>
+                                    <select className="w-full bg-zinc-900 border border-zinc-800 rounded p-2 text-white" value={maintenanceLine} onChange={e => setMaintenanceLine(e.target.value)}>
+                                        {lines.map(l => <option key={l.id} value={l.name}>{l.name}</option>)}
+                                    </select>
+                                </div>
+                            )}
+                            <div className="space-y-4">
+                                {filteredList.map((item, idx) => (
+                                    <div key={item.id} className="bg-zinc-950 border border-zinc-800 p-4 rounded-lg flex flex-col gap-3">
+                                        <div className="flex gap-3">
+                                            <div className="flex-1">
+                                                <label className="text-[10px] font-bold text-zinc-500 uppercase">Categoria / Máquina</label>
+                                                <input className="w-full bg-zinc-900 border border-zinc-800 p-2 rounded text-sm text-white" value={item.category} onChange={e => handleEditorChange(targetList, setTargetList, item.id, 'category', e.target.value)} />
+                                            </div>
+                                            <div className="flex-[3]">
+                                                <label className="text-[10px] font-bold text-zinc-500 uppercase">Item de Verificação</label>
+                                                <input className="w-full bg-zinc-900 border border-zinc-800 p-2 rounded text-sm text-white" value={item.text} onChange={e => handleEditorChange(targetList, setTargetList, item.id, 'text', e.target.value)} />
+                                            </div>
+                                        </div>
+                                        <div className="flex gap-3 items-end">
+                                            <div className="flex-1">
+                                                {item.imageUrl ? (
+                                                    <div className="flex items-center gap-2">
+                                                        <img src={item.imageUrl} className="h-10 w-10 object-cover rounded border border-zinc-700" />
+                                                        <button onClick={() => handleEditorRemoveImage(targetList, setTargetList, item.id)} className="text-red-500 text-xs hover:underline">Remover Imagem Ref.</button>
+                                                    </div>
+                                                ) : (
+                                                    <label className="cursor-pointer text-xs bg-zinc-800 px-3 py-2 rounded text-zinc-300 hover:bg-zinc-700 border border-zinc-700 block text-center">
+                                                        + Imagem Referência
+                                                        <input type="file" className="hidden" accept="image/*" onChange={(e) => { if (e.target.files?.[0]) handleEditorImage(targetList, setTargetList, item.id, e.target.files[0]) }} />
+                                                    </label>
+                                                )}
+                                            </div>
+                                            <button onClick={() => handleEditorDelete(targetList, setTargetList, item.id)} className="p-2 bg-red-900/20 text-red-500 rounded hover:bg-red-900/40"><Trash2 size={16} /></button>
+                                        </div>
+                                        {isMaint && (
+                                            <div className="mt-2 pt-2 border-t border-zinc-800">
+                                                <button onClick={() => printQrCode(item.category)} className="text-xs text-blue-400 hover:underline flex items-center gap-1"><QrCode size={12} /> Imprimir QR Code da Máquina ({item.category})</button>
+                                            </div>
+                                        )}
+                                    </div>
+                                ))}
+                                <Button variant="outline" fullWidth onClick={() => handleEditorAdd(targetList, setTargetList, isMaint ? 'MAINTENANCE' : 'LEADER')}><Plus size={16} /> Adicionar Novo Item em {isMaint ? maintenanceLine : 'Geral'}</Button>
+                            </div>
+                        </Card>
+                    </div>
+                </Layout>
+            )
+        } else {
+            return (
+                <Layout sidebar={<SidebarContent />}>
+                    <div className="w-full max-w-7xl mx-auto space-y-6">
+                        <header className="flex flex-col gap-4 mb-8 pb-6 border-b border-zinc-800">
+                            <div className="flex items-center justify-between">
+                                <h1 className="text-2xl font-bold text-zinc-100 flex items-center gap-2"><Search className="text-yellow-500" /> Auditoria e Relatórios</h1>
+                                <Button variant="outline" onClick={() => setView('MENU')}><ArrowLeft size={16} /> Voltar</Button>
+                            </div>
+                            <div className="flex gap-2 overflow-x-auto pb-2 custom-scrollbar">
+                                <Button variant={auditTab === 'LEADER_HISTORY' ? 'primary' : 'secondary'} onClick={() => setAuditTab('LEADER_HISTORY')}>Histórico Líder</Button>
+                                <Button variant={auditTab === 'MAINTENANCE_HISTORY' ? 'primary' : 'secondary'} onClick={() => setAuditTab('MAINTENANCE_HISTORY')}>Histórico Manutenção</Button>
+                                <div className="w-px bg-zinc-800 mx-2"></div>
+                                <Button variant={auditTab === 'LEADERS' ? 'primary' : 'secondary'} onClick={() => setAuditTab('LEADERS')}>Matriz Líderes</Button>
+                                <Button variant={auditTab === 'LINES' ? 'primary' : 'secondary'} onClick={() => setAuditTab('LINES')}>Matriz Linhas</Button>
+                                <Button variant={auditTab === 'MAINTENANCE_MATRIX' ? 'primary' : 'secondary'} onClick={() => setAuditTab('MAINTENANCE_MATRIX')}>Matriz Manutenção</Button>
+                                <div className="w-px bg-zinc-800 mx-2"></div>
+                                <Button variant="secondary" onClick={() => setAuditTab('LEADER_EDITOR')}><Edit3 size={14} /> Editor Checklist</Button>
+                                <Button variant="secondary" onClick={() => setAuditTab('MAINTENANCE_EDITOR')}><Edit3 size={14} /> Editor Manutenção</Button>
+                            </div>
+                        </header>
+
+                        {/* FILTERS */}
+                        {(auditTab === 'LEADER_HISTORY' || auditTab === 'MAINTENANCE_HISTORY') && (
+                            <Card className="mb-6">
+                                <div className="flex flex-wrap gap-4 items-end">
+                                    <div className="flex-1 min-w-[200px]"><Input type="date" label="Filtrar Data" value={historyDateFilter} onChange={e => setHistoryDateFilter(e.target.value)} onClick={(e) => e.currentTarget.showPicker()} /></div>
+                                    <div className="flex-1 min-w-[200px]">
+                                        <label className="text-xs font-bold text-zinc-500 uppercase mb-1 block">Filtrar Turno</label>
+                                        <select className="w-full bg-zinc-950 border border-zinc-800 rounded p-2 text-white" value={historyShiftFilter} onChange={e => setHistoryShiftFilter(e.target.value)}><option value="ALL">Todos</option><option value="1">1º Turno</option><option value="2">2º Turno</option></select>
+                                    </div>
+                                    <Button variant="secondary" onClick={() => { setHistoryDateFilter(''); setHistoryShiftFilter('ALL'); }}>Limpar</Button>
+                                </div>
+                            </Card>
+                        )}
+
+                        {(auditTab === 'LEADERS' || auditTab === 'LINES' || auditTab === 'MAINTENANCE_MATRIX') && (
+                            <Card className="mb-6">
+                                <div className="flex flex-wrap gap-4 items-end">
+                                    <div className="flex-1 min-w-[200px]"><Input type="week" label="Semana" value={linesWeekFilter} onChange={e => setLinesWeekFilter(e.target.value)} onClick={(e) => e.currentTarget.showPicker()} /></div>
+                                    <div className="flex-1 min-w-[200px]">
+                                        <label className="text-xs font-bold text-zinc-500 uppercase mb-1 block">Turno</label>
+                                        <select className="w-full bg-zinc-950 border border-zinc-800 rounded p-2 text-white" value={linesShiftFilter} onChange={e => setLinesShiftFilter(e.target.value)}><option value="ALL">Todos</option><option value="1">1º Turno</option><option value="2">2º Turno</option></select>
+                                    </div>
+                                </div>
+                            </Card>
+                        )}
+
+                        {/* CONTENT */}
+                        {(auditTab === 'LEADER_HISTORY' || auditTab === 'MAINTENANCE_HISTORY') && (
+                            <div className="space-y-4">
+                                {historyLogs.map(log => (
+                                    <div key={log.id} className="bg-zinc-900 border border-zinc-800 rounded-xl p-5 flex flex-col md:flex-row justify-between items-center gap-4 hover:border-zinc-700 transition-colors">
+                                        <div className="flex items-center gap-4">
+                                            <div className={`w-10 h-10 rounded-full flex items-center justify-center text-lg font-bold ${log.ngCount > 0 ? 'bg-red-900/20 text-red-500 border border-red-900/30' : 'bg-green-900/20 text-green-500 border border-green-900/30'}`}>{log.ngCount > 0 ? '!' : '✓'}</div>
+                                            <div>
+                                                <p className="font-bold text-zinc-200">{log.line} {log.maintenanceTarget ? `- ${log.maintenanceTarget}` : ''} <span className="text-zinc-500 text-sm font-normal">• {log.userName}</span></p>
+                                                <p className="text-sm text-zinc-400">{new Date(log.date).toLocaleString()} • {log.ngCount > 0 ? `${log.ngCount} Falhas` : '100% OK'}</p>
+                                            </div>
+                                        </div>
+                                        <div className="flex gap-2">
+                                            <Button variant="secondary" onClick={() => setPreviewLog(log)}><Eye size={16} /></Button>
+                                            <Button variant="outline" onClick={() => exportLogToExcel(log, auditTab === 'MAINTENANCE_HISTORY' ? maintenanceItems : leaderItems)}><Download size={16} /> Excel</Button>
+                                        </div>
+                                    </div>
+                                ))}
+                                {historyLogs.length === 0 && <p className="text-center text-zinc-500 py-10">Nenhum registro encontrado.</p>}
+                            </div>
+                        )}
+
+                        {/* MATRIX VIEWS */}
+                        {(auditTab === 'LINES' || auditTab === 'MAINTENANCE_MATRIX') && (
+                            <div className="overflow-x-auto pb-4">
+                                <table className="w-full min-w-[600px] text-sm border-collapse">
+                                    <thead>
+                                        <tr className="bg-zinc-950 text-zinc-400 border-b border-zinc-800">
+                                            <th className="p-3 text-left min-w-[150px]">Linha</th>
+                                            {['Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sab'].map(d => <th key={d} className="p-3 text-center">{d}</th>)}
+                                            {linesShiftFilter !== 'ALL' && <th className="p-3 text-center">Ações</th>}
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-zinc-800">
+                                        {(auditTab === 'LINES' ? linesMatrix : maintenanceMatrix).map((row) => (
+                                            <tr key={row.line} className="hover:bg-zinc-900/50">
+                                                <td className="p-3 font-bold text-white">{row.line}</td>
+                                                {row.statuses.map((st, idx) => (
+                                                    <td key={idx} className="p-3 text-center">
+                                                        <div
+                                                            onClick={() => {
+                                                                if (linesShiftFilter !== 'ALL' && st.logIds && st.logIds.length > 0) {
+                                                                    handleOpenPreview(st.logIds[0]);
+                                                                }
+                                                            }}
+                                                            className={`w-8 h-8 rounded-full flex items-center justify-center mx-auto text-xs font-bold border transition-transform ${linesShiftFilter !== 'ALL' ? 'cursor-pointer hover:scale-110' : 'cursor-default opacity-80'} ${st.status === 'OK' ? 'bg-green-900/20 text-green-500 border-green-900/50' : st.status === 'NG' ? 'bg-red-900/20 text-red-500 border-red-900/50' : 'bg-zinc-800 text-zinc-600 border-zinc-700'}`}
+                                                            title={st.leaderName || st.details || 'Pendente'}
+                                                        >
+                                                            {st.status === 'OK' ? 'OK' : st.status === 'NG' ? 'NG' : '-'}
+                                                        </div>
+                                                    </td>
+                                                ))}
+                                                {linesShiftFilter !== 'ALL' && (
+                                                    <td className="p-3 text-center">
+                                                        <Button size="sm" variant="outline" onClick={() => handleDownloadSheet(row.line)}><Download size={14} /></Button>
+                                                    </td>
+                                                )}
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                        )}
+
+                        {auditTab === 'LEADERS' && (
+                            <div className="overflow-x-auto pb-4">
+                                <table className="w-full min-w-[600px] text-sm border-collapse">
+                                    <thead>
+                                        <tr className="bg-zinc-950 text-zinc-400 border-b border-zinc-800">
+                                            <th className="p-3 text-left min-w-[200px]">Líder / Supervisor</th>
+                                            {['Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sab'].map(d => <th key={d} className="p-3 text-center">{d}</th>)}
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-zinc-800">
+                                        {leadersMatrix.map((row) => (
+                                            <tr key={row.user.matricula} className="hover:bg-zinc-900/50">
+                                                <td className="p-3">
+                                                    <p className="font-bold text-white">{row.user.name}</p>
+                                                    <p className="text-xs text-zinc-500">{row.user.role} • T{row.user.shift}</p>
+                                                </td>
+                                                {row.statuses.map((st, idx) => (
+                                                    <td key={idx} className="p-3 text-center">
+                                                        <div
+                                                            onClick={() => {
+                                                                if (linesShiftFilter !== 'ALL' && st.logId) {
+                                                                    handleOpenPreview(st.logId);
+                                                                }
+                                                            }}
+                                                            className={`w-8 h-8 rounded-full flex items-center justify-center mx-auto text-xs font-bold border transition-transform ${linesShiftFilter !== 'ALL' ? 'cursor-pointer hover:scale-110' : 'cursor-default opacity-80'} ${st.status === 'OK' ? 'bg-green-900/20 text-green-500 border-green-900/50' : st.status === 'NG' ? 'bg-red-900/20 text-red-500 border-red-900/50' : 'bg-zinc-800 text-zinc-600 border-zinc-700'}`}
+                                                        >
+                                                            {st.status === 'OK' ? '✓' : st.status === 'NG' ? 'X' : '-'}
+                                                        </div>
+                                                    </td>
+                                                ))}
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                        )}
+                    </div>
+                    {renderPreviewModal()}
+                </Layout>
+            );
+        }
+    }
 
     // --- ADMIN VIEW ---
     if (view === 'ADMIN') {
@@ -1701,15 +1972,11 @@ const App = () => {
                     {managementTab === 'LINES' && renderConfigList('Linhas de Produção', lines, handleAddLine, handleDeleteLine)}
                     {managementTab === 'ROLES' && renderConfigList('Cargos e Funções', availableRoles, handleAddRole, handleDeleteRole)}
                     {managementTab === 'MODELS' && (
-                        <div className="space-y-8">
-                            {renderGenericList('Modelos de Produção', models, setModels, saveModels)}
-                            <hr className="border-zinc-800" />
-                            <MaterialsManager
-                                materials={materials}
-                                setMaterials={setMaterials}
-                                onRefresh={async () => setMaterials(await getMaterials())}
-                            />
-                        </div>
+                        <MaterialsManager
+                            materials={materials}
+                            setMaterials={setMaterials}
+                            onRefresh={async () => setMaterials(await getMaterials())}
+                        />
                     )}
                     {managementTab === 'STATIONS' && renderGenericList('Postos de Trabalho', stations, setStations, saveStations)}
                 </div>
@@ -1780,6 +2047,58 @@ const App = () => {
     </Layout>;
 
     // --- GENERIC AUTHENTICATED VIEWS ---
+    if (view === 'DASHBOARD' || view === 'CHECKLIST_MENU') {
+        return (
+            <Layout sidebar={<SidebarContent />}>
+                {isLoading && <div className="fixed inset-0 bg-black/80 z-[60] flex items-center justify-center text-white backdrop-blur-sm">Salvando...</div>}
+
+                {showLinePrompt && (
+                    <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-in fade-in duration-200">
+                        <Card className="w-full max-w-sm bg-zinc-900 border-zinc-700 shadow-2xl">
+                            <h3 className="text-xl font-bold text-white mb-2">Iniciar Checklist</h3>
+                            <p className="text-sm text-zinc-400 mb-6">Selecione a linha de produção para iniciar a verificação.</p>
+                            <div className="space-y-4">
+                                <div>
+                                    <label className="text-xs font-bold text-zinc-500 uppercase mb-2 block">Selecione a Linha</label>
+                                    <select
+                                        className="w-full bg-zinc-950 border border-zinc-800 rounded-lg p-3 text-white focus:ring-2 focus:ring-blue-600 outline-none"
+                                        value={currentLine}
+                                        onChange={e => setCurrentLine(e.target.value)}
+                                    >
+                                        {/* ADICIONADO: Opção padrão vazia para forçar seleção ou indicar vazio */}
+                                        <option value="">Selecione uma linha...</option>
+                                        {lines.map(l => <option key={l.id} value={l.name}>{l.name}</option>)}
+                                    </select>
+                                </div>
+                                <div className="flex gap-2">
+                                    <Button variant="secondary" fullWidth onClick={() => { setShowLinePrompt(false); setView('MENU'); }}>Cancelar</Button>
+                                    <Button fullWidth onClick={handleConfirmLine}>Confirmar</Button>
+                                </div>
+                            </div>
+                        </Card>
+                    </div>
+                )}
+
+                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
+                    <div><h1 className="text-2xl font-bold text-white flex items-center gap-2">{isMaintenanceMode ? <Hammer className="text-purple-500" /> : <CheckSquare className="text-blue-500" />} {isMaintenanceMode ? 'Manutenção' : 'Checklist Digital'}</h1><div className="flex items-center gap-2 mt-2 text-sm text-zinc-400"><span className="bg-zinc-800 px-2 py-0.5 rounded text-zinc-300 border border-zinc-700">{currentLine}</span><span>•</span><span>{getManausDate().toLocaleDateString()}</span></div></div>
+                    <div className="flex items-center gap-3"><Button variant="outline" onClick={() => setView(isMaintenanceMode ? 'MAINTENANCE_QR' : 'MENU')}><ArrowLeft size={16} /> Voltar</Button></div>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-8">
+                    <div className="hidden md:block md:col-span-1"><div className="sticky top-8 space-y-1 max-h-[80vh] overflow-y-auto custom-scrollbar pr-2"><p className="text-xs font-bold text-zinc-500 uppercase px-2 mb-3 tracking-wider">Navegação Rápida</p>{categories.map(cat => (<button key={cat} onClick={() => categoryRefs.current[cat]?.scrollIntoView({ behavior: 'smooth' })} className="w-full text-left px-3 py-2 rounded-lg text-sm text-zinc-400 hover:bg-zinc-800 hover:text-blue-400 transition-colors truncate border-l-2 border-transparent hover:border-blue-500">{cat}</button>))}</div></div>
+                    <div className="md:col-span-3 space-y-10 pb-24">
+                        {categories.map(cat => (
+                            <div key={cat} ref={el => { categoryRefs.current[cat] = el; }} className="scroll-mt-8">
+                                <h2 className="text-lg font-bold text-white mb-4 pl-3 border-l-4 border-blue-600 flex items-center gap-2">{cat}</h2>
+                                <div className="space-y-4">{items.filter(i => i.category === cat).map(item => { const currentStatus = checklistData[item.id]; return (<div key={item.id} className="bg-zinc-900/50 rounded-xl p-5 border border-zinc-800 hover:border-zinc-700 transition-all shadow-sm"><div className="flex flex-col gap-4">{item.imageUrl && (<div className="w-full h-48 bg-black/20 rounded-lg border border-zinc-800 overflow-hidden flex items-center justify-center"><img src={item.imageUrl} alt="Ref" className="max-h-full max-w-full object-contain" /></div>)}<div className="flex-1"><p className="text-zinc-200 font-medium mb-1.5 text-base">{item.text}</p>{item.evidence && (<p className="text-zinc-500 text-xs italic mb-4 flex items-center gap-1"><AlertCircle size={12} /> Ref: {item.evidence}</p>)}<div className="flex gap-3 mb-2"><button onClick={() => setChecklistData({ ...checklistData, [item.id]: 'OK' })} className={`flex-1 py-3 rounded-lg font-bold text-sm transition-all border flex items-center justify-center gap-2 ${currentStatus === 'OK' ? 'bg-green-500/10 border-green-500 text-green-400 shadow-[0_0_15px_rgba(34,197,94,0.1)]' : 'bg-zinc-950 border-zinc-800 text-zinc-500 hover:border-zinc-600 hover:bg-zinc-900'}`}>OK</button><button onClick={() => setChecklistData({ ...checklistData, [item.id]: 'NG' })} className={`flex-1 py-3 rounded-lg font-bold text-sm transition-all border flex items-center justify-center gap-2 ${currentStatus === 'NG' ? 'bg-red-500/10 border-red-500 text-red-400 shadow-[0_0_15px_rgba(239,68,68,0.1)]' : 'bg-zinc-950 border-zinc-800 text-zinc-500 hover:border-zinc-600 hover:bg-zinc-900'}`}>NG</button><button onClick={() => setChecklistData({ ...checklistData, [item.id]: 'N/A' })} className={`w-20 py-3 rounded-lg font-bold text-sm transition-all border flex items-center justify-center ${currentStatus === 'N/A' ? 'bg-yellow-500/10 border-yellow-500 text-yellow-400' : 'bg-zinc-950 border-zinc-800 text-zinc-500 hover:border-zinc-600 hover:bg-zinc-900'}`}>N/A</button></div>{currentStatus === 'NG' && (<div className="bg-red-900/10 border border-red-900/30 rounded-lg p-4 mt-3 animate-in fade-in slide-in-from-top-2"><p className="text-xs text-red-400 font-bold mb-3 flex items-center gap-1 uppercase tracking-wide"><AlertTriangle size={12} /> Evidência Obrigatória</p><Input placeholder="Descreva o motivo da falha..." value={checklistEvidence[item.id]?.comment || ''} onChange={e => handleNgComment(item.id, e.target.value)} className="bg-black/20 border-red-900/30 focus:border-red-500 mb-3" /><div>{checklistEvidence[item.id]?.photo ? (<div className="relative inline-block group"><img src={checklistEvidence[item.id]?.photo} className="h-24 w-auto rounded-lg border border-red-900/30 shadow-lg" /><button onClick={() => setChecklistEvidence(prev => { const n = { ...prev }; delete n[item.id].photo; return n; })} className="absolute -top-2 -right-2 bg-red-600 hover:bg-red-500 text-white rounded-full p-1 shadow-md transition-transform hover:scale-110"><X size={12} /></button></div>) : (<label className="cursor-pointer bg-zinc-800 hover:bg-zinc-700 hover:text-white text-xs text-zinc-400 px-4 py-2.5 rounded-lg inline-flex items-center gap-2 border border-zinc-700 transition-colors"><Camera size={16} /> Tirar Foto<input type="file" accept="image/*" capture="environment" className="hidden" onChange={(e) => { if (e.target.files?.[0]) handleNgPhoto(item.id, e.target.files[0]) }} /></label>)}</div></div>)}</div></div></div>); })}</div>
+                            </div>
+                        ))}
+                        <Card className="bg-zinc-900 border-zinc-800"><label className="block text-sm font-bold text-zinc-400 mb-3 uppercase tracking-wide">Observações Gerais</label><textarea className="w-full p-4 bg-zinc-950 border border-zinc-800 rounded-xl text-zinc-200 h-32 resize-none focus:ring-2 focus:ring-blue-600/50 focus:border-blue-600 outline-none transition-all placeholder-zinc-600" placeholder="Anotações adicionais sobre o turno..." value={observation} onChange={e => setObservation(e.target.value)} /></Card>
+                    </div>
+                </div>
+                <div className="fixed bottom-0 right-0 left-0 md:left-72 p-4 bg-zinc-950/80 backdrop-blur-md border-t border-zinc-800 flex justify-between items-center z-40"><div className="hidden md:block text-xs text-zinc-500">{Object.keys(checklistData).length} / {items.length} itens verificados</div><Button onClick={async () => { if (!currentUser) return; setIsLoading(true); const log: ChecklistLog = { id: currentLogId || Date.now().toString(), userId: currentUser.matricula, userName: currentUser.name, userRole: currentUser.role, line: currentLine, date: getManausDate().toISOString(), itemsCount: items.length, ngCount: Object.values(checklistData).filter(v => v === 'NG').length, observation, data: checklistData, evidenceData: checklistEvidence, type: isMaintenanceMode ? 'MAINTENANCE' : 'PRODUCTION', maintenanceTarget: maintenanceTarget, itemsSnapshot: items, userShift: currentUser.shift || '1' }; await saveLog(log); setIsLoading(false); setView('SUCCESS'); }} className="w-full md:w-auto shadow-xl shadow-blue-900/30 px-8 py-3"><Save size={18} /> Finalizar Relatório</Button></div>
+            </Layout>
+        );
+    }
 
     if (view === 'SUCCESS') return <Layout variant="auth"><div className="flex flex-col items-center justify-center min-h-screen text-center"><div className="w-24 h-24 bg-green-500/10 text-green-500 rounded-full flex items-center justify-center mb-6 border border-green-500/20 shadow-[0_0_30px_rgba(34,197,94,0.2)] animate-in zoom-in duration-300"><CheckCircle2 size={48} /></div><h2 className="text-3xl font-bold text-white mb-2">Salvo com Sucesso!</h2><p className="text-zinc-400 mb-8 max-w-md">Os dados foram registrados no sistema.</p><Button onClick={() => setView('MENU')} className="min-w-[200px]">Voltar ao Início</Button></div></Layout>;
     if (view === 'PERSONAL') return <Layout sidebar={<SidebarContent />}><header className="flex items-center justify-between mb-8"><h1 className="text-2xl font-bold text-white">Meus Registros</h1></header><div className="space-y-4">{personalLogs.length === 0 && <p className="text-zinc-500 text-center py-12 bg-zinc-900/50 rounded-xl border border-zinc-800">Nenhum registro encontrado.</p>}{personalLogs.map(log => (<div key={log.id} className="bg-zinc-900 border border-zinc-800 rounded-xl p-5 flex flex-col md:flex-row justify-between items-center gap-4 hover:border-zinc-700 transition-colors"><div className="flex items-center gap-4"><div className={`w-10 h-10 rounded-full flex items-center justify-center text-lg font-bold ${log.ngCount > 0 ? 'bg-red-900/20 text-red-500 border border-red-900/30' : 'bg-green-900/20 text-green-500 border border-green-900/30'}`}>{log.ngCount > 0 ? '!' : '✓'}</div><div><p className="font-bold text-zinc-200">{new Date(log.date).toLocaleString()}</p><p className="text-sm text-zinc-400">{log.line} <span className="mx-2">•</span> {log.ngCount > 0 ? `${log.ngCount} Falhas` : '100% OK'} {log.type === 'LINE_STOP' && '(Parada)'}</p></div></div><div className="flex gap-2 w-full md:w-auto"><Button variant="secondary" onClick={() => setPreviewLog(log)} className="flex-1 md:flex-none"><Eye size={16} /></Button><Button variant="outline" onClick={() => exportLogToExcel(log, items)} className="flex-1 md:flex-none"><Download size={16} /> Excel</Button></div></div>))}</div>{renderPreviewModal()}</Layout>;
@@ -1787,8 +2106,9 @@ const App = () => {
     if (view === 'MEETING_MENU') return <Layout sidebar={<SidebarContent />}><header className="mb-8"><h1 className="text-2xl font-bold mb-2 text-white">Atas de Reunião</h1><p className="text-zinc-400">Gerencie registros de reuniões operacionais.</p></header><div className="grid grid-cols-1 md:grid-cols-2 gap-6"><div onClick={() => setView('MEETING_FORM')} className="group bg-zinc-900 p-6 rounded-2xl border border-zinc-800 hover:border-emerald-600/50 hover:bg-zinc-800 transition-all cursor-pointer relative overflow-hidden"><div className="w-12 h-12 bg-emerald-600/20 text-emerald-500 rounded-xl flex items-center justify-center mb-4 group-hover:scale-110 transition-transform"><Plus size={24} /></div><h3 className="font-bold text-xl text-zinc-100">Nova Ata</h3><p className="text-sm text-zinc-500 mt-2">Registrar reunião online com foto.</p></div><div onClick={() => setView('MEETING_HISTORY')} className="group bg-zinc-900 p-6 rounded-2xl border border-zinc-800 hover:border-blue-600/50 hover:bg-zinc-800 transition-all cursor-pointer relative overflow-hidden"><div className="w-12 h-12 bg-blue-600/20 text-blue-500 rounded-xl flex items-center justify-center mb-4 group-hover:scale-110 transition-transform"><History size={24} /></div><h3 className="font-bold text-xl text-zinc-100">Histórico</h3><p className="text-sm text-zinc-500 mt-2">Acessar e imprimir atas anteriores.</p></div></div></Layout>;
     if (view === 'MEETING_FORM') return <Layout sidebar={<SidebarContent />}><header className="flex items-center justify-between mb-8 pb-6 border-b border-zinc-800"><h1 className="text-2xl font-bold text-zinc-100">Nova Ata de Reunião</h1><Button variant="outline" onClick={() => setView('MEETING_MENU')}>Cancelar</Button></header><div className="space-y-6 max-w-3xl mx-auto"><Card><Input label="Título da Reunião" placeholder="Ex: Alinhamento de Turno, Qualidade, etc." value={meetingTitle} onChange={e => setMeetingTitle(e.target.value)} icon={<FileText size={18} />} /><div className="flex gap-4 mt-4"><Input type="time" label="Início" value={meetingStartTime} onChange={e => setMeetingStartTime(e.target.value)} onClick={(e) => e.currentTarget.showPicker()} /><Input type="time" label="Fim" value={meetingEndTime} onChange={e => setMeetingEndTime(e.target.value)} onClick={(e) => e.currentTarget.showPicker()} /></div></Card><Card><h3 className="text-xs font-bold text-zinc-400 uppercase mb-3">Foto da Reunião (Obrigatório)</h3>{meetingPhoto ? (<div className="relative group"><img src={meetingPhoto} alt="Reunião" className="w-full h-64 object-cover rounded-lg border border-zinc-700" /><div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center rounded-lg"><Button variant="danger" onClick={() => setMeetingPhoto('')}><Trash2 size={16} /> Remover</Button></div></div>) : (<div className="h-64 bg-zinc-950 border-2 border-dashed border-zinc-800 hover:border-zinc-700 rounded-lg flex flex-col items-center justify-center text-zinc-500 transition-colors"><label className="cursor-pointer flex flex-col items-center p-8 w-full h-full justify-center"><Camera size={40} className="mb-4 text-zinc-600" /><span className="font-medium">Tirar Foto ou Upload</span><input type="file" accept="image/*" capture="environment" className="hidden" onChange={(e) => { if (e.target.files?.[0]) handleMeetingPhoto(e.target.files[0]) }} /></label></div>)}</Card><Card><h3 className="text-xs font-bold text-zinc-400 uppercase mb-3">Participantes</h3><div className="flex gap-2 mb-4"><Input placeholder="Nome do participante" value={newParticipant} onChange={e => setNewParticipant(toTitleCase(e.target.value))} list="users-list" className="bg-zinc-950" /><datalist id="users-list">{usersList.map(u => <option key={u.matricula} value={u.name} />)}</datalist><Button onClick={handleAddParticipant}><Plus size={18} /></Button></div><div className="flex flex-wrap gap-2">{meetingParticipants.map((p, idx) => (<div key={idx} className="bg-zinc-800 border border-zinc-700 text-zinc-200 px-3 py-1.5 rounded-full flex items-center gap-2 text-sm">{p} {p === currentUser?.name && <span className="text-[10px] bg-blue-900/50 text-blue-200 px-1.5 rounded border border-blue-800 ml-1">Relator</span>}<button onClick={() => handleRemoveParticipant(idx)} className="hover:text-red-400"><X size={14} /></button></div>))}</div></Card><Card><h3 className="text-xs font-bold text-zinc-400 uppercase mb-3">Assuntos Tratados</h3><textarea className="w-full p-4 bg-zinc-950 border border-zinc-800 rounded-lg text-zinc-200 h-40 focus:ring-2 focus:ring-blue-600/50 outline-none placeholder-zinc-600" placeholder="Descreva os tópicos discutidos..." value={meetingTopics} onChange={e => setMeetingTopics(e.target.value)} /></Card><Button fullWidth onClick={handleSaveMeeting} disabled={isLoading} className="py-3">{isLoading ? 'Salvando...' : 'Salvar Ata'}</Button></div></Layout>;
     if (view === 'MEETING_HISTORY') return <Layout sidebar={<SidebarContent />}><header className="flex items-center justify-between mb-8 pb-6 border-b border-zinc-800"><h1 className="text-2xl font-bold text-zinc-100">Histórico de Atas</h1><Button variant="outline" onClick={() => setView('MEETING_MENU')}><ArrowLeft size={16} /> Voltar</Button></header><div className="space-y-4">{meetingHistory.map(m => (<div key={m.id} className="bg-zinc-900 border border-zinc-800 rounded-xl p-5 flex flex-col md:flex-row justify-between items-center gap-4 hover:border-zinc-700 transition-colors"><div><p className="font-bold text-white text-lg">{m.title || 'Sem Título'}</p><p className="font-medium text-zinc-400 text-sm flex items-center gap-2"><Calendar size={14} /> {new Date(m.date).toLocaleDateString()} • {m.startTime} - {m.endTime}</p><div className="flex gap-4 mt-2"><span className="text-xs text-zinc-500 bg-zinc-950 px-2 py-1 rounded">Criado por: {m.createdBy}</span><span className="text-xs text-zinc-500 bg-zinc-950 px-2 py-1 rounded">{m.participants.length} participantes</span></div></div><div className="flex gap-2"><Button variant="secondary" onClick={() => setPreviewMeeting(m)}><Eye size={16} /></Button><Button variant="outline" onClick={() => exportMeetingToExcel(m)}><Download size={16} /> Excel</Button></div></div>))}</div>{renderMeetingPreviewModal()}</Layout>;
+    if (view === 'MAINTENANCE_QR') return <Layout sidebar={<SidebarContent />}><header className="flex items-center justify-between mb-8 pb-6 border-b border-zinc-800"><h1 className="text-2xl font-bold text-zinc-100">Ler QR Code Máquina</h1></header><div className="max-w-md mx-auto"><div className="bg-zinc-900 border border-zinc-800 rounded-xl p-6 text-center"><div id="reader-hidden" className="hidden"></div><label className="cursor-pointer flex flex-col items-center justify-center h-48 w-full border-2 border-dashed border-zinc-700 hover:border-blue-500 rounded-xl transition-all mb-6 bg-zinc-950"><Camera size={48} className={`mb-4 ${isProcessingPhoto ? 'text-blue-500 animate-pulse' : 'text-zinc-500'}`} /><span className="text-lg font-bold text-zinc-300">{isProcessingPhoto ? 'Processando Imagem...' : 'Tirar Foto do QR Code'}</span><span className="text-sm text-zinc-500 mt-2">Clique aqui para abrir a câmera</span><input type="file" accept="image/*" capture="environment" className="hidden" disabled={isProcessingPhoto} onChange={(e) => { if (e.target.files?.[0]) { handleMaintenanceQrPhoto(e.target.files[0]); e.target.value = ''; } }} /></label><div className="border-t border-zinc-800 pt-6 mt-6"><p className="text-xs font-bold text-zinc-500 mb-3 uppercase">Inserção Manual</p><div className="flex gap-2"><Input placeholder="Código (Ex: PRENSA_01)" value={qrCodeManual} onChange={e => setQrCodeManual(e.target.value)} /><Button onClick={() => handleMaintenanceCode(qrCodeManual)}>Ir</Button></div></div></div></div></Layout>;
 
-    if (view === 'SCRAP') return <Layout sidebar={<SidebarContent />}><ScrapModule currentUser={currentUser!} onBack={() => { setView('MENU'); setScrapInitialTab(undefined); }} initialTab={scrapInitialTab} /></Layout>;
+    if (view === 'SCRAP') return <Layout sidebar={<SidebarContent />}><ScrapModule currentUser={currentUser!} onBack={() => setView('MENU')} /></Layout>;
 
     return null;
 };
