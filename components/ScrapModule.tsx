@@ -73,7 +73,7 @@ export const ScrapModule: React.FC<ScrapModuleProps> = ({ currentUser, onBack, i
     const isAdmin = currentUser.isAdmin || currentUser.role.toLowerCase().includes('admin') || currentUser.role.toLowerCase().includes('gerente');
 
     return (
-        <div className="min-h-screen bg-zinc-950 text-zinc-100 p-4 md:p-8 space-y-6">
+        <div className="min-h-screen bg-gray-50 dark:bg-zinc-950 text-gray-900 dark:text-zinc-100 p-4 md:p-8 space-y-6 transition-colors duration-200">
             {/* HEADER */}
             <div className="flex flex-col md:flex-row justify-between items-center gap-4">
                 <div className="flex items-center gap-4 w-full md:w-auto">
@@ -81,10 +81,10 @@ export const ScrapModule: React.FC<ScrapModuleProps> = ({ currentUser, onBack, i
                         <ArrowLeft size={20} />
                     </Button>
                     <div>
-                        <h1 className="text-2xl font-bold bg-gradient-to-r from-red-500 to-orange-500 bg-clip-text text-transparent">
+                        <h1 className="text-2xl font-bold bg-gradient-to-r from-red-600 to-orange-500 dark:from-red-500 dark:to-orange-500 bg-clip-text text-transparent">
                             Gestão de Scrap
                         </h1>
-                        <p className="text-zinc-400 text-sm">Controle de perdas e refugos</p>
+                        <p className="text-gray-500 dark:text-zinc-400 text-sm">Controle de perdas e refugos</p>
                     </div>
                 </div>
 
@@ -243,15 +243,15 @@ const ScrapForm = ({ users, models, stations, lines, materials, onSuccess, curre
     const pqcUsers = users.filter((u: User) => (u.role || '').toUpperCase().includes('PQC'));
 
     return (
-        <Card className="max-w-6xl mx-auto bg-zinc-900/50 border-zinc-800">
+        <Card className="max-w-6xl mx-auto bg-white/50 dark:bg-zinc-900/50 border-gray-200 dark:border-zinc-800">
             <div className="space-y-6">
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                     <Input type="date" label="Data" value={formData.date} onChange={e => setFormData({ ...formData, date: e.target.value })} />
                     <Input label="Semana" value={formData.week} readOnly className="opacity-50" />
                     <div className="md:col-span-2">
-                        <label className="block text-xs font-medium text-zinc-400 mb-1.5 uppercase">Líder</label>
+                        <label className="block text-xs font-medium text-gray-500 dark:text-zinc-400 mb-1.5 uppercase">Líder</label>
                         <select
-                            className="w-full bg-zinc-950 border border-zinc-800 rounded-lg p-2.5 text-sm outline-none focus:ring-2 focus:ring-blue-600 text-zinc-100"
+                            className="w-full bg-gray-50 dark:bg-zinc-950 border border-gray-300 dark:border-zinc-800 rounded-lg p-2.5 text-sm outline-none focus:ring-2 focus:ring-blue-600 text-gray-900 dark:text-zinc-100 transition-colors"
                             value={formData.leaderName || ''}
                             onChange={e => handleLeaderChange(e.target.value)}
                         >
@@ -308,7 +308,7 @@ const ScrapForm = ({ users, models, stations, lines, materials, onSuccess, curre
                         <div className="relative">
                             <input
                                 list="material-codes"
-                                className="w-full bg-zinc-950 border border-zinc-800 rounded-lg p-2.5 text-sm outline-none focus:ring-2 focus:ring-blue-600 text-zinc-100"
+                                className="w-full bg-gray-50 dark:bg-zinc-950 border border-gray-300 dark:border-zinc-800 rounded-lg p-2.5 text-sm outline-none focus:ring-2 focus:ring-blue-600 text-gray-900 dark:text-zinc-100 transition-colors"
                                 value={formData.code || ''}
                                 onChange={e => handleCodeChange(e.target.value)}
                                 placeholder="Digite o código..."
@@ -387,9 +387,9 @@ const ScrapForm = ({ users, models, stations, lines, materials, onSuccess, curre
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                     <Input label="Responsável" value={formData.responsible} onChange={e => setFormData({ ...formData, responsible: e.target.value })} />
                     <div>
-                        <label className="block text-xs font-medium text-zinc-400 mb-1.5 uppercase">Motivo Detalhado</label>
+                        <label className="block text-xs font-medium text-gray-500 dark:text-zinc-400 mb-1.5 uppercase">Motivo Detalhado</label>
                         <textarea
-                            className="w-full bg-zinc-950 border border-zinc-800 rounded-lg p-3 text-sm outline-none focus:ring-2 focus:ring-blue-600 min-h-[80px] text-zinc-100 placeholder-zinc-600"
+                            className="w-full bg-gray-50 dark:bg-zinc-950 border border-gray-300 dark:border-zinc-800 rounded-lg p-3 text-sm outline-none focus:ring-2 focus:ring-blue-600 min-h-[80px] text-gray-900 dark:text-zinc-100 placeholder-gray-400 dark:placeholder-zinc-600 transition-colors"
                             value={formData.reason || ''}
                             onChange={e => setFormData({ ...formData, reason: e.target.value })}
                             placeholder="Descreva..."

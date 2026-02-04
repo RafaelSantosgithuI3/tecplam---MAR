@@ -13,28 +13,6 @@ const prisma = new PrismaClient({
     log: ['error', 'warn'], // Optional: Add 'query' for debugging
 });
 
-// --- LIMPEZA NUCLEAR (VIA PRISMA) ---
-async function nuclearClean() {
-    console.log("☢️ INICIANDO LIMPEZA NUCLEAR VIA PRISMA...");
-    try {
-        // Usa a conexão do próprio Prisma para deletar sujeira
-        // Isso garante que estamos limpando o MESMO arquivo que o app usa
-        const resultStops = await prisma.$executeRawUnsafe(`
-            DELETE FROM line_stops WHERE id IS NULL OR id = ''
-        `);
-        console.log(`✅ LineStops Limpos: ${resultStops} registros.`);
-
-        const resultMeetings = await prisma.$executeRawUnsafe(`
-            DELETE FROM meetings WHERE id IS NULL OR id = ''
-        `);
-        console.log(`✅ Meetings Limpos: ${resultMeetings} registros.`);
-
-    } catch (e) {
-        console.error("❌ FALHA NA LIMPEZA:", e);
-    }
-}
-// ------------------------------------
-
 const PORT = 3000;
 const SALT_ROUNDS = 10;
 
@@ -792,18 +770,12 @@ function getLocalIp() {
     return 'localhost';
 }
 
-nuclearClean().then(async () => {
-    console.log("🚀 Iniciando rotas...");
-    app.listen(PORT, '0.0.0.0', () => {
-        console.log(`✅ SERVIDOR RODANDO! (Prisma ORM)`);
-        console.log(`--------------------------------------------------`);
-        console.log(`💻 ACESSO LOCAL:     http://localhost:${PORT}`);
-        console.log(`📱 ACESSO NA REDE:   http://${getLocalIp()}:${PORT}`);
-        console.log(`--------------------------------------------------`);
-        console.log(`Conectado ao database via Prisma.`);
-    });
-}).catch(err => {
-    console.error("CRITICAL ERROR: Failed to clean DB", err);
-    // Try to start anyway
-    app.listen(PORT, '0.0.0.0', () => console.log("Started with errors."));
+console.log("🚀 Iniciando servidor...");
+app.listen(PORT, '0.0.0.0', () => {
+    console.log(`✅ SERVIDOR RODANDO! (Prisma ORM)`);
+    console.log(`--------------------------------------------------`);
+    console.log(`💻 ACESSO LOCAL:     http://localhost:${PORT}`);
+    console.log(`📱 ACESSO NA REDE:   http://${getLocalIp()}:${PORT}`);
+    console.log(`--------------------------------------------------`);
+    console.log(`Conectado ao database via Prisma.`);
 });

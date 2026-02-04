@@ -316,7 +316,22 @@ const App = () => {
 
         window.addEventListener('popstate', handleBack);
         return () => window.removeEventListener('popstate', handleBack);
+        window.addEventListener('popstate', handleBack);
+        return () => window.removeEventListener('popstate', handleBack);
     }, [view, previewLog, previewMeeting, showUserEditModal]);
+
+    // --- THEME INIT ---
+    useEffect(() => {
+        // Verifica preferência salva ou sistema
+        const theme = localStorage.getItem('theme');
+        const systemDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+
+        if (theme === 'dark' || (!theme && systemDark)) {
+            document.documentElement.classList.add('dark');
+        } else {
+            document.documentElement.classList.remove('dark');
+        }
+    }, []);
 
     useEffect(() => {
         if (view === 'AUDIT_MENU') {
@@ -1262,19 +1277,19 @@ const App = () => {
         const navItemClass = (active: boolean) =>
             `flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-all ${active
                 ? 'bg-blue-600 text-white shadow-lg shadow-blue-900/20'
-                : 'text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800'
+                : 'text-gray-500 dark:text-zinc-400 hover:text-gray-900 dark:hover:text-zinc-100 hover:bg-gray-100 dark:hover:bg-zinc-800'
             }`;
 
         return (
             <>
-                <div className="p-6 border-b border-zinc-800">
+                <div className="p-6 border-b border-gray-200 dark:border-zinc-800">
                     <div className="flex items-center gap-3">
                         <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-600 to-indigo-700 flex items-center justify-center text-white shadow-lg shadow-blue-900/20 overflow-hidden">
                             <img src="/logo.png" className="w-full h-full object-contain" alt="LC" />
                         </div>
                         <div>
-                            <h1 className="font-bold text-zinc-100 leading-tight tracking-tight">TECPLAM</h1>
-                            <p className="text-zinc-500 text-[9px] uppercase tracking-widest font-semibold leading-tight">Monitoramento Automático</p>
+                            <h1 className="font-bold text-gray-900 dark:text-zinc-100 leading-tight tracking-tight">TECPLAM</h1>
+                            <p className="text-gray-500 dark:text-zinc-500 text-[9px] uppercase tracking-widest font-semibold leading-tight">Monitoramento Automático</p>
                         </div>
                     </div>
                 </div>
@@ -1286,7 +1301,7 @@ const App = () => {
 
                     {hasPermission('CHECKLIST') && (
                         <>
-                            <div className="text-xs font-bold text-zinc-600 uppercase tracking-widest mt-6 mb-2 px-4">Operação</div>
+                            <div className="text-xs font-bold text-gray-500 dark:text-zinc-600 uppercase tracking-widest mt-6 mb-2 px-4">Operação</div>
                             <button onClick={handleStartChecklist} className={navItemClass(view === 'CHECKLIST_MENU' || view === 'DASHBOARD' || view === 'PERSONAL')}>
                                 <CheckSquare size={18} /> Checklist
                             </button>
@@ -1312,7 +1327,7 @@ const App = () => {
                     )}
 
                     {(hasPermission('AUDIT') || hasPermission('ADMIN') || hasPermission('MANAGEMENT')) && (
-                        <div className="text-xs font-bold text-zinc-600 uppercase tracking-widest mt-6 mb-2 px-4">Gestão</div>
+                        <div className="text-xs font-bold text-gray-500 dark:text-zinc-600 uppercase tracking-widest mt-6 mb-2 px-4">Gestão</div>
                     )}
 
                     {hasPermission('AUDIT') && (
@@ -1338,18 +1353,18 @@ const App = () => {
                     </button>
                 </nav>
 
-                <div className="p-4 border-t border-zinc-800 bg-zinc-900/50">
-                    <div className="flex items-center gap-3 p-2 rounded-lg hover:bg-zinc-800 transition-colors cursor-pointer" onClick={() => setView('PROFILE')}>
-                        <div className="w-8 h-8 rounded-full bg-zinc-700 flex items-center justify-center text-zinc-300 font-bold border border-zinc-600">
+                <div className="p-4 border-t border-gray-200 dark:border-zinc-800 bg-gray-50/50 dark:bg-zinc-900/50">
+                    <div className="flex items-center gap-3 p-2 rounded-lg hover:bg-gray-200 dark:hover:bg-zinc-800 transition-colors cursor-pointer" onClick={() => setView('PROFILE')}>
+                        <div className="w-8 h-8 rounded-full bg-gray-300 dark:bg-zinc-700 flex items-center justify-center text-gray-700 dark:text-zinc-300 font-bold border border-gray-300 dark:border-zinc-600">
                             {currentUser?.name.charAt(0)}
                         </div>
                         <div className="flex-1 min-w-0">
-                            <p className="text-sm font-medium text-zinc-200 truncate">{currentUser?.name}</p>
-                            <p className="text-xs text-zinc-500 truncate">{currentUser?.role}</p>
+                            <p className="text-sm font-medium text-gray-900 dark:text-zinc-200 truncate">{currentUser?.name}</p>
+                            <p className="text-xs text-gray-500 dark:text-zinc-500 truncate">{currentUser?.role}</p>
                         </div>
-                        <Settings size={14} className="text-zinc-500" />
+                        <Settings size={14} className="text-gray-400 dark:text-zinc-500" />
                     </div>
-                    <button onClick={handleLogout} className="mt-2 w-full flex items-center justify-center gap-2 text-xs text-red-400 hover:text-red-300 py-2 rounded hover:bg-red-900/10 transition-colors">
+                    <button onClick={handleLogout} className="mt-2 w-full flex items-center justify-center gap-2 text-xs text-red-500 dark:text-red-400 hover:text-red-600 dark:hover:text-red-300 py-2 rounded hover:bg-red-50 dark:hover:bg-red-900/10 transition-colors">
                         <LogOut size={14} /> Sair do Sistema
                     </button>
                 </div>
