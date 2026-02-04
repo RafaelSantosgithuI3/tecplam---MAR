@@ -59,7 +59,7 @@ const MODULE_NAMES: Record<string, string> = {
     AUDIT: 'Auditoria',
     ADMIN: 'Administração',
     MANAGEMENT: 'Gestão',
-    SCRAP: 'Card de Scrap'
+    SCRAP: 'Gestão de SCRAP'
 };
 
 const toTitleCase = (str: string) => str.replace(/\b\w/g, l => l.toUpperCase());
@@ -1223,7 +1223,7 @@ const App = () => {
                         <div className="bg-zinc-950 p-4 rounded-xl border border-zinc-800">
                             <h4 className="text-blue-400 font-bold text-lg mb-1">{previewMeeting.title}</h4>
                             <p className="text-sm text-zinc-400">Horário: {previewMeeting.startTime} - {previewMeeting.endTime}</p>
-                            <p className="text-xs text-zinc-500 mt-2">Registrado por: {previewMeeting.createdBy}</p>
+                            <p className="text-xs text-zinc-500 mt-2">Registrado por: {previewMeeting.createdBy || 'Sistema'}</p>
                         </div>
 
                         <div className="bg-zinc-950 p-4 rounded-xl border border-zinc-800">
@@ -1334,7 +1334,7 @@ const App = () => {
                     )}
 
                     <button onClick={() => setView('SCRAP')} className={navItemClass(view === 'SCRAP')}>
-                        <AlertTriangle size={18} /> Card de Scrap
+                        <AlertTriangle size={18} /> Gestão de SCRAP
                     </button>
                 </nav>
 
@@ -1630,7 +1630,7 @@ const App = () => {
                         <div className="flex items-center gap-4">
                             <div className="w-12 h-12 bg-red-500/20 text-red-500 rounded-xl flex items-center justify-center group-hover:scale-110 transition-transform"><AlertTriangle size={24} /></div>
                             <div>
-                                <h3 className="font-bold text-xl text-zinc-100">Card de Scrap</h3>
+                                <h3 className="font-bold text-xl text-zinc-100">Gestão de SCRAP</h3>
                                 <p className="text-xs text-zinc-500 mt-1">Refugos e Perdas</p>
                             </div>
                         </div>
@@ -1891,7 +1891,7 @@ const App = () => {
                                     <thead>
                                         <tr className="bg-zinc-950 text-zinc-400">
                                             <th className="p-3 text-left">Cargo</th>
-                                            {['CHECKLIST', 'LINE_STOP', 'MEETING', 'MAINTENANCE', 'AUDIT', 'ADMIN', 'MANAGEMENT'].map(mod => (
+                                            {['CHECKLIST', 'LINE_STOP', 'MEETING', 'MAINTENANCE', 'AUDIT', 'ADMIN', 'MANAGEMENT', 'SCRAP'].map(mod => (
                                                 <th key={mod} className="p-3 min-w-[100px] text-xs uppercase">{MODULE_NAMES[mod] || mod}</th>
                                             ))}
                                         </tr>
@@ -1900,7 +1900,7 @@ const App = () => {
                                         {availableRoles.map(role => (
                                             <tr key={role.id} className="hover:bg-zinc-900">
                                                 <td className="p-3 text-left font-bold text-white">{role.name}</td>
-                                                {['CHECKLIST', 'LINE_STOP', 'MEETING', 'MAINTENANCE', 'AUDIT', 'ADMIN', 'MANAGEMENT'].map((module: any) => {
+                                                {['CHECKLIST', 'LINE_STOP', 'MEETING', 'MAINTENANCE', 'AUDIT', 'ADMIN', 'MANAGEMENT', 'SCRAP'].map((module: any) => {
                                                     const perm = permissions.find(p => p.role === role.name && p.module === module);
                                                     const isAllowed = perm ? perm.allowed : (['CHECKLIST', 'MEETING', 'MAINTENANCE', 'LINE_STOP'].includes(module));
                                                     return (
@@ -1980,12 +1980,12 @@ const App = () => {
                     {managementTab === 'ROLES' && renderConfigList('Cargos e Funções', availableRoles, handleAddRole, handleDeleteRole)}
                     {managementTab === 'MODELS' && (
                         <div className="space-y-8">
+                            {renderGenericList('Modelos Cadastrados', models, setModels, saveModels)}
                             <MaterialsManager
                                 materials={materials}
                                 setMaterials={setMaterials}
                                 onRefresh={async () => setMaterials(await getMaterials())}
                             />
-                            {renderGenericList('Nomes de Modelos (Opções de Dropdown)', models, setModels, saveModels)}
                         </div>
                     )}
                     {managementTab === 'STATIONS' && renderGenericList('Postos de Trabalho', stations, setStations, saveStations)}

@@ -13,7 +13,7 @@ import {
     getManausDate, getWeekNumber
 } from '../services/storageService';
 import {
-    getScraps, saveScrap, updateScrapCountermeasure, getMaterials, saveMaterials,
+    getScraps, saveScrap, updateScrap, getMaterials, saveMaterials,
     SCRAP_ITEMS, SCRAP_STATUS, CAUSA_RAIZ_OPTIONS
 } from '../services/scrapService';
 import * as authService from '../services/authService';
@@ -408,9 +408,7 @@ const ScrapForm = ({ users, models, stations, lines, materials, onSuccess, curre
 };
 
 const ScrapPending = ({ scraps, currentUser, onUpdate, users }: any) => {
-    // Determine my pending
     const pending = scraps.filter((s: ScrapData) => {
-        // Show if I am the leader OR I am admin to oversee
         const isRelated = s.leaderName === currentUser.name || currentUser.isAdmin || currentUser.role.includes('Admin') || currentUser.role.includes('Supervisor') || currentUser.role.includes('Gerente');
         const noCountermeasure = !s.countermeasure || s.countermeasure.trim() === '';
         return isRelated && noCountermeasure;
@@ -429,7 +427,7 @@ const ScrapPending = ({ scraps, currentUser, onUpdate, users }: any) => {
     const handleSave = async () => {
         if (selected && selected.id) {
             if (!cm.trim()) { alert("Contra Medida é obrigatória."); return; }
-            await updateScrapCountermeasure(selected.id, cm);
+            await updateScrap(selected.id, { countermeasure: cm, reason: reason });
             await onUpdate();
             setSelected(null);
         }
@@ -482,8 +480,6 @@ const ScrapPending = ({ scraps, currentUser, onUpdate, users }: any) => {
                             <h3 className="font-bold text-xl">Resolver Pendência de Scrap</h3>
                             <button onClick={() => setSelected(null)}><X size={24} /></button>
                         </div>
-
-                        {/* Replicating ScrapForm Layout but ReadOnly */}
                         <div className="space-y-6 opacity-80 pointer-events-none">
                             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                                 <Input label="Data" value={selected.date} readOnly />
@@ -517,8 +513,6 @@ const ScrapPending = ({ scraps, currentUser, onUpdate, users }: any) => {
                                 <Input label="Estação" value={selected.station} readOnly />
                             </div>
                         </div>
-
-                        {/* Editable Area */}
                         <div className="mt-8 pt-6 border-t border-zinc-700 grid grid-cols-1 lg:grid-cols-2 gap-6">
                             <div>
                                 <label className="block text-xs font-medium text-zinc-400 mb-1.5 uppercase">Motivo Detalhado (Ajuste Opcional)</label>
@@ -539,7 +533,6 @@ const ScrapPending = ({ scraps, currentUser, onUpdate, users }: any) => {
                                 />
                             </div>
                         </div>
-
                         <div className="flex justify-end pt-6">
                             <Button onClick={handleSave} size="lg"><Save size={18} /> Salvar Resolução</Button>
                         </div>
@@ -551,31 +544,47 @@ const ScrapPending = ({ scraps, currentUser, onUpdate, users }: any) => {
 }
 
 const ScrapHistory = ({ scraps, currentUser }: any) => {
-    // Logic from My Results merged here: Show only PERSONAL data
-    const [periodFilter, setPeriodFilter] = useState('ALL'); // ALL, DAY, WEEK, MONTH, YEAR
-    const [dateFilter, setDateFilter] = useState('');
-    const [monthFilter, setMonthFilter] = useState('');
+    const [filters, setFilters] = useState({
+        period: 'ALL', // ALL, DAY, WEEK, MONTH, YEAR
+        specificDate: '',
+        specificWeek: '',
+        specificMonth: '',
+        specificYear: ''
+    });
+
     const [selected, setSelected] = useState<ScrapData | null>(null);
 
     const filtered = useMemo(() => {
         let res = scraps.filter((s: ScrapData) => s.userId === currentUser.matricula || s.leaderName === currentUser.name);
 
-        if (periodFilter === 'DAY' && dateFilter) {
-            res = res.filter((s: ScrapData) => s.date === dateFilter);
-        } else if (periodFilter === 'MONTH' && monthFilter) {
-            // monthFilter is "YYYY-MM"
-            res = res.filter((s: ScrapData) => s.date.startsWith(monthFilter));
+        if (filters.period !== 'ALL') {
+            if (filters.period === 'DAY' && filters.specificDate) {
+                res = res.filter((s: ScrapData) => s.date === filters.specificDate);
+            }
+            else if (filters.period === 'WEEK' && filters.specificWeek) {
+                const [y, w] = filters.specificWeek.split('-W').map(Number);
+                res = res.filter((s: ScrapData) => {
+                    const sd = new Date(s.date);
+                    const utcDate = new Date(sd.getUTCFullYear(), sd.getUTCMonth(), sd.getUTCDate());
+                    const sw = getWeekNumber(utcDate);
+                    return sw === w && sd.getFullYear() === y;
+                });
+            }
+            else if (filters.period === 'MONTH' && filters.specificMonth) {
+                res = res.filter((s: ScrapData) => s.date.startsWith(filters.specificMonth));
+            }
+            else if (filters.period === 'YEAR' && filters.specificYear) {
+                res = res.filter((s: ScrapData) => s.date.startsWith(filters.specificYear));
+            }
         }
-
         return res;
-    }, [scraps, currentUser, periodFilter, dateFilter, monthFilter]);
+    }, [scraps, currentUser, filters]);
 
     const total = filtered.reduce((acc: number, curr: ScrapData) => acc + (curr.totalValue || 0), 0);
     const pendingCount = filtered.filter((s: ScrapData) => !s.countermeasure).length;
 
     return (
         <div className="space-y-6">
-            {/* KPI Cards */}
             <div className="grid grid-cols-2 gap-4">
                 <Card className="bg-indigo-900/20 border-indigo-500/30">
                     <h3 className="text-indigo-400 text-xs font-bold uppercase">Meu Total (Período)</h3>
@@ -587,33 +596,25 @@ const ScrapHistory = ({ scraps, currentUser }: any) => {
                 </Card>
             </div>
 
-            {/* Filters */}
             <Card>
                 <div className="flex gap-4 items-end flex-wrap">
                     <div className="min-w-[150px]">
                         <label className="text-xs font-bold text-zinc-500 uppercase mb-1 block">Período</label>
-                        <select className="w-full bg-zinc-950 border border-zinc-800 rounded p-2 text-white" value={periodFilter} onChange={e => setPeriodFilter(e.target.value)}>
+                        <select className="w-full bg-zinc-950 border border-zinc-800 rounded p-2 text-white" value={filters.period} onChange={e => setFilters({ ...filters, period: e.target.value })}>
                             <option value="ALL">Todo o Histórico</option>
                             <option value="DAY">Dia Específico</option>
+                            <option value="WEEK">Semana Específica</option>
                             <option value="MONTH">Mês Específico</option>
+                            <option value="YEAR">Ano Específico</option>
                         </select>
                     </div>
-                    {periodFilter === 'DAY' && (
-                        <div>
-                            <label className="text-xs font-bold text-zinc-500 uppercase mb-1 block">Data</label>
-                            <input type="date" className="bg-zinc-950 border border-zinc-800 rounded p-2 text-white" value={dateFilter} onChange={e => setDateFilter(e.target.value)} />
-                        </div>
-                    )}
-                    {periodFilter === 'MONTH' && (
-                        <div>
-                            <label className="text-xs font-bold text-zinc-500 uppercase mb-1 block">Mês/Ano</label>
-                            <input type="month" className="bg-zinc-950 border border-zinc-800 rounded p-2 text-white" value={monthFilter} onChange={e => setMonthFilter(e.target.value)} />
-                        </div>
-                    )}
+                    {filters.period === 'DAY' && <Input type="date" value={filters.specificDate} onChange={e => setFilters({ ...filters, specificDate: e.target.value })} />}
+                    {filters.period === 'WEEK' && <Input type="week" value={filters.specificWeek} onChange={e => setFilters({ ...filters, specificWeek: e.target.value })} />}
+                    {filters.period === 'MONTH' && <Input type="month" value={filters.specificMonth} onChange={e => setFilters({ ...filters, specificMonth: e.target.value })} />}
+                    {filters.period === 'YEAR' && <Input type="number" placeholder="Ano (Ex: 2024)" value={filters.specificYear} onChange={e => setFilters({ ...filters, specificYear: e.target.value })} />}
                 </div>
             </Card>
 
-            {/* List */}
             <div>
                 <div className="grid grid-cols-1 gap-2">
                     {filtered.length === 0 && <p className="text-zinc-500 text-center py-8">Nenhum registro encontrado no período.</p>}
@@ -641,7 +642,9 @@ const ScrapHistory = ({ scraps, currentUser }: any) => {
                         </div>
                         <div className="grid grid-cols-2 gap-4 text-sm">
                             <div className="bg-zinc-950 p-3 rounded"><strong>Data:</strong> {new Date(selected.date).toLocaleDateString()}</div>
+                            <div className="bg-zinc-950 p-3 rounded"><strong>Horário:</strong> {selected.time}</div>
                             <div className="bg-zinc-950 p-3 rounded"><strong>Líder:</strong> {selected.leaderName}</div>
+                            <div className="bg-zinc-950 p-3 rounded"><strong>Quem Registrou:</strong> {selected.responsible || selected.userId}</div>
                             <div className="bg-zinc-950 p-3 rounded"><strong>Modelo:</strong> {selected.model}</div>
                             <div className="bg-zinc-950 p-3 rounded"><strong>Linha:</strong> {selected.line}</div>
                             <div className="bg-zinc-950 p-3 rounded"><strong>Item:</strong> {selected.item}</div>
@@ -675,6 +678,8 @@ const ScrapOperational = ({ scraps, users, lines, models }: any) => {
         shift: ''
     });
 
+    const [selected, setSelected] = useState<ScrapData | null>(null);
+
     const filtered = useMemo(() => {
         let res = [...scraps];
         if (filters.leader) res = res.filter(s => s.leaderName === filters.leader);
@@ -704,7 +709,7 @@ const ScrapOperational = ({ scraps, users, lines, models }: any) => {
             else if (filters.period === 'YEAR' && filters.specificYear) {
                 res = res.filter(s => s.date.startsWith(filters.specificYear));
             }
-            // Fallback defaults to "Current" if no specific selected
+            // Fallback default
             else if (filters.period === 'MONTH' && !filters.specificMonth) {
                 const m = (d.getMonth() + 1).toString().padStart(2, '0');
                 const y = d.getFullYear();
@@ -800,7 +805,7 @@ const ScrapOperational = ({ scraps, users, lines, models }: any) => {
                     </thead>
                     <tbody className="divide-y divide-zinc-800">
                         {filtered.slice(0, 50).map(s => (
-                            <tr key={s.id} className="hover:bg-zinc-800/50">
+                            <tr key={s.id} className="hover:bg-zinc-800/50 cursor-pointer" onClick={() => setSelected(s)}>
                                 <td className="p-3">{new Date(s.date).toLocaleDateString()}</td>
                                 <td className="p-3 text-zinc-300">{s.leaderName}</td>
                                 <td className="p-3">{s.item}</td>
@@ -811,26 +816,81 @@ const ScrapOperational = ({ scraps, users, lines, models }: any) => {
                 </table>
                 {filtered.length > 50 && <div className="p-2 text-center text-xs text-zinc-500">Exibindo 50 de {filtered.length} itens...</div>}
             </div>
+
+            {selected && (
+                <div className="fixed inset-0 bg-black/80 flex items-center justify-center p-4 z-50 backdrop-blur-sm">
+                    <Card className="max-w-2xl w-full bg-zinc-900 border-zinc-700">
+                        <div className="flex justify-between items-center mb-6">
+                            <h3 className="font-bold text-xl">Detalhes do Scrap</h3>
+                            <button onClick={() => setSelected(null)}><X size={24} /></button>
+                        </div>
+                        <div className="grid grid-cols-2 gap-4 text-sm">
+                            <div className="bg-zinc-950 p-3 rounded"><strong>Data:</strong> {new Date(selected.date).toLocaleDateString()}</div>
+                            <div className="bg-zinc-950 p-3 rounded"><strong>Horário:</strong> {selected.time}</div>
+                            <div className="bg-zinc-950 p-3 rounded"><strong>Líder:</strong> {selected.leaderName}</div>
+                            <div className="bg-zinc-950 p-3 rounded"><strong>Quem Registrou:</strong> {selected.responsible || selected.userId}</div>
+                            <div className="bg-zinc-950 p-3 rounded"><strong>Modelo:</strong> {selected.model}</div>
+                            <div className="bg-zinc-950 p-3 rounded"><strong>Linha:</strong> {selected.line}</div>
+                            <div className="bg-zinc-950 p-3 rounded"><strong>Item:</strong> {selected.item}</div>
+                            <div className="bg-zinc-950 p-3 rounded"><strong>Valor:</strong> R$ {selected.totalValue?.toFixed(2)}</div>
+                            <div className="col-span-2 bg-zinc-950 p-3 rounded">
+                                <strong>Motivo:</strong>
+                                <p className="mt-1 text-zinc-400">{selected.reason}</p>
+                            </div>
+                            <div className="col-span-2 bg-zinc-950 p-3 rounded border border-green-900/30">
+                                <strong className="text-green-400">Contra Medida:</strong>
+                                <p className="mt-1 text-zinc-300">{selected.countermeasure || 'Pendente'}</p>
+                            </div>
+                        </div>
+                    </Card>
+                </div>
+            )}
         </div>
     )
 }
 
 const ScrapManagementAdvanced = ({ scraps }: any) => {
-    const [periodFilter, setPeriodFilter] = useState('MONTH');
+    const [filters, setFilters] = useState({
+        period: 'MONTH', // DAY, WEEK, MONTH, YEAR, ALL
+        specificDate: '',
+        specificWeek: '',
+        specificMonth: '',
+        specificYear: ''
+    });
 
-    // Simple filter logic for dashboard
     const filtered = useMemo(() => {
+        let res = [...scraps];
         const now = new Date();
         const d = new Date(now);
-        // Default to current Month for quick view, or ALL
-        if (periodFilter === 'ALL') return scraps;
 
-        let res = [...scraps];
-        const m = (d.getMonth() + 1).toString().padStart(2, '0');
-        const y = d.getFullYear();
-        res = res.filter(s => s.date.startsWith(`${y}-${m}`));
+        if (filters.period !== 'ALL') {
+            if (filters.period === 'DAY' && filters.specificDate) {
+                res = res.filter(s => s.date === filters.specificDate);
+            }
+            else if (filters.period === 'WEEK' && filters.specificWeek) {
+                const [y, w] = filters.specificWeek.split('-W').map(Number);
+                res = res.filter(s => {
+                    const sd = new Date(s.date);
+                    const utcDate = new Date(sd.getUTCFullYear(), sd.getUTCMonth(), sd.getUTCDate());
+                    const sw = getWeekNumber(utcDate);
+                    return sw === w && sd.getFullYear() === y;
+                });
+            }
+            else if (filters.period === 'MONTH' && filters.specificMonth) {
+                res = res.filter(s => s.date.startsWith(filters.specificMonth));
+            }
+            else if (filters.period === 'YEAR' && filters.specificYear) {
+                res = res.filter(s => s.date.startsWith(filters.specificYear));
+            }
+            // Fallback
+            else if (filters.period === 'MONTH' && !filters.specificMonth) {
+                const m = (d.getMonth() + 1).toString().padStart(2, '0');
+                const y = d.getFullYear();
+                res = res.filter(s => s.date.startsWith(`${y}-${m}`));
+            }
+        }
         return res;
-    }, [scraps, periodFilter]);
+    }, [scraps, filters]);
 
     // Generate rankings
     const rankings = useMemo(() => {
@@ -864,23 +924,44 @@ const ScrapManagementAdvanced = ({ scraps }: any) => {
     return (
         <div className="space-y-6">
             <Card>
-                <div className="flex justify-between items-center">
+                <div className="flex justify-between items-center flex-wrap gap-4">
                     <h3 className="font-bold text-lg">Dashboard de Gestão</h3>
-                    <select className="bg-zinc-950 border border-zinc-800 p-2 rounded text-sm text-zinc-300" value={periodFilter} onChange={e => setPeriodFilter(e.target.value)}>
-                        <option value="MONTH">Este Mês</option>
-                        <option value="ALL">Todo Histórico</option>
-                    </select>
+                    <div className="flex gap-2 items-center flex-wrap">
+                        <select className="bg-zinc-950 border border-zinc-800 p-2 rounded text-sm text-zinc-300" onChange={e => setFilters({ ...filters, period: e.target.value })} value={filters.period}>
+                            <option value="ALL">Todo Período</option>
+                            <option value="DAY">Dia Específico</option>
+                            <option value="WEEK">Semana Específica</option>
+                            <option value="MONTH">Mês Específico</option>
+                            <option value="YEAR">Ano Específico</option>
+                        </select>
+                        {filters.period === 'DAY' && <Input type="date" value={filters.specificDate} onChange={e => setFilters({ ...filters, specificDate: e.target.value })} />}
+                        {filters.period === 'WEEK' && <Input type="week" value={filters.specificWeek} onChange={e => setFilters({ ...filters, specificWeek: e.target.value })} />}
+                        {filters.period === 'MONTH' && <Input type="month" value={filters.specificMonth} onChange={e => setFilters({ ...filters, specificMonth: e.target.value })} />}
+                        {filters.period === 'YEAR' && <Input type="number" placeholder="Ano (Ex: 2024)" value={filters.specificYear} onChange={e => setFilters({ ...filters, specificYear: e.target.value })} />}
+                    </div>
                 </div>
             </Card>
 
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                {/* Reordered: Shift -> Line -> Model -> Leaders -> Pending */}
                 <Card>
-                    <h3 className="font-bold text-red-400 mb-4 uppercase text-sm">Ranking Líderes (R$)</h3>
+                    <h3 className="font-bold text-emerald-400 mb-4 uppercase text-sm">Ranking Turnos (R$)</h3>
                     <div className="space-y-2">
-                        {rankings.leader.slice(0, 10).map(([name, val], i) => (
+                        {rankings.shift.map(([name, val], i) => (
                             <div key={name} className="flex justify-between items-center p-2 bg-zinc-950 rounded border border-zinc-800">
-                                <span className="text-sm"><span className="font-bold text-zinc-500 mr-2">#{i + 1}</span> {name}</span>
-                                <span className="font-mono font-bold text-red-400">R$ {val.toFixed(2)}</span>
+                                <span className="text-sm">Turno {name}</span>
+                                <span className="font-mono font-bold text-emerald-400">R$ {val.toFixed(2)}</span>
+                            </div>
+                        ))}
+                    </div>
+                </Card>
+                <Card>
+                    <h3 className="font-bold text-purple-400 mb-4 uppercase text-sm">Ranking Linhas (R$)</h3>
+                    <div className="space-y-2">
+                        {rankings.line.map(([name, val], i) => (
+                            <div key={name} className="flex justify-between items-center p-2 bg-zinc-950 rounded border border-zinc-800">
+                                <span className="text-sm">{name}</span>
+                                <span className="font-mono font-bold text-purple-400">R$ {val.toFixed(2)}</span>
                             </div>
                         ))}
                     </div>
@@ -896,6 +977,19 @@ const ScrapManagementAdvanced = ({ scraps }: any) => {
                         ))}
                     </div>
                 </Card>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <Card>
+                    <h3 className="font-bold text-red-400 mb-4 uppercase text-sm">Ranking Líderes (R$)</h3>
+                    <div className="space-y-2">
+                        {rankings.leader.slice(0, 10).map(([name, val], i) => (
+                            <div key={name} className="flex justify-between items-center p-2 bg-zinc-950 rounded border border-zinc-800">
+                                <span className="text-sm"><span className="font-bold text-zinc-500 mr-2">#{i + 1}</span> {name}</span>
+                                <span className="font-mono font-bold text-red-400">R$ {val.toFixed(2)}</span>
+                            </div>
+                        ))}
+                    </div>
+                </Card>
                 <Card>
                     <h3 className="font-bold text-yellow-500 mb-4 uppercase text-sm">Pendências (Qtd)</h3>
                     <div className="space-y-2">
@@ -903,30 +997,6 @@ const ScrapManagementAdvanced = ({ scraps }: any) => {
                             <div key={name} className="flex justify-between items-center p-2 bg-zinc-950 rounded border border-zinc-800">
                                 <span className="text-sm truncate max-w-[150px]">{name}</span>
                                 <span className="font-mono font-bold text-yellow-500">{val}</span>
-                            </div>
-                        ))}
-                    </div>
-                </Card>
-            </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <Card>
-                    <h3 className="font-bold text-purple-400 mb-4 uppercase text-sm">Ranking Linhas (R$)</h3>
-                    <div className="space-y-2">
-                        {rankings.line.map(([name, val], i) => (
-                            <div key={name} className="flex justify-between items-center p-2 bg-zinc-950 rounded border border-zinc-800">
-                                <span className="text-sm">{name}</span>
-                                <span className="font-mono font-bold text-purple-400">R$ {val.toFixed(2)}</span>
-                            </div>
-                        ))}
-                    </div>
-                </Card>
-                <Card>
-                    <h3 className="font-bold text-emerald-400 mb-4 uppercase text-sm">Ranking Turnos (R$)</h3>
-                    <div className="space-y-2">
-                        {rankings.shift.map(([name, val], i) => (
-                            <div key={name} className="flex justify-between items-center p-2 bg-zinc-950 rounded border border-zinc-800">
-                                <span className="text-sm">Turno {name}</span>
-                                <span className="font-mono font-bold text-emerald-400">R$ {val.toFixed(2)}</span>
                             </div>
                         ))}
                     </div>

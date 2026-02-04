@@ -1,0 +1,173 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  matricula String  @id
+  name      String?
+  role      String?
+  shift     String?
+  email     String?
+  password  String?
+  isAdmin   Boolean @default(false) @map("is_admin")
+
+  @@map("users")
+}
+
+model Log {
+  id            Int     @id @default(autoincrement())
+  userId        String? @map("user_id")
+  userName      String? @map("user_name")
+  userRole      String? @map("user_role")
+  line          String?
+  date          String?
+  itemsCount    Int?    @map("items_count")
+  ngCount       Int?    @map("ng_count")
+  observation   String?
+  data          String?
+  itemsSnapshot String? @map("items_snapshot")
+
+  @@map("logs_lider")
+}
+
+model MaintenanceLog {
+  id                Int     @id @default(autoincrement())
+  userId            String? @map("user_id")
+  userName          String? @map("user_name")
+  userRole          String? @map("user_role")
+  line              String?
+  date              String?
+  itemsCount        Int?    @map("items_count")
+  ngCount           Int?    @map("ng_count")
+  observation       String?
+  data              String?
+  maintenanceTarget String? @map("maintenance_target")
+  itemsSnapshot     String? @map("items_snapshot")
+
+  @@map("logs_manutencao")
+}
+
+model ChecklistItem {
+  id       Int     @id @default(autoincrement())
+  category String?
+  text     String?
+  evidence String?
+  imageUrl String? @map("image_url")
+
+  @@map("items_lider")
+}
+
+model MaintenanceChecklistItem {
+  id       Int     @id @default(autoincrement())
+  category String?
+  text     String?
+  evidence String?
+  imageUrl String? @map("image_url")
+
+  @@map("items_manutencao")
+}
+
+model LineStop {
+  id           String  @id @default(uuid())
+  userId       String? @map("user_id")
+  userName     String? @map("user_name")
+  userRole     String? @map("user_role")
+  line         String?
+  date         String?
+  status       String?
+  data         String?
+  signedDocUrl String? @map("signed_doc_url")
+
+  @@map("line_stops")
+}
+
+model Meeting {
+  id           String  @id
+  title        String?
+  date         String?
+  startTime    String? @map("start_time")
+  endTime      String? @map("end_time")
+  photoUrl     String? @map("photo_url")
+  participants String?
+  topics       String?
+  createdBy    String? @map("created_by")
+
+  @@map("meetings")
+}
+
+model ScrapLog {
+  id             String  @id
+  userId         String? @map("user_id")
+  date           String?
+  time           String?
+  week           Int?
+  shift          String?
+  leaderName     String? @map("leader_name")
+  pqc            String?
+  model          String?
+  qty            Int?
+  item           String?
+  status         String?
+  code           String?
+  description    String?
+  unitValue      Float?  @map("unit_value")
+  totalValue     Float?  @map("total_value")
+  usedModel      String? @map("used_model")
+  responsible    String?
+  station        String?
+  reason         String?
+  rootCause      String? @map("root_cause")
+  countermeasure String?
+  line           String?
+
+  @@map("scrap_data")
+}
+
+model Material {
+  code        String  @id
+  model       String?
+  description String?
+  item        String?
+  plant       String?
+  price       Float?
+
+  @@map("materials")
+}
+
+model ConfigLine {
+  name String @id
+
+  @@map("config_lines")
+}
+
+model ConfigRole {
+  name String @id
+
+  @@map("config_roles")
+}
+
+model ConfigModel {
+  name String @id
+
+  @@map("config_models")
+}
+
+model ConfigStation {
+  name String @id
+
+  @@map("config_stations")
+}
+
+model ConfigPermission {
+  role    String
+  module  String
+  allowed Int?
+
+  @@id([role, module])
+  @@map("config_permissions")
+}
