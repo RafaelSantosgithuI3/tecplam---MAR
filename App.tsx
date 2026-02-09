@@ -26,7 +26,7 @@ import { saveServerUrl, getServerUrl, isServerConfigured, apiFetch } from './ser
 import {
     CheckSquare, LogOut, UserPlus, AlertCircle,
     Save, ArrowLeft, History, Edit3, Trash2, Plus,
-    Settings, Users, List, Search, Calendar, Eye, Download, Wifi, User as UserIcon, Upload, X, UserCheck,
+    Settings, Users, List, Search, Calendar, Eye, Download, Wifi, User as UserIcon, Upload, X, UserCheck, Check,
     Camera, FileText, QrCode, Hammer, AlertTriangle, Shield, LayoutDashboard, Clock, Printer, EyeOff, Briefcase, Box, Lock, CheckCircle2, Sun, Moon
 } from 'lucide-react';
 import jsQR from 'jsqr';
@@ -1301,7 +1301,7 @@ const App = () => {
         const navItemClass = (active: boolean) =>
             `flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-all ${active
                 ? 'bg-blue-600 text-white shadow-lg shadow-blue-900/20'
-                : 'text-gray-500 dark:text-zinc-400 hover:text-gray-900 dark:hover:text-zinc-100 hover:bg-gray-100 dark:hover:bg-zinc-800'
+                : 'text-slate-600 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-zinc-100 hover:bg-slate-100 dark:hover:bg-zinc-800'
             }`;
 
         return (
@@ -1325,7 +1325,7 @@ const App = () => {
 
                     {hasPermission('CHECKLIST') && (
                         <>
-                            <div className="text-xs font-bold text-gray-500 dark:text-zinc-600 uppercase tracking-widest mt-6 mb-2 px-4">Operação</div>
+                            <div className="text-xs font-bold text-slate-500 dark:text-zinc-600 uppercase tracking-widest mt-6 mb-2 px-4">Operação</div>
                             <button onClick={handleStartChecklist} className={navItemClass(view === 'CHECKLIST_MENU' || view === 'DASHBOARD' || view === 'PERSONAL')}>
                                 <CheckSquare size={18} /> Checklist
                             </button>
@@ -1418,9 +1418,9 @@ const App = () => {
     if (view === 'RECOVER') return (
         <Layout variant="auth" onToggleTheme={toggleTheme} isDark={isDark}>
             <div className="flex flex-col items-center justify-center min-h-screen px-4">
-                <div className="bg-zinc-900/80 backdrop-blur-xl border border-zinc-800 rounded-2xl p-8 shadow-2xl w-full max-w-md">
-                    <h2 className="text-xl font-bold mb-4 text-white text-center">Recuperar Senha</h2>
-                    <p className="text-sm text-zinc-400 mb-6 text-center">Digite seus dados completos para redefinir a senha.</p>
+                <div className="bg-white/80 dark:bg-zinc-900/80 backdrop-blur-xl border border-slate-200 dark:border-zinc-800 rounded-2xl p-8 shadow-2xl w-full max-w-md">
+                    <h2 className="text-xl font-bold mb-4 text-slate-900 dark:text-white text-center">Recuperar Senha</h2>
+                    <p className="text-sm text-slate-500 dark:text-zinc-400 mb-6 text-center">Digite seus dados completos para redefinir a senha.</p>
                     <form onSubmit={handleRecover} className="space-y-4">
                         <Input label="Matrícula" value={recoverMatricula} onChange={e => setRecoverMatricula(e.target.value)} icon={<UserIcon size={18} />} />
                         <Input label="Nome Completo" value={recoverName} onChange={e => setRecoverName(toTitleCase(e.target.value))} icon={<UserIcon size={18} />} />
@@ -1439,8 +1439,8 @@ const App = () => {
     if (view === 'SETUP') return (
         <Layout variant="auth" onToggleTheme={toggleTheme} isDark={isDark}>
             <div className="flex flex-col items-center justify-center min-h-screen px-4">
-                <div className="bg-zinc-900/80 backdrop-blur-xl border border-zinc-800 rounded-2xl p-8 shadow-2xl w-full max-w-md">
-                    <h1 className="text-2xl font-bold text-center mb-4 text-white">Configuração de Rede</h1>
+                <div className="bg-white/80 dark:bg-zinc-900/80 backdrop-blur-xl border border-slate-200 dark:border-zinc-800 rounded-2xl p-8 shadow-2xl w-full max-w-md">
+                    <h1 className="text-2xl font-bold text-center mb-4 text-slate-900 dark:text-white">Configuração de Rede</h1>
                     <Input label="IP do Servidor" value={serverIp} onChange={e => setServerIp(e.target.value)} placeholder="http://192.168.X.X:3000" />
                     <Button onClick={async () => { if (serverIp) { saveServerUrl(serverIp); await initApp(); } }} fullWidth className="mt-6">Conectar</Button>
                 </div>
@@ -1452,14 +1452,14 @@ const App = () => {
         return (
             <Layout variant="auth">
                 <div className="flex flex-col items-center justify-center min-h-screen px-4">
-                    <div className="bg-zinc-900/80 backdrop-blur-xl border border-zinc-800 rounded-2xl p-8 shadow-2xl w-full max-w-md">
+                    <div className="bg-white/80 dark:bg-zinc-900/80 backdrop-blur-xl border border-slate-200 dark:border-zinc-800 rounded-2xl p-8 shadow-2xl w-full max-w-md">
                         <div className="flex justify-center mb-6">
                             <div className="w-24 h-24 rounded-2xl flex items-center justify-center overflow-hidden">
                                 <img src="/logo.png" className="w-full h-full object-contain" alt="LC" />
                             </div>
                         </div>
-                        <h1 className="text-2xl font-bold text-center mb-1 text-white">TECPLAM</h1>
-                        <p className="text-center text-zinc-400 mb-8 text-sm">Monitoramento Automático de Relatórios</p>
+                        <h1 className="text-2xl font-bold text-center mb-1 text-slate-900 dark:text-white">TECPLAM</h1>
+                        <p className="text-center text-slate-500 dark:text-zinc-400 mb-8 text-sm">Monitoramento Automático de Relatórios</p>
                         <form onSubmit={handleLogin} className="space-y-4">
                             <Input
                                 label="Matrícula"
@@ -1474,13 +1474,13 @@ const App = () => {
                                 }}
                             />
                             <div>
-                                <label className="block text-xs font-medium text-zinc-400 mb-1.5 uppercase tracking-wide">Senha</label>
+                                <label className="block text-xs font-medium text-slate-600 dark:text-zinc-400 mb-1.5 uppercase tracking-wide">Senha</label>
                                 <div className="relative">
-                                    <div className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500 pointer-events-none"><Lock size={18} /></div>
+                                    <div className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 dark:text-zinc-500 pointer-events-none"><Lock size={18} /></div>
                                     <input
                                         ref={passwordInputRef}
                                         type={showLoginPassword ? "text" : "password"}
-                                        className="w-full pl-10 pr-10 py-2.5 bg-zinc-950 border border-zinc-800 rounded-lg focus:ring-2 focus:ring-blue-600/50 focus:border-blue-600 outline-none text-zinc-100 placeholder-zinc-600 transition-all shadow-inner text-sm"
+                                        className="w-full pl-10 pr-10 py-2.5 bg-white dark:bg-zinc-950 border border-slate-300 dark:border-zinc-800 rounded-lg focus:ring-2 focus:ring-blue-600/50 focus:border-blue-600 outline-none text-slate-900 dark:text-zinc-100 placeholder-slate-400 dark:placeholder-zinc-600 transition-all shadow-inner text-sm"
                                         value={loginPassword}
                                         onChange={e => setLoginPassword(e.target.value)}
                                         onKeyDown={(e) => {
@@ -1512,21 +1512,21 @@ const App = () => {
         return (
             <Layout variant="auth">
                 <div className="flex flex-col items-center justify-center min-h-screen px-4 py-8">
-                    <div className="bg-zinc-900/80 backdrop-blur-xl border border-zinc-800 rounded-2xl p-8 shadow-2xl w-full max-w-md">
-                        <h1 className="text-2xl font-bold text-center mb-1 text-white">Criar Conta</h1>
-                        <p className="text-center text-zinc-400 mb-6 text-sm">Preencha seus dados</p>
+                    <div className="bg-white/80 dark:bg-zinc-900/80 backdrop-blur-xl border border-slate-200 dark:border-zinc-800 rounded-2xl p-8 shadow-2xl w-full max-w-md">
+                        <h1 className="text-2xl font-bold text-center mb-1 text-slate-900 dark:text-white">Criar Conta</h1>
+                        <p className="text-center text-slate-500 dark:text-zinc-400 mb-6 text-sm">Preencha seus dados</p>
                         <form onSubmit={handleRegister} className="space-y-4">
                             <Input label="Nome Completo" value={regName} onChange={e => setRegName(toTitleCase(e.target.value))} />
                             <Input label="Matrícula" value={regMatricula} onChange={e => setRegMatricula(e.target.value)} />
                             <div>
-                                <label className="block text-xs font-medium text-zinc-400 mb-1.5 uppercase tracking-wide">Função</label>
-                                <select className="w-full bg-zinc-950 border border-zinc-800 rounded-lg p-2.5 text-white focus:ring-2 focus:ring-blue-600/50 outline-none" value={regRole} onChange={e => setRegRole(e.target.value)}>
+                                <label className="block text-xs font-medium text-slate-600 dark:text-zinc-400 mb-1.5 uppercase tracking-wide">Função</label>
+                                <select className="w-full bg-white dark:bg-zinc-950 border border-slate-300 dark:border-zinc-800 rounded-lg p-2.5 text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-600/50 outline-none" value={regRole} onChange={e => setRegRole(e.target.value)}>
                                     {availableRoles.map(r => <option key={r.id} value={r.name}>{r.name}</option>)}
                                 </select>
                             </div>
                             <div>
-                                <label className="block text-xs font-medium text-zinc-400 mb-1.5 uppercase tracking-wide">Turno</label>
-                                <select className="w-full bg-zinc-950 border border-zinc-800 rounded-lg p-2.5 text-white focus:ring-2 focus:ring-blue-600/50 outline-none" value={regShift} onChange={e => setRegShift(e.target.value)}>
+                                <label className="block text-xs font-medium text-slate-600 dark:text-zinc-400 mb-1.5 uppercase tracking-wide">Turno</label>
+                                <select className="w-full bg-white dark:bg-zinc-950 border border-slate-300 dark:border-zinc-800 rounded-lg p-2.5 text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-600/50 outline-none" value={regShift} onChange={e => setRegShift(e.target.value)}>
                                     <option value="1">1º Turno</option>
                                     <option value="2">2º Turno</option>
                                 </select>
@@ -1551,8 +1551,8 @@ const App = () => {
         return (
             <Layout sidebar={<SidebarContent />}>
                 <header className="mb-8">
-                    <h1 className="text-2xl font-bold mb-2 text-white">Bem-vindo, {currentUser?.name.split(' ')[0]}</h1>
-                    <p className="text-zinc-400">Selecione um módulo para iniciar.</p>
+                    <h1 className="text-2xl font-bold mb-2 text-slate-900 dark:text-white">Bem-vindo, {currentUser?.name.split(' ')[0]}</h1>
+                    <p className="text-slate-500 dark:text-zinc-400">Selecione um módulo para iniciar.</p>
                 </header>
 
                 {/* ALERTS SECTION */}
@@ -1599,95 +1599,95 @@ const App = () => {
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                     {hasPermission('CHECKLIST') && (
                         // CORREÇÃO AQUI: Chama a função que prepara o modal e reseta a linha
-                        <div onClick={handleStartChecklist} className="group bg-white dark:bg-zinc-900 p-6 rounded-2xl border border-gray-200 dark:border-zinc-800 hover:border-blue-600/50 hover:bg-zinc-800 transition-all cursor-pointer relative overflow-hidden h-40 flex flex-col justify-center">
+                        <div onClick={handleStartChecklist} className="group bg-white dark:bg-zinc-900 p-6 rounded-2xl border border-slate-200 dark:border-zinc-800 hover:border-blue-600/50 hover:bg-slate-50 dark:hover:bg-zinc-800 transition-all cursor-pointer relative overflow-hidden h-40 flex flex-col justify-center shadow-sm">
                             <div className="flex items-center gap-4">
-                                <div className="w-12 h-12 bg-blue-600/20 text-blue-500 rounded-xl flex items-center justify-center group-hover:scale-110 transition-transform"><CheckSquare size={24} /></div>
+                                <div className="w-12 h-12 bg-blue-600/10 dark:bg-blue-600/20 text-blue-600 dark:text-blue-500 rounded-xl flex items-center justify-center group-hover:scale-110 transition-transform"><CheckSquare size={24} /></div>
                                 <div>
-                                    <h3 className="font-bold text-xl text-gray-900 dark:text-zinc-100">Checklist</h3>
-                                    <p className="text-xs text-gray-500 dark:text-zinc-500 mt-1">Liderança & Operação</p>
+                                    <h3 className="font-bold text-xl text-slate-900 dark:text-zinc-100">Checklist</h3>
+                                    <p className="text-xs text-slate-500 dark:text-zinc-500 mt-1">Liderança & Operação</p>
                                 </div>
                             </div>
                         </div>
                     )}
 
                     {hasPermission('LINE_STOP') && (
-                        <div onClick={() => setView('LINE_STOP_DASHBOARD')} className="group bg-white dark:bg-zinc-900 p-6 rounded-2xl border border-gray-200 dark:border-zinc-800 hover:border-red-600/50 hover:bg-zinc-800 transition-all cursor-pointer relative overflow-hidden h-40 flex flex-col justify-center">
+                        <div onClick={() => setView('LINE_STOP_DASHBOARD')} className="group bg-white dark:bg-zinc-900 p-6 rounded-2xl border border-slate-200 dark:border-zinc-800 hover:border-red-600/50 hover:bg-slate-50 dark:hover:bg-zinc-800 transition-all cursor-pointer relative overflow-hidden h-40 flex flex-col justify-center shadow-sm">
                             <div className="flex items-center gap-4">
-                                <div className="w-12 h-12 bg-red-600/20 text-red-500 rounded-xl flex items-center justify-center group-hover:scale-110 transition-transform"><AlertTriangle size={24} /></div>
+                                <div className="w-12 h-12 bg-red-600/10 dark:bg-red-600/20 text-red-600 dark:text-red-500 rounded-xl flex items-center justify-center group-hover:scale-110 transition-transform"><AlertTriangle size={24} /></div>
                                 <div>
-                                    <h3 className="font-bold text-xl text-gray-900 dark:text-zinc-100">Parada de Linha</h3>
-                                    <p className="text-xs text-gray-500 dark:text-zinc-500 mt-1">Reporte de interrupções</p>
+                                    <h3 className="font-bold text-xl text-slate-900 dark:text-zinc-100">Parada de Linha</h3>
+                                    <p className="text-xs text-slate-500 dark:text-zinc-500 mt-1">Reporte de interrupções</p>
                                 </div>
                             </div>
                         </div>
                     )}
 
                     {hasPermission('MAINTENANCE') && (
-                        <div onClick={() => setView('MAINTENANCE_QR')} className="group bg-white dark:bg-zinc-900 p-6 rounded-2xl border border-gray-200 dark:border-zinc-800 hover:border-orange-600/50 hover:bg-zinc-800 transition-all cursor-pointer relative overflow-hidden h-40 flex flex-col justify-center">
+                        <div onClick={() => setView('MAINTENANCE_QR')} className="group bg-white dark:bg-zinc-900 p-6 rounded-2xl border border-slate-200 dark:border-zinc-800 hover:border-orange-600/50 hover:bg-slate-50 dark:hover:bg-zinc-800 transition-all cursor-pointer relative overflow-hidden h-40 flex flex-col justify-center shadow-sm">
                             <div className="flex items-center gap-4">
-                                <div className="w-12 h-12 bg-orange-600/20 text-orange-500 rounded-xl flex items-center justify-center group-hover:scale-110 transition-transform"><Hammer size={24} /></div>
+                                <div className="w-12 h-12 bg-orange-600/10 dark:bg-orange-600/20 text-orange-600 dark:text-orange-500 rounded-xl flex items-center justify-center group-hover:scale-110 transition-transform"><Hammer size={24} /></div>
                                 <div>
-                                    <h3 className="font-bold text-xl text-gray-900 dark:text-zinc-100">Manutenção</h3>
-                                    <p className="text-xs text-gray-500 dark:text-zinc-500 mt-1">Inspeção de Máquinas</p>
+                                    <h3 className="font-bold text-xl text-slate-900 dark:text-zinc-100">Manutenção</h3>
+                                    <p className="text-xs text-slate-500 dark:text-zinc-500 mt-1">Inspeção de Máquinas</p>
                                 </div>
                             </div>
                         </div>
                     )}
 
                     {hasPermission('MEETING') && (
-                        <div onClick={() => { initMeetingForm(); setView('MEETING_MENU'); }} className="group bg-white dark:bg-zinc-900 p-6 rounded-2xl border border-gray-200 dark:border-zinc-800 hover:border-emerald-600/50 hover:bg-zinc-800 transition-all cursor-pointer relative overflow-hidden h-40 flex flex-col justify-center">
+                        <div onClick={() => { initMeetingForm(); setView('MEETING_MENU'); }} className="group bg-white dark:bg-zinc-900 p-6 rounded-2xl border border-slate-200 dark:border-zinc-800 hover:border-emerald-600/50 hover:bg-slate-50 dark:hover:bg-zinc-800 transition-all cursor-pointer relative overflow-hidden h-40 flex flex-col justify-center shadow-sm">
                             <div className="flex items-center gap-4">
-                                <div className="w-12 h-12 bg-emerald-600/20 text-emerald-500 rounded-xl flex items-center justify-center group-hover:scale-110 transition-transform"><FileText size={24} /></div>
+                                <div className="w-12 h-12 bg-emerald-600/10 dark:bg-emerald-600/20 text-emerald-600 dark:text-emerald-500 rounded-xl flex items-center justify-center group-hover:scale-110 transition-transform"><FileText size={24} /></div>
                                 <div>
-                                    <h3 className="font-bold text-xl text-gray-900 dark:text-zinc-100">Reuniões</h3>
-                                    <p className="text-xs text-gray-500 dark:text-zinc-500 mt-1">Atas e Registros</p>
+                                    <h3 className="font-bold text-xl text-slate-900 dark:text-zinc-100">Reuniões</h3>
+                                    <p className="text-xs text-slate-500 dark:text-zinc-500 mt-1">Atas e Registros</p>
                                 </div>
                             </div>
                         </div>
                     )}
 
                     {hasPermission('AUDIT') && (
-                        <div onClick={() => { setView('AUDIT_MENU'); setAuditTab('LEADER_HISTORY'); }} className="group bg-white dark:bg-zinc-900 p-6 rounded-2xl border border-gray-200 dark:border-zinc-800 hover:border-yellow-600/50 hover:bg-zinc-800 transition-all cursor-pointer relative overflow-hidden h-40 flex flex-col justify-center">
+                        <div onClick={() => { setView('AUDIT_MENU'); setAuditTab('LEADER_HISTORY'); }} className="group bg-white dark:bg-zinc-900 p-6 rounded-2xl border border-slate-200 dark:border-zinc-800 hover:border-yellow-600/50 hover:bg-slate-50 dark:hover:bg-zinc-800 transition-all cursor-pointer relative overflow-hidden h-40 flex flex-col justify-center shadow-sm">
                             <div className="flex items-center gap-4">
-                                <div className="w-12 h-12 bg-yellow-600/20 text-yellow-500 rounded-xl flex items-center justify-center group-hover:scale-110 transition-transform"><Search size={24} /></div>
+                                <div className="w-12 h-12 bg-yellow-600/10 dark:bg-yellow-600/20 text-yellow-600 dark:text-yellow-500 rounded-xl flex items-center justify-center group-hover:scale-110 transition-transform"><Search size={24} /></div>
                                 <div>
-                                    <h3 className="font-bold text-xl text-gray-900 dark:text-zinc-100">Auditoria</h3>
-                                    <p className="text-xs text-gray-500 dark:text-zinc-500 mt-1">Gestão e Relatórios</p>
+                                    <h3 className="font-bold text-xl text-slate-900 dark:text-zinc-100">Auditoria</h3>
+                                    <p className="text-xs text-slate-500 dark:text-zinc-500 mt-1">Gestão e Relatórios</p>
                                 </div>
                             </div>
                         </div>
                     )}
 
                     {hasPermission('MANAGEMENT') && (
-                        <div onClick={() => setView('MANAGEMENT')} className="group bg-white dark:bg-zinc-900 p-6 rounded-2xl border border-gray-200 dark:border-zinc-800 hover:border-cyan-600/50 hover:bg-zinc-800 transition-all cursor-pointer relative overflow-hidden h-40 flex flex-col justify-center">
+                        <div onClick={() => setView('MANAGEMENT')} className="group bg-white dark:bg-zinc-900 p-6 rounded-2xl border border-slate-200 dark:border-zinc-800 hover:border-cyan-600/50 hover:bg-slate-50 dark:hover:bg-zinc-800 transition-all cursor-pointer relative overflow-hidden h-40 flex flex-col justify-center shadow-sm">
                             <div className="flex items-center gap-4">
-                                <div className="w-12 h-12 bg-cyan-600/20 text-cyan-500 rounded-xl flex items-center justify-center group-hover:scale-110 transition-transform"><Briefcase size={24} /></div>
+                                <div className="w-12 h-12 bg-cyan-600/10 dark:bg-cyan-600/20 text-cyan-600 dark:text-cyan-500 rounded-xl flex items-center justify-center group-hover:scale-110 transition-transform"><Briefcase size={24} /></div>
                                 <div>
-                                    <h3 className="font-bold text-xl text-gray-900 dark:text-zinc-100">Gestão</h3>
-                                    <p className="text-xs text-gray-500 dark:text-zinc-500 mt-1">Cadastros Gerais</p>
+                                    <h3 className="font-bold text-xl text-slate-900 dark:text-zinc-100">Gestão</h3>
+                                    <p className="text-xs text-slate-500 dark:text-zinc-500 mt-1">Cadastros Gerais</p>
                                 </div>
                             </div>
                         </div>
                     )}
 
                     {hasPermission('ADMIN') && (
-                        <div onClick={() => setView('ADMIN')} className="group bg-white dark:bg-zinc-900 p-6 rounded-2xl border border-gray-200 dark:border-zinc-800 hover:border-zinc-600/50 hover:bg-zinc-800 transition-all cursor-pointer relative overflow-hidden h-40 flex flex-col justify-center">
+                        <div onClick={() => setView('ADMIN')} className="group bg-white dark:bg-zinc-900 p-6 rounded-2xl border border-slate-200 dark:border-zinc-800 hover:border-zinc-600/50 hover:bg-slate-50 dark:hover:bg-zinc-800 transition-all cursor-pointer relative overflow-hidden h-40 flex flex-col justify-center shadow-sm">
                             <div className="flex items-center gap-4">
-                                <div className="w-12 h-12 bg-zinc-700/50 text-zinc-300 rounded-xl flex items-center justify-center group-hover:scale-110 transition-transform"><Shield size={24} /></div>
+                                <div className="w-12 h-12 bg-zinc-700/10 dark:bg-zinc-700/50 text-slate-700 dark:text-zinc-300 rounded-xl flex items-center justify-center group-hover:scale-110 transition-transform"><Shield size={24} /></div>
                                 <div>
-                                    <h3 className="font-bold text-xl text-zinc-100">Admin</h3>
-                                    <p className="text-xs text-zinc-500 mt-1">Configurações do Sistema</p>
+                                    <h3 className="font-bold text-xl text-slate-900 dark:text-zinc-100">Admin</h3>
+                                    <p className="text-xs text-slate-500 dark:text-zinc-500 mt-1">Configurações do Sistema</p>
                                 </div>
                             </div>
                         </div>
                     )}
 
-                    <div onClick={() => setView('SCRAP')} className="group bg-zinc-900 p-6 rounded-2xl border border-zinc-800 hover:border-red-500/50 hover:bg-zinc-800 transition-all cursor-pointer relative overflow-hidden h-40 flex flex-col justify-center">
+                    <div onClick={() => setView('SCRAP')} className="group bg-white dark:bg-zinc-900 p-6 rounded-2xl border border-slate-200 dark:border-zinc-800 hover:border-red-500/50 hover:bg-slate-50 dark:hover:bg-zinc-800 transition-all cursor-pointer relative overflow-hidden h-40 flex flex-col justify-center shadow-sm">
                         <div className="flex items-center gap-4">
-                            <div className="w-12 h-12 bg-red-500/20 text-red-500 rounded-xl flex items-center justify-center group-hover:scale-110 transition-transform"><AlertTriangle size={24} /></div>
+                            <div className="w-12 h-12 bg-red-500/10 dark:bg-red-500/20 text-red-600 dark:text-red-500 rounded-xl flex items-center justify-center group-hover:scale-110 transition-transform"><AlertTriangle size={24} /></div>
                             <div>
-                                <h3 className="font-bold text-xl text-zinc-100">Gestão de SCRAP</h3>
-                                <p className="text-xs text-zinc-500 mt-1">Refugos e Perdas</p>
+                                <h3 className="font-bold text-xl text-slate-900 dark:text-zinc-100">Gestão de SCRAP</h3>
+                                <p className="text-xs text-slate-500 dark:text-zinc-500 mt-1">Refugos e Perdas</p>
                             </div>
                         </div>
                     </div>
@@ -1887,17 +1887,17 @@ const App = () => {
                             <div className="overflow-x-auto pb-4">
                                 <table className="w-full min-w-[600px] text-sm border-collapse">
                                     <thead>
-                                        <tr className="bg-zinc-950 text-zinc-400 border-b border-zinc-800">
+                                        <tr className="bg-slate-50 dark:bg-zinc-950 text-slate-500 dark:text-zinc-400 border-b border-slate-200 dark:border-zinc-800">
                                             <th className="p-3 text-left min-w-[200px]">Líder / Supervisor</th>
                                             {['Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sab'].map(d => <th key={d} className="p-3 text-center">{d}</th>)}
                                         </tr>
                                     </thead>
-                                    <tbody className="divide-y divide-zinc-800">
+                                    <tbody className="divide-y divide-slate-200 dark:divide-zinc-800">
                                         {leadersMatrix.map((row) => (
-                                            <tr key={row.user.matricula} className="hover:bg-zinc-900/50">
+                                            <tr key={row.user.matricula} className="hover:bg-slate-50 dark:hover:bg-zinc-900/50">
                                                 <td className="p-3">
-                                                    <p className="font-bold text-white">{row.user.name}</p>
-                                                    <p className="text-xs text-zinc-500">{row.user.role} • T{row.user.shift}</p>
+                                                    <p className="font-bold text-slate-900 dark:text-white">{row.user.name}</p>
+                                                    <p className="text-xs text-slate-500 dark:text-zinc-500">{row.user.role} • T{row.user.shift}</p>
                                                 </td>
                                                 {row.statuses.map((st, idx) => (
                                                     <td key={idx} className="p-3 text-center">
@@ -1907,7 +1907,7 @@ const App = () => {
                                                                     handleOpenPreview(st.logId);
                                                                 }
                                                             }}
-                                                            className={`w-8 h-8 rounded-full flex items-center justify-center mx-auto text-xs font-bold border transition-transform ${linesShiftFilter !== 'ALL' ? 'cursor-pointer hover:scale-110' : 'cursor-default opacity-80'} ${st.status === 'OK' ? 'bg-green-900/20 text-green-500 border-green-900/50' : st.status === 'NG' ? 'bg-red-900/20 text-red-500 border-red-900/50' : 'bg-zinc-800 text-zinc-600 border-zinc-700'}`}
+                                                            className={`w-8 h-8 rounded-full flex items-center justify-center mx-auto text-xs font-bold border transition-transform ${linesShiftFilter !== 'ALL' ? 'cursor-pointer hover:scale-110' : 'cursor-default opacity-80'} ${st.status === 'OK' ? 'bg-green-100 dark:bg-green-900/20 text-green-700 dark:text-green-500 border-green-200 dark:border-green-900/50' : st.status === 'NG' ? 'bg-red-100 dark:bg-red-900/20 text-red-700 dark:text-red-500 border-red-200 dark:border-red-900/50' : 'bg-slate-100 dark:bg-zinc-800 text-slate-400 dark:text-zinc-600 border-slate-200 dark:border-zinc-700'}`}
                                                         >
                                                             {st.status === 'OK' ? '✓' : st.status === 'NG' ? 'X' : '-'}
                                                         </div>
@@ -1921,7 +1921,7 @@ const App = () => {
                         )}
                     </div>
                     {renderPreviewModal()}
-                </Layout>
+                </Layout >
             );
         }
     }
@@ -1931,8 +1931,8 @@ const App = () => {
         return (
             <Layout sidebar={<SidebarContent />}>
                 <div className="w-full max-w-7xl mx-auto space-y-6">
-                    <header className="flex items-center justify-between mb-8 pb-6 border-b border-zinc-800">
-                        <h1 className="text-2xl font-bold text-zinc-100 flex items-center gap-2"><Shield className="text-zinc-400" /> Painel Administrativo</h1>
+                    <header className="flex items-center justify-between mb-8 pb-6 border-b border-slate-200 dark:border-zinc-800">
+                        <h1 className="text-2xl font-bold text-slate-900 dark:text-zinc-100 flex items-center gap-2"><Shield className="text-slate-400 dark:text-zinc-400" /> Painel Administrativo</h1>
                     </header>
                     <div className="w-full">
                         <div className="flex gap-2 mb-6 overflow-x-auto pb-2">
@@ -1942,28 +1942,33 @@ const App = () => {
 
                         {adminTab === 'PERMISSIONS' && (
                             <Card className="overflow-x-auto">
-                                <h3 className="text-lg font-bold mb-4">Permissões de Acesso (Matriz Invertida)</h3>
+                                <h3 className="text-lg font-bold mb-4 text-slate-900 dark:text-white">Permissões de Acesso (Matriz Invertida)</h3>
                                 <table className="w-full text-sm text-center border-collapse">
                                     <thead>
-                                        <tr className="bg-zinc-950 text-zinc-400">
+                                        <tr className="bg-slate-50 dark:bg-zinc-950 text-slate-500 dark:text-zinc-400 border-b border-slate-200 dark:border-zinc-800">
                                             <th className="p-3 text-left">Cargo</th>
                                             {['CHECKLIST', 'LINE_STOP', 'MEETING', 'MAINTENANCE', 'AUDIT', 'ADMIN', 'MANAGEMENT', 'SCRAP'].map(mod => (
-                                                <th key={mod} className="p-3 min-w-[100px] text-xs uppercase">{MODULE_NAMES[mod] || mod}</th>
+                                                <th key={mod} className="p-3">{mod}</th>
                                             ))}
                                         </tr>
                                     </thead>
-                                    <tbody className="divide-y divide-zinc-800">
+                                    <tbody className="divide-y divide-slate-200 dark:divide-zinc-800">
                                         {availableRoles.map(role => (
-                                            <tr key={role.id} className="hover:bg-zinc-900">
-                                                <td className="p-3 text-left font-bold text-white">{role.name}</td>
-                                                {['CHECKLIST', 'LINE_STOP', 'MEETING', 'MAINTENANCE', 'AUDIT', 'ADMIN', 'MANAGEMENT', 'SCRAP'].map((module: any) => {
-                                                    const perm = permissions.find(p => p.role === role.name && p.module === module);
-                                                    const isAllowed = perm ? perm.allowed : (['CHECKLIST', 'MEETING', 'MAINTENANCE', 'LINE_STOP'].includes(module));
+                                            <tr key={role.id} className="hover:bg-slate-50 dark:hover:bg-zinc-900/50 transition-colors">
+                                                <td className="p-3 text-left font-bold text-slate-900 dark:text-white">{role.name}</td>
+                                                {['CHECKLIST', 'LINE_STOP', 'MEETING', 'MAINTENANCE', 'AUDIT', 'ADMIN', 'MANAGEMENT', 'SCRAP'].map(mod => {
+                                                    const perm = permissions.find(p => p.role === role.name && p.module === (mod as any));
+                                                    const isAllowed = perm ? perm.allowed : (['CHECKLIST', 'MEETING', 'MAINTENANCE', 'LINE_STOP'].includes(mod));
                                                     return (
-                                                        <td key={module} className="p-3">
-                                                            <input type="checkbox" checked={isAllowed} onChange={() => handleTogglePermission(role.name, module)} className="w-4 h-4 rounded border-zinc-700 bg-zinc-900 text-blue-600 focus:ring-blue-600/50" />
+                                                        <td key={mod} className="p-3">
+                                                            <button
+                                                                onClick={() => handleTogglePermission(role.name, mod as any)}
+                                                                className={`w-6 h-6 rounded flex items-center justify-center mx-auto transition-colors ${isAllowed ? 'bg-green-500 text-white' : 'bg-slate-200 dark:bg-zinc-800 text-slate-400 dark:text-zinc-600'}`}
+                                                            >
+                                                                {isAllowed && <Check size={14} />}
+                                                            </button>
                                                         </td>
-                                                    )
+                                                    );
                                                 })}
                                             </tr>
                                         ))}
@@ -2005,26 +2010,26 @@ const App = () => {
     if (view === 'MANAGEMENT') {
         const renderGenericList = (title: string, list: string[], setList: React.Dispatch<React.SetStateAction<string[]>>, saveFn: (l: string[]) => Promise<void>) => (
             <Card>
-                <h3 className="text-lg font-bold mb-4">{title}</h3>
+                <h3 className="text-lg font-bold mb-4 text-slate-900 dark:text-white">{title}</h3>
                 <div className="flex gap-2 mb-6"><Input value={newItemName} onChange={e => setNewItemName(e.target.value)} placeholder={`Novo ${title}`} /><Button onClick={() => handleAddItem(list, setList, saveFn)}>Add</Button></div>
-                <div className="grid grid-cols-2 md:grid-cols-3 gap-3">{list.map(l => <div key={l} className="bg-zinc-950 p-3 rounded flex justify-between items-center border border-zinc-800 text-sm">{l}<button onClick={() => handleDeleteItem(l, list, setList, saveFn)} className="text-red-500 hover:bg-red-900/20 p-1 rounded"><X size={14} /></button></div>)}</div>
+                <div className="grid grid-cols-2 md:grid-cols-3 gap-3">{list.map(l => <div key={l} className="bg-slate-50 dark:bg-zinc-950 p-3 rounded flex justify-between items-center border border-slate-200 dark:border-zinc-800 text-sm text-slate-700 dark:text-zinc-300">{l}<button onClick={() => handleDeleteItem(l, list, setList, saveFn)} className="text-slate-400 dark:text-zinc-500 hover:text-red-500 hover:bg-red-100 dark:hover:bg-red-900/20 p-1 rounded transition-colors"><X size={14} /></button></div>)}</div>
             </Card>
         );
 
         // Render específico para itens com ID (Linhas e Cargos)
         const renderConfigList = (title: string, list: ConfigItem[], addFn: () => void, deleteFn: (id: number | string) => void) => (
             <Card>
-                <h3 className="text-lg font-bold mb-4">{title}</h3>
+                <h3 className="text-lg font-bold mb-4 text-slate-900 dark:text-white">{title}</h3>
                 <div className="flex gap-2 mb-6"><Input value={newItemName} onChange={e => setNewItemName(e.target.value)} placeholder={`Novo ${title}`} /><Button onClick={addFn}>Add</Button></div>
-                <div className="grid grid-cols-2 md:grid-cols-3 gap-3">{list.map(l => <div key={l.id} className="bg-zinc-950 p-3 rounded flex justify-between items-center border border-zinc-800 text-sm"><span className="truncate mr-2">{l.name}</span><button onClick={() => deleteFn(l.id)} className="text-red-500 hover:bg-red-900/20 p-1 rounded"><X size={14} /></button></div>)}</div>
+                <div className="grid grid-cols-2 md:grid-cols-3 gap-3">{list.map(l => <div key={l.id} className="bg-slate-50 dark:bg-zinc-950 p-3 rounded flex justify-between items-center border border-slate-200 dark:border-zinc-800 text-sm text-slate-700 dark:text-zinc-300"><span className="truncate mr-2">{l.name}</span><button onClick={() => deleteFn(l.id)} className="text-slate-400 dark:text-zinc-500 hover:text-red-500 hover:bg-red-100 dark:hover:bg-red-900/20 p-1 rounded transition-colors"><X size={14} /></button></div>)}</div>
             </Card>
         );
 
         return (
             <Layout sidebar={<SidebarContent />}>
                 <div className="w-full max-w-7xl mx-auto space-y-6">
-                    <header className="flex items-center justify-between mb-8 pb-6 border-b border-zinc-800">
-                        <h1 className="text-2xl font-bold text-zinc-100 flex items-center gap-2"><Briefcase className="text-cyan-500" /> Gestão Centralizada</h1>
+                    <header className="flex items-center justify-between mb-8 pb-6 border-b border-slate-200 dark:border-zinc-800">
+                        <h1 className="text-2xl font-bold text-slate-900 dark:text-zinc-100 flex items-center gap-2"><Briefcase className="text-cyan-500" /> Gestão Centralizada</h1>
                     </header>
                     <div className="flex gap-2 mb-6 overflow-x-auto pb-2">
                         <Button variant={managementTab === 'LINES' ? 'primary' : 'secondary'} onClick={() => setManagementTab('LINES')}><List size={16} /> Linhas</Button>
@@ -2051,46 +2056,46 @@ const App = () => {
     }
 
     // --- LINE STOP DASHBOARD ---
-    if (view === 'LINE_STOP_DASHBOARD') return <Layout sidebar={<SidebarContent />}><div className="w-full max-w-7xl mx-auto space-y-6"><header className="flex flex-col gap-4 mb-8 pb-6 border-b border-zinc-800"><h1 className="text-2xl font-bold text-zinc-100 flex items-center gap-2"><AlertTriangle className="text-red-500" /> Parada de Linha</h1><div className="flex gap-2 overflow-x-auto pb-2"><Button variant={lineStopTab === 'NEW' ? 'primary' : 'secondary'} onClick={() => setLineStopTab('NEW')}><Plus size={16} /> Novo Reporte</Button><Button variant={lineStopTab === 'PENDING' ? 'primary' : 'secondary'} onClick={() => setLineStopTab('PENDING')}><Clock size={16} /> Pendentes</Button><Button variant={lineStopTab === 'UPLOAD' ? 'primary' : 'secondary'} onClick={() => setLineStopTab('UPLOAD')}><Upload size={16} /> Upload Assinatura</Button><Button variant={lineStopTab === 'HISTORY' ? 'primary' : 'secondary'} onClick={() => setLineStopTab('HISTORY')}><History size={16} /> Histórico</Button></div></header>{lineStopTab === 'NEW' && (<div className="space-y-6 max-w-4xl mx-auto pb-20"><Card><h3 className="text-lg font-bold mb-4 border-b border-zinc-800 pb-2">Dados da Parada</h3><div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+    if (view === 'LINE_STOP_DASHBOARD') return <Layout sidebar={<SidebarContent />}><div className="w-full max-w-7xl mx-auto space-y-6"><header className="flex flex-col gap-4 mb-8 pb-6 border-b border-slate-200 dark:border-zinc-800"><h1 className="text-2xl font-bold text-slate-900 dark:text-zinc-100 flex items-center gap-2"><AlertTriangle className="text-red-500" /> Parada de Linha</h1><div className="flex gap-2 overflow-x-auto pb-2"><Button variant={lineStopTab === 'NEW' ? 'primary' : 'secondary'} onClick={() => setLineStopTab('NEW')}><Plus size={16} /> Novo Reporte</Button><Button variant={lineStopTab === 'PENDING' ? 'primary' : 'secondary'} onClick={() => setLineStopTab('PENDING')}><Clock size={16} /> Pendentes</Button><Button variant={lineStopTab === 'UPLOAD' ? 'primary' : 'secondary'} onClick={() => setLineStopTab('UPLOAD')}><Upload size={16} /> Upload Assinatura</Button><Button variant={lineStopTab === 'HISTORY' ? 'primary' : 'secondary'} onClick={() => setLineStopTab('HISTORY')}><History size={16} /> Histórico</Button></div></header>{lineStopTab === 'NEW' && (<div className="space-y-6 max-w-4xl mx-auto pb-20"><Card><h3 className="text-lg font-bold mb-4 border-b border-slate-200 dark:border-zinc-800 pb-2 text-slate-900 dark:text-white">Dados da Parada</h3><div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
         <div>
-            <label className="text-xs font-bold text-zinc-500 uppercase mb-1 block">Modelo</label>
-            <input list="model-list" className="w-full bg-zinc-950 border border-zinc-800 rounded p-2 text-white" value={lineStopData.model} onChange={e => setLineStopData({ ...lineStopData, model: e.target.value })} placeholder="Selecione ou digite..." />
+            <label className="text-xs font-bold text-slate-500 dark:text-zinc-500 uppercase mb-1 block">Modelo</label>
+            <input list="model-list" className="w-full bg-white dark:bg-zinc-950 border border-slate-300 dark:border-zinc-800 rounded-lg p-2.5 text-slate-900 dark:text-zinc-100 placeholder-slate-400 dark:placeholder-zinc-600 outline-none focus:ring-2 focus:ring-blue-600/50" value={lineStopData.model} onChange={e => setLineStopData({ ...lineStopData, model: e.target.value })} placeholder="Selecione ou digite..." />
             <datalist id="model-list">{models.map(m => <option key={m} value={m} />)}</datalist>
         </div>
-        <Input label="Cliente" value={lineStopData.client} onChange={e => setLineStopData({ ...lineStopData, client: e.target.value })} /><div><label className="text-xs font-bold text-zinc-500 uppercase mb-1 block">Linha</label><select className="w-full bg-zinc-950 border border-zinc-800 rounded p-2 text-white" value={lineStopData.line} onChange={e => setLineStopData({ ...lineStopData, line: e.target.value })}>{lines.map(l => <option key={l.id} value={l.name}>{l.name}</option>)}</select></div><Input label="Fase" value={lineStopData.phase} onChange={e => setLineStopData({ ...lineStopData, phase: e.target.value })} /></div><div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4"><Input type="time" label="Início" value={lineStopData.startTime} onChange={e => setLineStopData({ ...lineStopData, startTime: e.target.value, totalTime: calcTotalTime(e.target.value, lineStopData.endTime) })} onClick={(e) => e.currentTarget.showPicker()} /><Input type="time" label="Término" value={lineStopData.endTime} onChange={e => setLineStopData({ ...lineStopData, endTime: e.target.value, totalTime: calcTotalTime(lineStopData.startTime, e.target.value) })} onClick={(e) => e.currentTarget.showPicker()} /><Input label="Total" readOnly value={lineStopData.totalTime} className="text-red-400 font-bold" /><Input label="Pessoas Paradas" type="number" value={lineStopData.peopleStopped} onChange={e => setLineStopData({ ...lineStopData, peopleStopped: e.target.value })} /></div><div className="grid grid-cols-1 md:grid-cols-2 gap-4"><Input label="Perca de Produção" value={lineStopData.productionLoss} onChange={e => setLineStopData({ ...lineStopData, productionLoss: e.target.value })} /><Input label="Tempo Padrão" value={lineStopData.standardTime} onChange={e => setLineStopData({ ...lineStopData, standardTime: e.target.value })} /></div><div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
+        <Input label="Cliente" value={lineStopData.client} onChange={e => setLineStopData({ ...lineStopData, client: e.target.value })} /><div><label className="text-xs font-bold text-slate-500 dark:text-zinc-500 uppercase mb-1 block">Linha</label><select className="w-full bg-white dark:bg-zinc-950 border border-slate-300 dark:border-zinc-800 rounded-lg p-2.5 text-slate-900 dark:text-zinc-100 focus:ring-2 focus:ring-blue-600/50 outline-none" value={lineStopData.line} onChange={e => setLineStopData({ ...lineStopData, line: e.target.value })}>{lines.map(l => <option key={l.id} value={l.name}>{l.name}</option>)}</select></div><Input label="Fase" value={lineStopData.phase} onChange={e => setLineStopData({ ...lineStopData, phase: e.target.value })} /></div><div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4"><Input type="time" label="Início" value={lineStopData.startTime} onChange={e => setLineStopData({ ...lineStopData, startTime: e.target.value, totalTime: calcTotalTime(e.target.value, lineStopData.endTime) })} onClick={(e) => e.currentTarget.showPicker()} /><Input type="time" label="Término" value={lineStopData.endTime} onChange={e => setLineStopData({ ...lineStopData, endTime: e.target.value, totalTime: calcTotalTime(lineStopData.startTime, e.target.value) })} onClick={(e) => e.currentTarget.showPicker()} /><Input label="Total" readOnly value={lineStopData.totalTime} className="text-red-500 dark:text-red-400 font-bold" /><Input label="Pessoas Paradas" type="number" value={lineStopData.peopleStopped} onChange={e => setLineStopData({ ...lineStopData, peopleStopped: e.target.value })} /></div><div className="grid grid-cols-1 md:grid-cols-2 gap-4"><Input label="Perca de Produção" value={lineStopData.productionLoss} onChange={e => setLineStopData({ ...lineStopData, productionLoss: e.target.value })} /><Input label="Tempo Padrão" value={lineStopData.standardTime} onChange={e => setLineStopData({ ...lineStopData, standardTime: e.target.value })} /></div><div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
             <div>
-                <label className="text-xs font-bold text-zinc-500 uppercase mb-1 block">Posto (De)</label>
-                <input list="station-list" className="w-full bg-zinc-950 border border-zinc-800 rounded p-2 text-white" value={lineStopData.stationStart} onChange={e => setLineStopData({ ...lineStopData, stationStart: e.target.value })} placeholder="Selecione ou digite..." />
+                <label className="text-xs font-bold text-slate-500 dark:text-zinc-500 uppercase mb-1 block">Posto (De)</label>
+                <input list="station-list" className="w-full bg-white dark:bg-zinc-950 border border-slate-300 dark:border-zinc-800 rounded-lg p-2.5 text-slate-900 dark:text-zinc-100 placeholder-slate-400 dark:placeholder-zinc-600 outline-none focus:ring-2 focus:ring-blue-600/50" value={lineStopData.stationStart} onChange={e => setLineStopData({ ...lineStopData, stationStart: e.target.value })} placeholder="Selecione ou digite..." />
                 <datalist id="station-list">{stations.map(s => <option key={s} value={s} />)}</datalist>
             </div>
             <div>
-                <label className="text-xs font-bold text-zinc-500 uppercase mb-1 block">Posto (Até)</label>
-                <input list="station-list" className="w-full bg-zinc-950 border border-zinc-800 rounded p-2 text-white" value={lineStopData.stationEnd} onChange={e => setLineStopData({ ...lineStopData, stationEnd: e.target.value })} placeholder="Selecione ou digite..." />
-            </div></div></Card><Card><h3 className="text-lg font-bold mb-4 border-b border-zinc-800 pb-2">Motivo e Responsabilidade</h3><div className="mb-4"><label className="text-xs font-bold text-zinc-500 uppercase mb-1 block">Setor Responsável</label><div className="grid grid-cols-2 md:grid-cols-5 gap-2">{SECTORS_LIST.map(sec => (<button key={sec} onClick={() => setLineStopData({ ...lineStopData, responsibleSector: sec })} className={`p-2 rounded text-xs font-bold border ${lineStopData.responsibleSector === sec ? 'bg-blue-600 border-blue-500 text-white' : 'bg-zinc-950 border-zinc-800 text-zinc-400 hover:border-zinc-700'}`}>{sec}</button>))}</div></div><div><label className="text-xs font-bold text-zinc-500 uppercase mb-1 block">Motivo / Ocorrência Detalhada</label><textarea className="w-full bg-zinc-950 border border-zinc-800 rounded p-3 h-32 text-white" value={lineStopData.motivo} onChange={e => setLineStopData({ ...lineStopData, motivo: e.target.value })} placeholder="Descreva o que aconteceu..." /></div></Card><Button fullWidth className="py-4 text-lg shadow-xl shadow-red-900/20 bg-red-600 hover:bg-red-500" onClick={handleSaveLineStop}>Salvar Reporte</Button></div>)}
+                <label className="text-xs font-bold text-slate-500 dark:text-zinc-500 uppercase mb-1 block">Posto (Até)</label>
+                <input list="station-list" className="w-full bg-white dark:bg-zinc-950 border border-slate-300 dark:border-zinc-800 rounded-lg p-2.5 text-slate-900 dark:text-zinc-100 placeholder-slate-400 dark:placeholder-zinc-600 outline-none focus:ring-2 focus:ring-blue-600/50" value={lineStopData.stationEnd} onChange={e => setLineStopData({ ...lineStopData, stationEnd: e.target.value })} placeholder="Selecione ou digite..." />
+            </div></div></Card><Card><h3 className="text-lg font-bold mb-4 border-b border-slate-200 dark:border-zinc-800 pb-2 text-slate-900 dark:text-white">Motivo e Responsabilidade</h3><div className="mb-4"><label className="text-xs font-bold text-slate-500 dark:text-zinc-500 uppercase mb-1 block">Setor Responsável</label><div className="grid grid-cols-2 md:grid-cols-5 gap-2">{SECTORS_LIST.map(sec => (<button key={sec} onClick={() => setLineStopData({ ...lineStopData, responsibleSector: sec })} className={`p-2 rounded text-xs font-bold border transition-colors ${lineStopData.responsibleSector === sec ? 'bg-blue-600 border-blue-500 text-white' : 'bg-slate-100 dark:bg-zinc-950 border-slate-200 dark:border-zinc-800 text-slate-500 dark:text-zinc-400 hover:border-slate-300 dark:hover:border-zinc-700'}`}>{sec}</button>))}</div></div><div><label className="text-xs font-bold text-slate-500 dark:text-zinc-500 uppercase mb-1 block">Motivo / Ocorrência Detalhada</label><textarea className="w-full bg-white dark:bg-zinc-950 border border-slate-300 dark:border-zinc-800 rounded-lg p-3 h-32 text-slate-900 dark:text-zinc-100 resize-none focus:ring-2 focus:ring-blue-600/50 outline-none" value={lineStopData.motivo} onChange={e => setLineStopData({ ...lineStopData, motivo: e.target.value })} placeholder="Descreva o que aconteceu..." /></div></Card><Button fullWidth className="py-4 text-lg shadow-xl shadow-red-900/20 bg-red-600 hover:bg-red-500" onClick={handleSaveLineStop}>Salvar Reporte</Button></div>)}
 
         {/* PENDING TAB */}
-        {lineStopTab === 'PENDING' && (<div className="space-y-4">{lineStopLogs.filter(l => l.status === 'WAITING_JUSTIFICATION').length === 0 && <p className="text-center text-zinc-500 py-10">Nenhum reporte pendente de justificativa.</p>}{lineStopLogs.filter(l => l.status === 'WAITING_JUSTIFICATION').map(log => {
+        {lineStopTab === 'PENDING' && (<div className="space-y-4">{lineStopLogs.filter(l => l.status === 'WAITING_JUSTIFICATION').length === 0 && <p className="text-center text-slate-500 dark:text-zinc-500 py-10">Nenhum reporte pendente de justificativa.</p>}{lineStopLogs.filter(l => l.status === 'WAITING_JUSTIFICATION').map(log => {
             return (
-                <div key={log.id} className="bg-zinc-900 border border-zinc-800 rounded-xl p-6 relative overflow-hidden"><div className="absolute left-0 top-0 bottom-0 w-1 bg-yellow-500"></div><div className="flex flex-col md:flex-row justify-between gap-4"><div><div className="flex items-center gap-2 mb-2"><span className="bg-red-900/30 text-red-400 px-2 py-1 rounded text-xs font-bold uppercase border border-red-900/50">Aguardando Justificativa</span><span className="text-zinc-500 text-xs">{new Date(log.date).toLocaleString()}</span></div>
-                    <h3 className="text-xl font-bold text-white mb-1">{getLogTitle(log)}</h3>
-                    <p className="text-zinc-400 text-sm mb-4">Setor: <strong className="text-white">{(log.data as LineStopData)?.responsibleSector}</strong> | Tempo: <strong className="text-red-400">{(log.data as LineStopData)?.totalTime}</strong></p><p className="bg-zinc-950 p-3 rounded border border-zinc-800 text-zinc-300 text-sm">{(log.data as LineStopData)?.motivo}</p></div><div className="flex flex-col justify-center gap-2 min-w-[200px]">
+                <div key={log.id} className="bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 rounded-xl p-6 relative overflow-hidden shadow-sm"><div className="absolute left-0 top-0 bottom-0 w-1 bg-yellow-500"></div><div className="flex flex-col md:flex-row justify-between gap-4"><div><div className="flex items-center gap-2 mb-2"><span className="bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400 px-2 py-1 rounded text-xs font-bold uppercase border border-red-200 dark:border-red-900/50">Aguardando Justificativa</span><span className="text-slate-500 dark:text-zinc-500 text-xs">{new Date(log.date).toLocaleString()}</span></div>
+                    <h3 className="text-xl font-bold text-slate-900 dark:text-white mb-1">{getLogTitle(log)}</h3>
+                    <p className="text-slate-500 dark:text-zinc-400 text-sm mb-4">Setor: <strong className="text-slate-900 dark:text-white">{(log.data as LineStopData)?.responsibleSector}</strong> | Tempo: <strong className="text-red-500 dark:text-red-400">{(log.data as LineStopData)?.totalTime}</strong></p><p className="bg-slate-50 dark:bg-zinc-950 p-3 rounded border border-slate-200 dark:border-zinc-800 text-slate-700 dark:text-zinc-300 text-sm">{(log.data as LineStopData)?.motivo}</p></div><div className="flex flex-col justify-center gap-2 min-w-[200px]">
                         {canUserJustify(currentUser, log) ? (<Button onClick={() => { setActiveLineStopLog(log); setJustificationInput(''); }}>Justificar</Button>) : (
-                            <span className="text-xs text-zinc-500 italic border border-zinc-700 px-3 py-2 rounded text-center block">
+                            <span className="text-xs text-slate-500 dark:text-zinc-500 italic border border-slate-200 dark:border-zinc-700 px-3 py-2 rounded text-center block">
                                 Aguardando {(log.data as LineStopData)?.responsibleSector || 'Setor'}
                             </span>
                         )}
-                    </div></div>{activeLineStopLog?.id === log.id && (<div className="mt-6 pt-6 border-t border-zinc-800 animate-in slide-in-from-top-2"><label className="text-xs font-bold text-zinc-500 uppercase mb-2 block">Justificativa e Plano de Ação</label><textarea className="w-full bg-zinc-950 border border-zinc-800 rounded p-3 h-32 text-white mb-4" value={justificationInput} onChange={e => setJustificationInput(e.target.value)} placeholder="Descreva a solução definitiva..." /><div className="flex justify-end gap-2"><Button variant="secondary" onClick={() => setActiveLineStopLog(null)}>Cancelar</Button><Button onClick={handleSaveJustification}>Salvar e Prosseguir</Button></div></div>)}</div>
+                    </div></div>{activeLineStopLog?.id === log.id && (<div className="mt-6 pt-6 border-t border-slate-200 dark:border-zinc-800 animate-in slide-in-from-top-2"><label className="text-xs font-bold text-slate-500 dark:text-zinc-500 uppercase mb-2 block">Justificativa e Plano de Ação</label><textarea className="w-full bg-slate-50 dark:bg-zinc-950 border border-slate-300 dark:border-zinc-800 rounded-lg p-3 h-32 text-slate-900 dark:text-zinc-100 focus:ring-2 focus:ring-blue-600/50 outline-none" value={justificationInput} onChange={e => setJustificationInput(e.target.value)} placeholder="Descreva a solução definitiva..." /><div className="flex justify-end gap-2"><Button variant="secondary" onClick={() => setActiveLineStopLog(null)}>Cancelar</Button><Button onClick={handleSaveJustification}>Salvar e Prosseguir</Button></div></div>)}</div>
             );
         })}</div>)}
 
         {/* UPLOAD TAB */}
-        {lineStopTab === 'UPLOAD' && (<div className="space-y-4">{lineStopLogs.filter(l => l.status === 'WAITING_SIGNATURE').length === 0 && <p className="text-center text-zinc-500 py-10">Nenhum reporte aguardando upload.</p>}{lineStopLogs.filter(l => l.status === 'WAITING_SIGNATURE').map(log => {
+        {lineStopTab === 'UPLOAD' && (<div className="space-y-4">{lineStopLogs.filter(l => l.status === 'WAITING_SIGNATURE').length === 0 && <p className="text-center text-slate-500 dark:text-zinc-500 py-10">Nenhum reporte aguardando upload.</p>}{lineStopLogs.filter(l => l.status === 'WAITING_SIGNATURE').map(log => {
             return (
-                <div key={log.id} className="bg-zinc-900 border border-zinc-800 rounded-xl p-6 relative overflow-hidden"><div className="absolute left-0 top-0 bottom-0 w-1 bg-blue-500"></div><div className="flex flex-col md:flex-row justify-between gap-4"><div><div className="flex items-center gap-2 mb-2"><span className="bg-blue-900/30 text-blue-400 px-2 py-1 rounded text-xs font-bold uppercase border border-blue-900/50">Aguardando Assinatura</span><span className="text-zinc-500 text-xs">{new Date(log.date).toLocaleString()}</span></div>
-                    <h3 className="text-xl font-bold text-white mb-1">{getLogTitle(log)}</h3>
-                    <div className="mt-2 text-sm text-zinc-400"><p>1. Baixe a planilha gerada.</p><p>2. Imprima e colete as assinaturas.</p><p>3. Tire uma foto e faça o upload abaixo.</p></div></div><div className="flex flex-col justify-center gap-2 min-w-[200px]"><Button variant="outline" onClick={async () => {
+                <div key={log.id} className="bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 rounded-xl p-6 relative overflow-hidden shadow-sm"><div className="absolute left-0 top-0 bottom-0 w-1 bg-blue-500"></div><div className="flex flex-col md:flex-row justify-between gap-4"><div><div className="flex items-center gap-2 mb-2"><span className="bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 px-2 py-1 rounded text-xs font-bold uppercase border border-blue-200 dark:border-blue-900/50">Aguardando Assinatura</span><span className="text-slate-500 dark:text-zinc-500 text-xs">{new Date(log.date).toLocaleString()}</span></div>
+                    <h3 className="text-xl font-bold text-slate-900 dark:text-white mb-1">{getLogTitle(log)}</h3>
+                    <div className="mt-2 text-sm text-slate-500 dark:text-zinc-400"><p>1. Baixe a planilha gerada.</p><p>2. Imprima e colete as assinaturas.</p><p>3. Tire uma foto e faça o upload abaixo.</p></div></div><div className="flex flex-col justify-center gap-2 min-w-[200px]"><Button variant="outline" onClick={async () => {
                         try { await exportLineStopToExcel(log); } catch (e: any) { alert("Erro ao baixar: " + e.message); }
-                    }}><Printer size={16} /> Baixar Planilha</Button><Button onClick={() => setActiveLineStopLog(log)}>Fazer Upload</Button></div></div>{activeLineStopLog?.id === log.id && (<div className="mt-6 pt-6 border-t border-zinc-800 animate-in slide-in-from-top-2"><label className="cursor-pointer flex flex-col items-center justify-center h-32 w-full border-2 border-dashed border-zinc-700 hover:border-blue-500 rounded-lg transition-colors"><Camera size={24} className="mb-2 text-zinc-500" /><span className="text-sm text-zinc-400">Tirar Foto da Folha Assinada</span><input type="file" accept="image/*" capture="environment" className="hidden" onChange={(e) => { if (e.target.files?.[0]) handleUploadSignedDoc(e.target.files[0]) }} /></label><Button variant="ghost" fullWidth className="mt-2" onClick={() => setActiveLineStopLog(null)}>Cancelar</Button></div>)}</div>
+                    }}><Printer size={16} /> Baixar Planilha</Button><Button onClick={() => setActiveLineStopLog(log)}>Fazer Upload</Button></div></div>{activeLineStopLog?.id === log.id && (<div className="mt-6 pt-6 border-t border-slate-200 dark:border-zinc-800 animate-in slide-in-from-top-2"><label className="cursor-pointer flex flex-col items-center justify-center h-32 w-full border-2 border-dashed border-slate-300 dark:border-zinc-700 hover:border-blue-500 rounded-lg transition-colors"><Camera size={24} className="mb-2 text-slate-400 dark:text-zinc-500" /><span className="text-sm text-slate-500 dark:text-zinc-400">Tirar Foto da Folha Assinada</span><input type="file" accept="image/*" capture="environment" className="hidden" onChange={(e) => { if (e.target.files?.[0]) handleUploadSignedDoc(e.target.files[0]) }} /></label><Button variant="ghost" fullWidth className="mt-2" onClick={() => setActiveLineStopLog(null)}>Cancelar</Button></div>)}</div>
             );
         })}</div>)}
 

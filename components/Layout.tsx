@@ -19,9 +19,9 @@ export const Layout: React.FC<LayoutProps> = ({ children, variant = 'dashboard',
 
   if (variant === 'auth') {
     return (
-      <div className="min-h-screen bg-gray-50 dark:bg-zinc-950 text-gray-900 dark:text-zinc-100 font-sans relative overflow-hidden transition-colors duration-200">
+      <div className="min-h-screen bg-slate-50 dark:bg-zinc-950 text-slate-900 dark:text-zinc-100 font-sans relative overflow-hidden transition-colors duration-200">
         <div className="absolute top-4 right-4 z-50">
-          <button onClick={handleToggle} className="p-2 rounded-full bg-white dark:bg-zinc-800 shadow-md hover:scale-110 transition-transform text-zinc-800 dark:text-zinc-200">
+          <button onClick={handleToggle} className="p-2 rounded-full bg-white dark:bg-zinc-800 shadow-md hover:scale-110 transition-transform text-slate-800 dark:text-zinc-200">
             {isDark ? <Sun size={20} /> : <Moon size={20} />}
           </button>
         </div>
@@ -33,10 +33,10 @@ export const Layout: React.FC<LayoutProps> = ({ children, variant = 'dashboard',
   }
 
   return (
-    <div className="flex min-h-screen bg-slate-100 dark:bg-zinc-950 text-slate-900 dark:text-zinc-100 font-sans transition-colors duration-200">
+    <div className="flex min-h-screen bg-slate-50 dark:bg-zinc-950 text-slate-900 dark:text-zinc-100 font-sans transition-colors duration-200">
 
       {/* Mobile/Tablet Header */}
-      <div className="lg:hidden fixed top-0 left-0 right-0 h-16 bg-white dark:bg-zinc-900 border-b border-gray-200 dark:border-zinc-800 z-40 flex items-center justify-between px-4 shadow-sm transition-colors duration-200">
+      <div className="lg:hidden fixed top-0 left-0 right-0 h-16 bg-white dark:bg-zinc-900 border-b border-slate-200 dark:border-zinc-800 z-40 flex items-center justify-between px-4 shadow-sm transition-colors duration-200">
         <div className="font-bold text-lg tracking-tight flex items-center gap-2">
           <div className="w-8 h-8 rounded-lg bg-blue-600 flex items-center justify-center text-white">
             <img src="/logo.png" className="w-full h-full object-contain" alt="LC" />
@@ -44,12 +44,12 @@ export const Layout: React.FC<LayoutProps> = ({ children, variant = 'dashboard',
           TECPLAM
         </div>
         <div className="flex items-center gap-2">
-          <button onClick={handleToggle} className="p-2 text-gray-600 dark:text-zinc-400 hover:text-blue-600 dark:hover:text-zinc-100 transition-colors">
+          <button onClick={handleToggle} className="p-2 text-slate-600 dark:text-zinc-400 hover:text-blue-600 dark:hover:text-zinc-100 transition-colors">
             {isDark ? <Sun size={20} /> : <Moon size={20} />}
           </button>
           <button
             onClick={() => setIsSidebarOpen(!isSidebarOpen)}
-            className="p-2 text-gray-600 dark:text-zinc-400 hover:text-gray-900 dark:hover:text-zinc-100"
+            className="p-2 text-slate-600 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-zinc-100"
           >
             {isSidebarOpen ? <X size={24} /> : <Menu size={24} />}
           </button>
