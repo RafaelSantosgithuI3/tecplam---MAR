@@ -27,7 +27,7 @@ import {
     CheckSquare, LogOut, UserPlus, AlertCircle,
     Save, ArrowLeft, History, Edit3, Trash2, Plus,
     Settings, Users, List, Search, Calendar, Eye, Download, Wifi, User as UserIcon, Upload, X, UserCheck,
-    Camera, FileText, QrCode, Hammer, AlertTriangle, Shield, LayoutDashboard, Clock, Printer, EyeOff, Briefcase, Box, Lock, CheckCircle2
+    Camera, FileText, QrCode, Hammer, AlertTriangle, Shield, LayoutDashboard, Clock, Printer, EyeOff, Briefcase, Box, Lock, CheckCircle2, Sun, Moon
 } from 'lucide-react';
 import jsQR from 'jsqr';
 
@@ -84,6 +84,30 @@ const calcTotalTime = (start: string, end: string) => {
 }
 
 const App = () => {
+    // --- THEME STATE ---
+    const [theme, setTheme] = useState(() => {
+        if (typeof window !== 'undefined') {
+            return localStorage.getItem('theme') || 'dark';
+        }
+        return 'dark';
+    });
+
+    const isDark = theme === 'dark';
+
+    useEffect(() => {
+        const root = window.document.documentElement;
+        if (theme === 'dark') {
+            root.classList.add('dark');
+        } else {
+            root.classList.remove('dark');
+        }
+        localStorage.setItem('theme', theme);
+    }, [theme]);
+
+    const toggleTheme = () => {
+        setTheme(prev => prev === 'dark' ? 'light' : 'dark');
+    };
+
     // --- State ---
     const [currentUser, setCurrentUser] = useState<User | null>(null);
     const [view, setView] = useState<ViewState>('SETUP');
@@ -1282,14 +1306,14 @@ const App = () => {
 
         return (
             <>
-                <div className="p-6 border-b border-gray-200 dark:border-zinc-800">
+                <div className="p-6 border-b border-slate-200 dark:border-zinc-800">
                     <div className="flex items-center gap-3">
                         <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-600 to-indigo-700 flex items-center justify-center text-white shadow-lg shadow-blue-900/20 overflow-hidden">
                             <img src="/logo.png" className="w-full h-full object-contain" alt="LC" />
                         </div>
                         <div>
-                            <h1 className="font-bold text-gray-900 dark:text-zinc-100 leading-tight tracking-tight">TECPLAM</h1>
-                            <p className="text-gray-500 dark:text-zinc-500 text-[9px] uppercase tracking-widest font-semibold leading-tight">Monitoramento Automático</p>
+                            <h1 className="font-bold text-slate-900 dark:text-zinc-100 leading-tight tracking-tight">TECPLAM</h1>
+                            <p className="text-slate-500 dark:text-zinc-500 text-[9px] uppercase tracking-widest font-semibold leading-tight">Monitoramento</p>
                         </div>
                     </div>
                 </div>
@@ -1353,20 +1377,37 @@ const App = () => {
                     </button>
                 </nav>
 
-                <div className="p-4 border-t border-gray-200 dark:border-zinc-800 bg-gray-50/50 dark:bg-zinc-900/50">
-                    <div className="flex items-center gap-3 p-2 rounded-lg hover:bg-gray-200 dark:hover:bg-zinc-800 transition-colors cursor-pointer" onClick={() => setView('PROFILE')}>
-                        <div className="w-8 h-8 rounded-full bg-gray-300 dark:bg-zinc-700 flex items-center justify-center text-gray-700 dark:text-zinc-300 font-bold border border-gray-300 dark:border-zinc-600">
-                            {currentUser?.name.charAt(0)}
+                <div className="p-4 border-t border-slate-200 dark:border-zinc-800 bg-slate-50 dark:bg-zinc-900/50">
+                    <div className="flex items-center justify-between gap-2">
+                        {/* User Info */}
+                        <div className="flex items-center gap-2 cursor-pointer" onClick={() => setView('PROFILE')}>
+                            <div className="w-8 h-8 rounded-full bg-slate-200 dark:bg-zinc-700 flex items-center justify-center text-slate-700 dark:text-zinc-300 font-bold border border-slate-300 dark:border-zinc-600">
+                                {currentUser?.name.charAt(0)}
+                            </div>
+                            <div className="hidden lg:block">
+                                <p className="text-xs font-bold text-slate-700 dark:text-zinc-200 truncate max-w-[100px]">{currentUser?.name.split(' ')[0]}</p>
+                                <p className="text-[10px] text-slate-500 dark:text-zinc-500 truncate">{currentUser?.role}</p>
+                            </div>
                         </div>
-                        <div className="flex-1 min-w-0">
-                            <p className="text-sm font-medium text-gray-900 dark:text-zinc-200 truncate">{currentUser?.name}</p>
-                            <p className="text-xs text-gray-500 dark:text-zinc-500 truncate">{currentUser?.role}</p>
+
+                        {/* Actions */}
+                        <div className="flex gap-1">
+                            <button
+                                onClick={toggleTheme}
+                                className="p-2 hover:bg-slate-200 dark:hover:bg-zinc-800 rounded-lg text-slate-600 dark:text-zinc-400 transition-colors"
+                                title="Alternar Tema"
+                            >
+                                {isDark ? <Sun size={18} /> : <Moon size={18} />}
+                            </button>
+                            <button
+                                onClick={handleLogout}
+                                className="p-2 hover:bg-red-100 dark:hover:bg-red-900/30 text-red-600 dark:text-red-400 rounded-lg transition-colors"
+                                title="Sair"
+                            >
+                                <LogOut size={18} />
+                            </button>
                         </div>
-                        <Settings size={14} className="text-gray-400 dark:text-zinc-500" />
                     </div>
-                    <button onClick={handleLogout} className="mt-2 w-full flex items-center justify-center gap-2 text-xs text-red-500 dark:text-red-400 hover:text-red-600 dark:hover:text-red-300 py-2 rounded hover:bg-red-50 dark:hover:bg-red-900/10 transition-colors">
-                        <LogOut size={14} /> Sair do Sistema
-                    </button>
                 </div>
             </>
         )
@@ -1375,7 +1416,7 @@ const App = () => {
     // --- RENDER VIEWS ---
 
     if (view === 'RECOVER') return (
-        <Layout variant="auth">
+        <Layout variant="auth" onToggleTheme={toggleTheme} isDark={isDark}>
             <div className="flex flex-col items-center justify-center min-h-screen px-4">
                 <div className="bg-zinc-900/80 backdrop-blur-xl border border-zinc-800 rounded-2xl p-8 shadow-2xl w-full max-w-md">
                     <h2 className="text-xl font-bold mb-4 text-white text-center">Recuperar Senha</h2>
@@ -1396,7 +1437,7 @@ const App = () => {
     );
 
     if (view === 'SETUP') return (
-        <Layout variant="auth">
+        <Layout variant="auth" onToggleTheme={toggleTheme} isDark={isDark}>
             <div className="flex flex-col items-center justify-center min-h-screen px-4">
                 <div className="bg-zinc-900/80 backdrop-blur-xl border border-zinc-800 rounded-2xl p-8 shadow-2xl w-full max-w-md">
                     <h1 className="text-2xl font-bold text-center mb-4 text-white">Configuração de Rede</h1>
@@ -1517,38 +1558,38 @@ const App = () => {
                 {/* ALERTS SECTION */}
                 <div className="mb-8 space-y-4">
                     {pendingScrapCount > 0 && (
-                        <div className="bg-red-900/20 border border-red-500/50 p-4 rounded-xl flex items-center gap-4 animate-pulse">
-                            <div className="p-2 bg-red-500 rounded-full text-white"><AlertTriangle size={20} /></div>
+                        <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-500/50 p-4 rounded-xl flex items-center gap-4 animate-pulse">
+                            <div className="p-2 bg-red-100 dark:bg-red-500 rounded-full text-red-600 dark:text-white"><AlertTriangle size={20} /></div>
                             <div className="flex-1">
-                                <h3 className="font-bold text-red-400">Pendências de Scrap</h3>
-                                <p className="text-xs text-red-300">Você possui {pendingScrapCount} itens de scrap sem contra medida.</p>
+                                <h3 className="font-bold text-red-800 dark:text-red-400">Pendências de Scrap</h3>
+                                <p className="text-xs text-red-600 dark:text-red-300">Você possui {pendingScrapCount} itens de scrap sem contra medida.</p>
                             </div>
                             <Button size="sm" onClick={() => { setScrapTab('PENDING'); setView('SCRAP'); }}>Resolver</Button>
                         </div>
                     )}
                     {pendingLineStopsCount > 0 && (
-                        <div className="bg-red-900/20 border border-red-500/50 p-4 rounded-xl flex items-center gap-4 animate-pulse">
-                            <div className="p-2 bg-red-500 rounded-full text-white"><AlertTriangle size={20} /></div>
+                        <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-500/50 p-4 rounded-xl flex items-center gap-4 animate-pulse">
+                            <div className="p-2 bg-red-100 dark:bg-red-500 rounded-full text-red-600 dark:text-white"><AlertTriangle size={20} /></div>
                             <div className="flex-1">
-                                <h3 className="font-bold text-red-400">Paradas sem Justificativa</h3>
-                                <p className="text-xs text-red-300">Existem {pendingLineStopsCount} paradas de linha que requerem sua atenção.</p>
+                                <h3 className="font-bold text-red-800 dark:text-red-400">Paradas sem Justificativa</h3>
+                                <p className="text-xs text-red-600 dark:text-red-300">Existem {pendingLineStopsCount} paradas de linha que requerem sua atenção.</p>
                             </div>
                             <Button size="sm" onClick={() => setView('LINE_STOP_DASHBOARD')}>Ver</Button>
                         </div>
                     )}
 
                     {missingLeadersNames.length > 0 && (hasPermission('AUDIT') || isSuperAdmin) && (
-                        <div className="bg-yellow-900/20 border border-yellow-500/50 p-4 rounded-xl flex flex-col gap-3">
+                        <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-500/50 p-4 rounded-xl flex flex-col gap-3">
                             <div className="flex items-center gap-4">
-                                <div className="p-2 bg-yellow-500 rounded-full text-zinc-900"><Clock size={20} /></div>
+                                <div className="p-2 bg-yellow-100 dark:bg-yellow-500 rounded-full text-yellow-700 dark:text-zinc-900"><Clock size={20} /></div>
                                 <div className="flex-1">
-                                    <h3 className="font-bold text-yellow-400">Checklists Pendentes Hoje</h3>
-                                    <p className="text-xs text-yellow-300">Líderes que ainda não enviaram o relatório do turno.</p>
+                                    <h3 className="font-bold text-yellow-800 dark:text-yellow-400">Checklists Pendentes Hoje</h3>
+                                    <p className="text-xs text-yellow-700 dark:text-yellow-300">Líderes que ainda não enviaram o relatório do turno.</p>
                                 </div>
                             </div>
                             <div className="flex flex-wrap gap-2 pl-12">
                                 {missingLeadersNames.map(name => (
-                                    <span key={name} className="px-2 py-1 bg-yellow-500/10 text-yellow-200 rounded text-xs border border-yellow-500/20">{name}</span>
+                                    <span key={name} className="px-2 py-1 bg-yellow-100 dark:bg-yellow-500/10 text-yellow-800 dark:text-yellow-200 rounded text-xs border border-yellow-200 dark:border-yellow-500/20">{name}</span>
                                 ))}
                             </div>
                         </div>
@@ -1558,79 +1599,79 @@ const App = () => {
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                     {hasPermission('CHECKLIST') && (
                         // CORREÇÃO AQUI: Chama a função que prepara o modal e reseta a linha
-                        <div onClick={handleStartChecklist} className="group bg-zinc-900 p-6 rounded-2xl border border-zinc-800 hover:border-blue-600/50 hover:bg-zinc-800 transition-all cursor-pointer relative overflow-hidden h-40 flex flex-col justify-center">
+                        <div onClick={handleStartChecklist} className="group bg-white dark:bg-zinc-900 p-6 rounded-2xl border border-gray-200 dark:border-zinc-800 hover:border-blue-600/50 hover:bg-zinc-800 transition-all cursor-pointer relative overflow-hidden h-40 flex flex-col justify-center">
                             <div className="flex items-center gap-4">
                                 <div className="w-12 h-12 bg-blue-600/20 text-blue-500 rounded-xl flex items-center justify-center group-hover:scale-110 transition-transform"><CheckSquare size={24} /></div>
                                 <div>
-                                    <h3 className="font-bold text-xl text-zinc-100">Checklist</h3>
-                                    <p className="text-xs text-zinc-500 mt-1">Liderança & Operação</p>
+                                    <h3 className="font-bold text-xl text-gray-900 dark:text-zinc-100">Checklist</h3>
+                                    <p className="text-xs text-gray-500 dark:text-zinc-500 mt-1">Liderança & Operação</p>
                                 </div>
                             </div>
                         </div>
                     )}
 
                     {hasPermission('LINE_STOP') && (
-                        <div onClick={() => setView('LINE_STOP_DASHBOARD')} className="group bg-zinc-900 p-6 rounded-2xl border border-zinc-800 hover:border-red-600/50 hover:bg-zinc-800 transition-all cursor-pointer relative overflow-hidden h-40 flex flex-col justify-center">
+                        <div onClick={() => setView('LINE_STOP_DASHBOARD')} className="group bg-white dark:bg-zinc-900 p-6 rounded-2xl border border-gray-200 dark:border-zinc-800 hover:border-red-600/50 hover:bg-zinc-800 transition-all cursor-pointer relative overflow-hidden h-40 flex flex-col justify-center">
                             <div className="flex items-center gap-4">
                                 <div className="w-12 h-12 bg-red-600/20 text-red-500 rounded-xl flex items-center justify-center group-hover:scale-110 transition-transform"><AlertTriangle size={24} /></div>
                                 <div>
-                                    <h3 className="font-bold text-xl text-zinc-100">Parada de Linha</h3>
-                                    <p className="text-xs text-zinc-500 mt-1">Reporte de interrupções</p>
+                                    <h3 className="font-bold text-xl text-gray-900 dark:text-zinc-100">Parada de Linha</h3>
+                                    <p className="text-xs text-gray-500 dark:text-zinc-500 mt-1">Reporte de interrupções</p>
                                 </div>
                             </div>
                         </div>
                     )}
 
                     {hasPermission('MAINTENANCE') && (
-                        <div onClick={() => setView('MAINTENANCE_QR')} className="group bg-zinc-900 p-6 rounded-2xl border border-zinc-800 hover:border-orange-600/50 hover:bg-zinc-800 transition-all cursor-pointer relative overflow-hidden h-40 flex flex-col justify-center">
+                        <div onClick={() => setView('MAINTENANCE_QR')} className="group bg-white dark:bg-zinc-900 p-6 rounded-2xl border border-gray-200 dark:border-zinc-800 hover:border-orange-600/50 hover:bg-zinc-800 transition-all cursor-pointer relative overflow-hidden h-40 flex flex-col justify-center">
                             <div className="flex items-center gap-4">
                                 <div className="w-12 h-12 bg-orange-600/20 text-orange-500 rounded-xl flex items-center justify-center group-hover:scale-110 transition-transform"><Hammer size={24} /></div>
                                 <div>
-                                    <h3 className="font-bold text-xl text-zinc-100">Manutenção</h3>
-                                    <p className="text-xs text-zinc-500 mt-1">Inspeção de Máquinas</p>
+                                    <h3 className="font-bold text-xl text-gray-900 dark:text-zinc-100">Manutenção</h3>
+                                    <p className="text-xs text-gray-500 dark:text-zinc-500 mt-1">Inspeção de Máquinas</p>
                                 </div>
                             </div>
                         </div>
                     )}
 
                     {hasPermission('MEETING') && (
-                        <div onClick={() => { initMeetingForm(); setView('MEETING_MENU'); }} className="group bg-zinc-900 p-6 rounded-2xl border border-zinc-800 hover:border-emerald-600/50 hover:bg-zinc-800 transition-all cursor-pointer relative overflow-hidden h-40 flex flex-col justify-center">
+                        <div onClick={() => { initMeetingForm(); setView('MEETING_MENU'); }} className="group bg-white dark:bg-zinc-900 p-6 rounded-2xl border border-gray-200 dark:border-zinc-800 hover:border-emerald-600/50 hover:bg-zinc-800 transition-all cursor-pointer relative overflow-hidden h-40 flex flex-col justify-center">
                             <div className="flex items-center gap-4">
                                 <div className="w-12 h-12 bg-emerald-600/20 text-emerald-500 rounded-xl flex items-center justify-center group-hover:scale-110 transition-transform"><FileText size={24} /></div>
                                 <div>
-                                    <h3 className="font-bold text-xl text-zinc-100">Reuniões</h3>
-                                    <p className="text-xs text-zinc-500 mt-1">Atas e Registros</p>
+                                    <h3 className="font-bold text-xl text-gray-900 dark:text-zinc-100">Reuniões</h3>
+                                    <p className="text-xs text-gray-500 dark:text-zinc-500 mt-1">Atas e Registros</p>
                                 </div>
                             </div>
                         </div>
                     )}
 
                     {hasPermission('AUDIT') && (
-                        <div onClick={() => { setView('AUDIT_MENU'); setAuditTab('LEADER_HISTORY'); }} className="group bg-zinc-900 p-6 rounded-2xl border border-zinc-800 hover:border-yellow-600/50 hover:bg-zinc-800 transition-all cursor-pointer relative overflow-hidden h-40 flex flex-col justify-center">
+                        <div onClick={() => { setView('AUDIT_MENU'); setAuditTab('LEADER_HISTORY'); }} className="group bg-white dark:bg-zinc-900 p-6 rounded-2xl border border-gray-200 dark:border-zinc-800 hover:border-yellow-600/50 hover:bg-zinc-800 transition-all cursor-pointer relative overflow-hidden h-40 flex flex-col justify-center">
                             <div className="flex items-center gap-4">
                                 <div className="w-12 h-12 bg-yellow-600/20 text-yellow-500 rounded-xl flex items-center justify-center group-hover:scale-110 transition-transform"><Search size={24} /></div>
                                 <div>
-                                    <h3 className="font-bold text-xl text-zinc-100">Auditoria</h3>
-                                    <p className="text-xs text-zinc-500 mt-1">Gestão e Relatórios</p>
+                                    <h3 className="font-bold text-xl text-gray-900 dark:text-zinc-100">Auditoria</h3>
+                                    <p className="text-xs text-gray-500 dark:text-zinc-500 mt-1">Gestão e Relatórios</p>
                                 </div>
                             </div>
                         </div>
                     )}
 
                     {hasPermission('MANAGEMENT') && (
-                        <div onClick={() => setView('MANAGEMENT')} className="group bg-zinc-900 p-6 rounded-2xl border border-zinc-800 hover:border-cyan-600/50 hover:bg-zinc-800 transition-all cursor-pointer relative overflow-hidden h-40 flex flex-col justify-center">
+                        <div onClick={() => setView('MANAGEMENT')} className="group bg-white dark:bg-zinc-900 p-6 rounded-2xl border border-gray-200 dark:border-zinc-800 hover:border-cyan-600/50 hover:bg-zinc-800 transition-all cursor-pointer relative overflow-hidden h-40 flex flex-col justify-center">
                             <div className="flex items-center gap-4">
                                 <div className="w-12 h-12 bg-cyan-600/20 text-cyan-500 rounded-xl flex items-center justify-center group-hover:scale-110 transition-transform"><Briefcase size={24} /></div>
                                 <div>
-                                    <h3 className="font-bold text-xl text-zinc-100">Gestão</h3>
-                                    <p className="text-xs text-zinc-500 mt-1">Cadastros Gerais</p>
+                                    <h3 className="font-bold text-xl text-gray-900 dark:text-zinc-100">Gestão</h3>
+                                    <p className="text-xs text-gray-500 dark:text-zinc-500 mt-1">Cadastros Gerais</p>
                                 </div>
                             </div>
                         </div>
                     )}
 
                     {hasPermission('ADMIN') && (
-                        <div onClick={() => setView('ADMIN')} className="group bg-zinc-900 p-6 rounded-2xl border border-zinc-800 hover:border-zinc-600/50 hover:bg-zinc-800 transition-all cursor-pointer relative overflow-hidden h-40 flex flex-col justify-center">
+                        <div onClick={() => setView('ADMIN')} className="group bg-white dark:bg-zinc-900 p-6 rounded-2xl border border-gray-200 dark:border-zinc-800 hover:border-zinc-600/50 hover:bg-zinc-800 transition-all cursor-pointer relative overflow-hidden h-40 flex flex-col justify-center">
                             <div className="flex items-center gap-4">
                                 <div className="w-12 h-12 bg-zinc-700/50 text-zinc-300 rounded-xl flex items-center justify-center group-hover:scale-110 transition-transform"><Shield size={24} /></div>
                                 <div>

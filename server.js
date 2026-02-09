@@ -553,14 +553,10 @@ app.post('/api/config/permissions', async (req, res) => {
 // --- MEETINGS ---
 
 app.get('/api/meetings', async (req, res) => {
-    console.log("📥 GET /api/meetings solicitado...");
     try {
         const rawMeetings = await prisma.meeting.findMany({
             orderBy: { date: 'desc' }
         });
-
-        console.log(`🔎 Encontrados ${rawMeetings.length} registros.`);
-
         // MAP: Parse participants JSON string to Array
         const formattedMeetings = rawMeetings.map(m => ({
             ...m,
