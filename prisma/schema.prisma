@@ -101,7 +101,7 @@ model Meeting {
 }
 
 model ScrapLog {
-  id             String  @id
+  id             Int     @id @default(autoincrement())
   userId         String? @map("user_id")
   date           String?
   time           String?

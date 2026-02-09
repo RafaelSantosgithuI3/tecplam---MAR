@@ -593,3 +593,89 @@ export const exportLineStopToExcel = async (log: ChecklistLog) => {
     const dateFile = dateStr.replace(/\//g, '-');
     saveAs(blob, `Parada_${log.line || 'LINHA'}_${dateFile}.xlsx`);
 }
+
+export const exportScrapToExcel = async (scraps: any[]) => {
+    const workbook = new ExcelJS.Workbook();
+    try {
+        const response = await fetch('/template_scrap.xlsx');
+        if (!response.ok) throw new Error(`Template fetch status: ${response.status}`);
+        const buffer = await response.arrayBuffer();
+        await workbook.xlsx.load(buffer);
+    } catch (e) {
+        console.warn("Template de Scrap não encontrado. Criando nova planilha em memória.", e);
+        workbook.addWorksheet('Scrap');
+    }
+
+    let worksheet = workbook.worksheets[0];
+    if (!worksheet) worksheet = workbook.addWorksheet('Scrap');
+
+    const startRow = 4;
+
+    // Style Definitions
+    const borderStyle: Partial<ExcelJS.Borders> = {
+        top: { style: 'thin' }, left: { style: 'thin' }, bottom: { style: 'thin' }, right: { style: 'thin' }
+    };
+    const centerStyle: Partial<ExcelJS.Alignment> = { vertical: 'middle', horizontal: 'center', wrapText: true };
+    const leftStyle: Partial<ExcelJS.Alignment> = { vertical: 'middle', horizontal: 'left', wrapText: true };
+
+    const greenMedium = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFC6E0B4' } } as ExcelJS.Fill; // Verde Médio
+    const greenLight = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE2EFDA' } } as ExcelJS.Fill; // Verde Claro
+
+    scraps.forEach((scrap, index) => {
+        const currentRow = startRow + index;
+        const row = worksheet.getRow(currentRow);
+
+        // Zebra Striping
+        const fillStyle = index % 2 === 0 ? greenMedium : greenLight;
+
+        // Helper to set cell
+        const setCell = (col: string, val: any, format?: string) => {
+            const cell = worksheet.getCell(`${col}${currentRow}`);
+            cell.value = val;
+            cell.border = borderStyle;
+            cell.fill = fillStyle;
+            cell.alignment = centerStyle;
+            if (format) cell.numFmt = format;
+            return cell;
+        };
+
+        // Date Formatting dd/mm/yyyy
+        let dateVal = scrap.date;
+        try {
+            if (dateVal) {
+                const d = new Date(dateVal);
+                dateVal = d.toLocaleDateString('pt-BR');
+            }
+        } catch (e) { }
+
+        setCell('B', dateVal);
+        setCell('C', scrap.week);
+        setCell('D', scrap.shift);
+        setCell('E', scrap.line);
+        setCell('F', scrap.leaderName);
+        setCell('G', scrap.pqc || '');
+        setCell('H', scrap.model);
+        setCell('I', scrap.qty);
+        setCell('J', scrap.item);
+        setCell('K', scrap.status || 'NG');
+        setCell('L', scrap.code);
+
+        const descCell = setCell('M', scrap.description);
+        descCell.alignment = leftStyle; // Description aligned left
+
+        setCell('N', scrap.unitValue, '"R$"#,##0.00'); // Currency
+        setCell('O', scrap.totalValue, '"R$"#,##0.00'); // Currency
+
+        setCell('P', scrap.usedModel || scrap.model);
+        setCell('Q', scrap.responsible || scrap.station); // Responsible can fall back to station or vice versa depending on logic, user asked for Responsible (Operador ou Estação)
+        setCell('R', scrap.station);
+        setCell('S', scrap.reason);
+        setCell('T', scrap.rootCause);
+        setCell('U', scrap.countermeasure);
+    });
+
+    const buffer = await workbook.xlsx.writeBuffer();
+    const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+    const dateStr = new Date().toISOString().split('T')[0];
+    saveAs(blob, `Relatorio_Scrap_${dateStr}.xlsx`);
+};

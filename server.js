@@ -609,72 +609,78 @@ app.get('/api/scraps', async (req, res) => {
 });
 
 app.post('/api/scraps', async (req, res) => {
-    const data = req.body;
     try {
+        const { id, ...rest } = req.body; // Remove ID to let DB autoincrement
+
         await prisma.scrapLog.create({
             data: {
-                id: data.id || Date.now().toString(),
-                userId: data.userId,
-                date: data.date,
-                time: data.time,
-                week: data.week,
-                shift: data.shift,
-                leaderName: data.leaderName,
-                pqc: data.pqc,
-                model: data.model,
-                qty: data.qty,
-                item: data.item,
-                status: data.status,
-                code: data.code,
-                description: data.description,
-                unitValue: data.unitValue,
-                totalValue: data.totalValue,
-                usedModel: data.usedModel,
-                responsible: data.responsible,
-                station: data.station,
-                reason: data.reason,
-                rootCause: data.rootCause,
-                countermeasure: data.countermeasure,
-                line: data.line
+                userId: rest.userId,
+                date: rest.date,
+                time: rest.time,
+                week: Number(rest.week) || null,
+                shift: rest.shift ? String(rest.shift) : null,
+                leaderName: rest.leaderName,
+                pqc: rest.pqc,
+                model: rest.model,
+                qty: Number(rest.qty) || 0,
+                item: rest.item,
+                status: rest.status,
+                code: rest.code,
+                description: rest.description,
+                unitValue: Number(rest.unitValue) || 0,
+                totalValue: Number(rest.totalValue) || 0,
+                usedModel: rest.usedModel,
+                responsible: rest.responsible,
+                station: rest.station,
+                reason: rest.reason,
+                rootCause: rest.rootCause,
+                countermeasure: rest.countermeasure || null, // Handle undefined
+                line: rest.line
             }
         });
         res.json({ message: "Scrap salvo" });
-    } catch (e) { res.status(500).json({ error: e.message }); }
+    } catch (e) {
+        console.error("Scrap Create Error:", e);
+        res.status(500).json({ error: e.message });
+    }
 });
 
 app.put('/api/scraps/:id', async (req, res) => {
     const { id } = req.params;
+    const numericId = parseInt(id, 10);
+    if (isNaN(numericId)) return res.status(400).json({ error: "Invalid ID" });
+
     const updates = req.body;
 
-    // Whitelist check
-    const allowed = ['countermeasure', 'reason', 'status', 'leader_name', 'qty', 'total_value', 'leaderName', 'totalValue'];
-    // Mapped names in prisma: leaderName, totalValue.
-    // Incoming body might use camelCase or snake_case depending on frontend.
-    // Previous code checked snake_case for some.
-    // Let's allow updating the Prisma fields.
-
-    // Construct data object
+    // Use Prisma field names directly or map if coming from snake_case
     const dataToUpdate = {};
+
     if (updates.countermeasure !== undefined) dataToUpdate.countermeasure = updates.countermeasure;
     if (updates.reason !== undefined) dataToUpdate.reason = updates.reason;
     if (updates.status !== undefined) dataToUpdate.status = updates.status;
+
+    // Leader Name
     if (updates.leaderName !== undefined) dataToUpdate.leaderName = updates.leaderName;
     else if (updates.leader_name !== undefined) dataToUpdate.leaderName = updates.leader_name;
 
-    if (updates.qty !== undefined) dataToUpdate.qty = updates.qty;
+    // Qty
+    if (updates.qty !== undefined) dataToUpdate.qty = Number(updates.qty);
 
-    if (updates.totalValue !== undefined) dataToUpdate.totalValue = updates.totalValue;
-    else if (updates.total_value !== undefined) dataToUpdate.totalValue = updates.total_value;
+    // Total Value
+    if (updates.totalValue !== undefined) dataToUpdate.totalValue = Number(updates.totalValue);
+    else if (updates.total_value !== undefined) dataToUpdate.totalValue = Number(updates.total_value);
 
+    // If nothing to update, return early
     if (Object.keys(dataToUpdate).length === 0) return res.json({ message: "Nada a atualizar" });
 
     try {
         await prisma.scrapLog.update({
-            where: { id },
+            where: { id: numericId },
             data: dataToUpdate
         });
         res.json({ message: "Scrap atualizado" });
     } catch (e) {
+        console.error("Update Scrap Error:", e);
         res.status(500).json({ error: e.message });
     }
 });
@@ -742,7 +748,7 @@ app.post('/api/backup/save', (req, res) => {
 });
 
 app.get('/api/admin/backup', (req, res) => {
-    const dbPath = path.join(__dirname, 'lidercheck.db');
+    const dbPath = path.join(__dirname, 'prisma', 'lidercheck.db');
     if (fs.existsSync(dbPath)) res.download(dbPath, 'lidercheck_backup.db');
     else res.status(404).json({ error: "DB não encontrado" });
 });

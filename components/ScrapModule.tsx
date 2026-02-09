@@ -17,7 +17,7 @@ import {
     SCRAP_ITEMS, SCRAP_STATUS, CAUSA_RAIZ_OPTIONS
 } from '../services/scrapService';
 import * as authService from '../services/authService';
-import * as XLSX from 'xlsx';
+import { exportScrapToExcel } from '../services/excelService';
 
 interface ScrapModuleProps {
     currentUser: User;
@@ -725,24 +725,7 @@ const ScrapOperational = ({ scraps, users, lines, models }: any) => {
     });
 
     const downloadExcel = () => {
-        const data = filtered.map(s => ({
-            Data: s.date,
-            Hora: s.time,
-            Semana: s.week,
-            Turno: s.shift,
-            Líder: s.leaderName,
-            Linha: s.line,
-            Modelo: s.model,
-            Item: s.item,
-            Qtd: s.qty,
-            Valor: s.totalValue,
-            Motivo: s.reason,
-            ContraMedida: s.countermeasure
-        }));
-        const ws = XLSX.utils.json_to_sheet(data);
-        const wb = XLSX.utils.book_new();
-        XLSX.utils.book_append_sheet(wb, ws, "Scrap Operacional");
-        XLSX.writeFile(wb, "Relatorio_Scrap.xlsx");
+        exportScrapToExcel(filtered);
     };
 
     return (
