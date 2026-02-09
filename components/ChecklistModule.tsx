@@ -101,9 +101,9 @@ export const ChecklistModule: React.FC<ChecklistModuleProps> = ({ currentUser, o
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                     {lines.map(l => (
-                        <button key={l.id} onClick={() => handleStart(l.name)} className="bg-zinc-900 border border-zinc-800 p-6 rounded-xl hover:bg-blue-600/20 hover:border-blue-600 transition-all text-left group">
-                            <span className="text-zinc-500 text-xs font-bold uppercase mb-1 block group-hover:text-blue-400">Linha</span>
-                            <span className="text-xl font-bold text-white">{l.name}</span>
+                        <button key={l.id} onClick={() => handleStart(l.name)} className="bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 p-6 rounded-xl hover:bg-blue-50 dark:hover:bg-blue-900/10 hover:border-blue-500 dark:hover:border-blue-500 transition-all text-left group shadow-sm">
+                            <span className="text-slate-500 dark:text-zinc-500 text-xs font-bold uppercase mb-1 block group-hover:text-blue-500 dark:group-hover:text-blue-400">Linha</span>
+                            <span className="text-xl font-bold text-slate-900 dark:text-white">{l.name}</span>
                         </button>
                     ))}
                 </div>
@@ -116,41 +116,41 @@ export const ChecklistModule: React.FC<ChecklistModuleProps> = ({ currentUser, o
 
     return (
         <div className="max-w-4xl mx-auto pb-20">
-            <div className="flex items-center justify-between mb-6 sticky top-0 bg-zinc-950 py-4 z-10 border-b border-zinc-900">
+            <div className="flex items-center justify-between mb-6 sticky top-0 bg-white/80 dark:bg-zinc-950/80 backdrop-blur-md py-4 z-10 border-b border-slate-200 dark:border-zinc-800">
                 <div className="flex items-center gap-4">
                     <Button variant="ghost" onClick={() => setView('MENU')}><ArrowLeft /></Button>
                     <div>
-                        <h2 className="text-xl font-bold text-white">Checklist: {currentLine}</h2>
-                        <p className="text-xs text-zinc-500">Turno {currentUser.shift} • {currentUser.name}</p>
+                        <h2 className="text-xl font-bold text-slate-900 dark:text-white">Checklist: {currentLine}</h2>
+                        <p className="text-xs text-slate-500 dark:text-zinc-500">Turno {currentUser.shift} • {currentUser.name}</p>
                     </div>
                 </div>
                 <div className="text-right">
-                    <Button size="sm" onClick={handleSave} className="bg-green-600 hover:bg-green-700">Finalizar</Button>
+                    <Button size="sm" onClick={handleSave} className="bg-green-600 hover:bg-green-700 text-white">Finalizar</Button>
                 </div>
             </div>
 
             <div className="space-y-8">
                 {categories.map(cat => (
-                    <Card key={cat} className="bg-zinc-900 border-zinc-800">
-                        <h3 className="text-lg font-bold text-blue-400 mb-4 border-b border-zinc-800 pb-2">{cat}</h3>
+                    <Card key={cat} className="bg-white dark:bg-zinc-900 border-slate-200 dark:border-zinc-800">
+                        <h3 className="text-lg font-bold text-blue-600 dark:text-blue-400 mb-4 border-b border-slate-200 dark:border-zinc-800 pb-2">{cat}</h3>
                         <div className="space-y-4">
                             {items.filter(i => i.category === cat).map(item => (
-                                <div key={item.id} className="bg-zinc-950 p-4 rounded-xl border border-zinc-900">
+                                <div key={item.id} className="bg-slate-50 dark:bg-zinc-950 p-4 rounded-xl border border-slate-200 dark:border-zinc-900">
                                     <div className="flex justify-between items-start gap-4">
                                         <div className="flex-1">
-                                            <p className="font-medium text-zinc-200 mb-2">{item.text}</p>
+                                            <p className="font-medium text-slate-700 dark:text-zinc-200 mb-2">{item.text}</p>
                                             {item.imageUrl && (
-                                                <img src={item.imageUrl} className="h-24 rounded border border-zinc-800 mb-2" />
+                                                <img src={item.imageUrl} className="h-24 rounded border border-slate-200 dark:border-zinc-800 mb-2" />
                                             )}
                                             {data[item.id] === 'NG' && (
                                                 <div className="mt-2 space-y-2 animate-in slide-in-from-top-2">
                                                     <textarea
-                                                        className="w-full bg-red-900/10 border border-red-900/30 rounded p-2 text-sm text-red-200 placeholder-red-900/50"
+                                                        className="w-full bg-red-50 dark:bg-red-900/10 border border-red-200 dark:border-red-900/30 rounded p-2 text-sm text-red-700 dark:text-red-200 placeholder-red-400 dark:placeholder-red-900/50"
                                                         placeholder="Descreva o problema..."
                                                         value={evidence[item.id]?.comment || ''}
                                                         onChange={e => handleComment(item.id, e.target.value)}
                                                     />
-                                                    <label className="flex items-center gap-2 text-xs text-red-400 cursor-pointer hover:underline">
+                                                    <label className="flex items-center gap-2 text-xs text-red-600 dark:text-red-400 cursor-pointer hover:underline">
                                                         <Camera size={14} />
                                                         {evidence[item.id]?.photo ? 'Trocar Foto' : 'Adicionar Foto'}
                                                         <input type="file" className="hidden" accept="image/*" onChange={e => e.target.files?.[0] && handlePhoto(item.id, e.target.files[0])} />
@@ -161,8 +161,8 @@ export const ChecklistModule: React.FC<ChecklistModuleProps> = ({ currentUser, o
                                         <button
                                             onClick={() => handleToggle(item.id)}
                                             className={`w-14 h-14 rounded-xl flex items-center justify-center font-bold text-lg transition-all ${data[item.id] === 'OK' ? 'bg-green-600 text-white shadow-lg shadow-green-900/20' :
-                                                    data[item.id] === 'NG' ? 'bg-red-600 text-white shadow-lg shadow-red-900/20' :
-                                                        'bg-zinc-800 text-zinc-500'
+                                                data[item.id] === 'NG' ? 'bg-red-600 text-white shadow-lg shadow-red-900/20' :
+                                                    'bg-slate-200 dark:bg-zinc-800 text-slate-500 dark:text-zinc-500'
                                                 }`}
                                         >
                                             {data[item.id]}
@@ -174,10 +174,10 @@ export const ChecklistModule: React.FC<ChecklistModuleProps> = ({ currentUser, o
                     </Card>
                 ))}
 
-                <div className="bg-zinc-900 p-4 rounded-xl border border-zinc-800">
-                    <label className="label-text">Observações Gerais</label>
+                <div className="bg-white dark:bg-zinc-900 p-4 rounded-xl border border-slate-200 dark:border-zinc-800">
+                    <label className="label-text text-slate-700 dark:text-zinc-300">Observações Gerais</label>
                     <textarea
-                        className="w-full bg-zinc-950 border border-zinc-800 rounded-lg p-3 text-white"
+                        className="w-full bg-slate-50 dark:bg-zinc-950 border border-slate-300 dark:border-zinc-800 rounded-lg p-3 text-slate-900 dark:text-white mt-2 placeholder-slate-400 dark:placeholder-zinc-600 outline-none focus:ring-2 focus:ring-blue-600/50"
                         rows={3}
                         value={obs}
                         onChange={e => setObs(e.target.value)}

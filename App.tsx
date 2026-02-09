@@ -1144,33 +1144,33 @@ const App = () => {
 
         return (
             <div className="fixed inset-0 bg-black/90 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
-                <Card className="w-[95%] md:w-full md:max-w-4xl max-h-[90vh] overflow-y-auto bg-zinc-900 border border-zinc-800">
-                    <div className="flex justify-between items-center mb-6 sticky top-0 bg-zinc-900 pt-2 pb-4 z-10 border-b border-zinc-800">
+                <Card className="w-[95%] md:w-full md:max-w-4xl max-h-[90vh] overflow-y-auto bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800">
+                    <div className="flex justify-between items-center mb-6 sticky top-0 bg-white dark:bg-zinc-900 pt-2 pb-4 z-10 border-b border-slate-200 dark:border-zinc-800">
                         <div>
-                            <h3 className="text-xl font-bold text-white">Detalhes do Checklist</h3>
-                            <p className="text-zinc-400 text-sm">{new Date(previewLog.date).toLocaleString()} • {previewLog.userName}</p>
+                            <h3 className="text-xl font-bold text-slate-900 dark:text-white">Detalhes do Checklist</h3>
+                            <p className="text-slate-500 dark:text-zinc-400 text-sm">{new Date(previewLog.date).toLocaleString()} • {previewLog.userName}</p>
                         </div>
-                        <button onClick={() => setPreviewLog(null)} className="p-2 hover:bg-zinc-800 rounded-full transition-colors"><X size={24} /></button>
+                        <button onClick={() => setPreviewLog(null)} className="p-2 hover:bg-slate-100 dark:hover:bg-zinc-800 rounded-full transition-colors"><X size={24} className="text-slate-500 dark:text-zinc-500" /></button>
                     </div>
 
                     {previewLog.type === 'LINE_STOP' && lineStopDataRaw ? (
                         <div className="space-y-4">
                             <div className="grid grid-cols-2 gap-4 text-sm">
-                                <div className="bg-zinc-950 p-3 rounded border border-zinc-800">
-                                    <span className="block text-zinc-500 text-xs font-bold uppercase">Linha</span>
-                                    <span className="text-white font-medium">{previewLog.line}</span>
+                                <div className="bg-slate-50 dark:bg-zinc-950 p-3 rounded border border-slate-200 dark:border-zinc-800">
+                                    <span className="block text-slate-500 dark:text-zinc-500 text-xs font-bold uppercase">Linha</span>
+                                    <span className="text-slate-900 dark:text-white font-medium">{previewLog.line}</span>
                                 </div>
-                                <div className="bg-zinc-950 p-3 rounded border border-zinc-800">
-                                    <span className="block text-zinc-500 text-xs font-bold uppercase">Modelo</span>
-                                    <span className="text-white font-medium">{lineStopDataRaw.model}</span>
+                                <div className="bg-slate-50 dark:bg-zinc-950 p-3 rounded border border-slate-200 dark:border-zinc-800">
+                                    <span className="block text-slate-500 dark:text-zinc-500 text-xs font-bold uppercase">Modelo</span>
+                                    <span className="text-slate-900 dark:text-white font-medium">{lineStopDataRaw.model}</span>
                                 </div>
-                                <div className="bg-zinc-950 p-3 rounded border border-zinc-800">
-                                    <span className="block text-zinc-500 text-xs font-bold uppercase">Tempo Parado</span>
-                                    <span className="text-red-400 font-bold">{lineStopDataRaw.totalTime}</span>
+                                <div className="bg-slate-50 dark:bg-zinc-950 p-3 rounded border border-slate-200 dark:border-zinc-800">
+                                    <span className="block text-slate-500 dark:text-zinc-500 text-xs font-bold uppercase">Tempo Parado</span>
+                                    <span className="text-red-500 dark:text-red-400 font-bold">{lineStopDataRaw.totalTime}</span>
                                 </div>
-                                <div className="bg-zinc-950 p-3 rounded border border-zinc-800">
-                                    <span className="block text-zinc-500 text-xs font-bold uppercase">Setor</span>
-                                    <span className="text-white font-medium">{lineStopDataRaw.responsibleSector}</span>
+                                <div className="bg-slate-50 dark:bg-zinc-950 p-3 rounded border border-slate-200 dark:border-zinc-800">
+                                    <span className="block text-slate-500 dark:text-zinc-500 text-xs font-bold uppercase">Setor</span>
+                                    <span className="text-slate-900 dark:text-white font-medium">{lineStopDataRaw.responsibleSector}</span>
                                 </div>
                             </div>
                             <div className="bg-zinc-950 p-4 rounded border border-zinc-800">
@@ -1194,13 +1194,13 @@ const App = () => {
                     ) : (
                         <div className="space-y-6">
                             <div className="flex gap-4">
-                                <div className="flex-1 bg-zinc-950 p-4 rounded-xl border border-zinc-800 text-center">
-                                    <div className="text-2xl font-bold text-white">{previewLog.itemsCount}</div>
-                                    <div className="text-xs text-zinc-500 uppercase">Itens</div>
+                                <div className="flex-1 bg-slate-50 dark:bg-zinc-950 p-4 rounded-xl border border-slate-200 dark:border-zinc-800 text-center">
+                                    <div className="text-2xl font-bold text-slate-900 dark:text-white">{previewLog.itemsCount}</div>
+                                    <div className="text-xs text-slate-500 dark:text-zinc-500 uppercase">Itens</div>
                                 </div>
-                                <div className="flex-1 bg-zinc-950 p-4 rounded-xl border border-zinc-800 text-center">
-                                    <div className={`text-2xl font-bold ${previewLog.ngCount > 0 ? 'text-red-500' : 'text-green-500'}`}>{previewLog.ngCount}</div>
-                                    <div className="text-xs text-zinc-500 uppercase">Não Conforme</div>
+                                <div className="flex-1 bg-slate-50 dark:bg-zinc-950 p-4 rounded-xl border border-slate-200 dark:border-zinc-800 text-center">
+                                    <div className={`text-2xl font-bold ${previewLog.ngCount > 0 ? 'text-red-600 dark:text-red-500' : 'text-green-600 dark:text-green-500'}`}>{previewLog.ngCount}</div>
+                                    <div className="text-xs text-slate-500 dark:text-zinc-500 uppercase">Não Conforme</div>
                                 </div>
                             </div>
 
@@ -1216,11 +1216,11 @@ const App = () => {
 
                                             const evidence = previewLog.evidenceData?.[itemId];
                                             return (
-                                                <div key={itemId} className="bg-red-900/10 border border-red-900/30 p-4 rounded-lg">
-                                                    <p className="font-medium text-zinc-200 mb-2">{itemDef.text}</p>
-                                                    {evidence?.comment && <p className="text-sm text-red-300 mb-2">Obs: {evidence.comment}</p>}
+                                                <div key={itemId} className="bg-red-50 dark:bg-red-900/10 border border-red-200 dark:border-red-900/30 p-4 rounded-lg">
+                                                    <p className="font-medium text-slate-900 dark:text-zinc-200 mb-2">{itemDef.text}</p>
+                                                    {evidence?.comment && <p className="text-sm text-red-600 dark:text-red-300 mb-2">Obs: {evidence.comment}</p>}
                                                     {evidence?.photo && (
-                                                        <img src={evidence.photo} className="h-32 rounded border border-red-900/50" />
+                                                        <img src={evidence.photo} className="h-32 rounded border border-red-200 dark:border-red-900/50" />
                                                     )}
                                                 </div>
                                             )
@@ -1230,9 +1230,9 @@ const App = () => {
                             )}
 
                             {previewLog.observation && (
-                                <div className="bg-zinc-950 p-4 rounded-xl border border-zinc-800">
-                                    <h4 className="text-zinc-400 font-bold text-sm uppercase mb-2">Observações</h4>
-                                    <p className="text-zinc-300">{previewLog.observation}</p>
+                                <div className="bg-slate-50 dark:bg-zinc-950 p-4 rounded-xl border border-slate-200 dark:border-zinc-800">
+                                    <h4 className="text-slate-500 dark:text-zinc-400 font-bold text-sm uppercase mb-2">Observações</h4>
+                                    <p className="text-slate-800 dark:text-zinc-300">{previewLog.observation}</p>
                                 </div>
                             )}
 
@@ -1250,33 +1250,33 @@ const App = () => {
         if (!previewMeeting) return null;
         return (
             <div className="fixed inset-0 bg-black/90 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
-                <Card className="w-[95%] md:w-full max-w-3xl max-h-[90vh] overflow-y-auto bg-zinc-900 border border-zinc-800">
-                    <div className="flex justify-between items-center mb-6 border-b border-zinc-800 pb-4">
-                        <div>
-                            <h3 className="text-xl font-bold text-white">Visualizar Ata</h3>
-                            <p className="text-zinc-400 text-sm">{new Date(previewMeeting.date).toLocaleDateString()}</p>
+                <Card className="w-[95%] md:w-full max-w-3xl max-h-[90vh] overflow-y-auto bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800">
+                    <div className="flex justify-between items-center mb-6 border-b border-slate-200 dark:border-zinc-800 pb-4">
+                        <div className="bg-white dark:bg-zinc-900 pb-4">
+                            <h3 className="text-xl font-bold text-slate-900 dark:text-white">Visualizar Ata</h3>
+                            <p className="text-slate-500 dark:text-zinc-400 text-sm">{new Date(previewMeeting.date).toLocaleDateString()}</p>
                         </div>
-                        <button onClick={() => setPreviewMeeting(null)} className="p-2 hover:bg-zinc-800 rounded-full transition-colors"><X size={24} /></button>
+                        <button onClick={() => setPreviewMeeting(null)} className="p-2 hover:bg-slate-100 dark:hover:bg-zinc-800 rounded-full transition-colors"><X size={24} className="text-slate-500 dark:text-zinc-500" /></button>
                     </div>
                     <div className="space-y-6">
-                        <div className="bg-zinc-950 p-4 rounded-xl border border-zinc-800">
-                            <h4 className="text-blue-400 font-bold text-lg mb-1">{previewMeeting.title}</h4>
-                            <p className="text-sm text-zinc-400">Horário: {previewMeeting.startTime} - {previewMeeting.endTime}</p>
-                            <p className="text-xs text-zinc-500 mt-2">Registrado por: {previewMeeting.createdBy || 'Sistema'}</p>
+                        <div className="bg-slate-50 dark:bg-zinc-950 p-4 rounded-xl border border-slate-200 dark:border-zinc-800">
+                            <h4 className="text-blue-600 dark:text-blue-400 font-bold text-lg mb-1">{previewMeeting.title}</h4>
+                            <p className="text-sm text-slate-500 dark:text-zinc-400">Horário: {previewMeeting.startTime} - {previewMeeting.endTime}</p>
+                            <p className="text-xs text-slate-400 dark:text-zinc-500 mt-2">Registrado por: {previewMeeting.createdBy || 'Sistema'}</p>
                         </div>
 
-                        <div className="bg-zinc-950 p-4 rounded-xl border border-zinc-800">
-                            <h5 className="font-bold text-zinc-300 mb-2 uppercase text-xs">Participantes</h5>
+                        <div className="bg-slate-50 dark:bg-zinc-950 p-4 rounded-xl border border-slate-200 dark:border-zinc-800">
+                            <h5 className="font-bold text-slate-700 dark:text-zinc-300 mb-2 uppercase text-xs">Participantes</h5>
                             <div className="flex flex-wrap gap-2">
                                 {previewMeeting.participants.map((p, idx) => (
-                                    <span key={idx} className="bg-zinc-800 text-zinc-300 px-3 py-1 rounded-full text-xs border border-zinc-700">{p}</span>
+                                    <span key={idx} className="bg-white dark:bg-zinc-800 text-slate-700 dark:text-zinc-300 px-3 py-1 rounded-full text-xs border border-slate-300 dark:border-zinc-700">{p}</span>
                                 ))}
                             </div>
                         </div>
 
-                        <div className="bg-zinc-950 p-4 rounded-xl border border-zinc-800">
-                            <h5 className="font-bold text-zinc-300 mb-2 uppercase text-xs">Assuntos Tratados</h5>
-                            <p className="text-zinc-300 text-sm whitespace-pre-wrap">{previewMeeting.topics}</p>
+                        <div className="bg-slate-50 dark:bg-zinc-950 p-4 rounded-xl border border-slate-200 dark:border-zinc-800">
+                            <h5 className="font-bold text-slate-700 dark:text-zinc-300 mb-2 uppercase text-xs">Assuntos Tratados</h5>
+                            <p className="text-slate-800 dark:text-zinc-300 text-sm whitespace-pre-wrap">{previewMeeting.topics}</p>
                         </div>
 
                         {previewMeeting.photoUrl && (
@@ -1487,19 +1487,19 @@ const App = () => {
                                             if (e.key === 'Enter') handleLogin(e);
                                         }}
                                     />
-                                    <button type="button" onClick={() => setShowLoginPassword(!showLoginPassword)} className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-500 hover:text-zinc-300">
+                                    <button type="button" onClick={() => setShowLoginPassword(!showLoginPassword)} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 dark:text-zinc-500 hover:text-slate-600 dark:hover:text-zinc-300">
                                         {showLoginPassword ? <EyeOff size={16} /> : <Eye size={16} />}
                                     </button>
                                 </div>
                             </div>
-                            {loginError && <div className="text-red-400 text-sm bg-red-900/20 p-3 rounded border border-red-900/50 flex items-center gap-2"><AlertCircle size={16} /> {loginError}</div>}
+                            {loginError && <div className="text-red-600 dark:text-red-400 text-sm bg-red-50 dark:bg-red-900/20 p-3 rounded border border-red-200 dark:border-red-900/50 flex items-center gap-2"><AlertCircle size={16} /> {loginError}</div>}
                             <Button fullWidth type="submit" disabled={isLoading}>{isLoading ? 'Entrando...' : 'Entrar'}</Button>
                         </form>
-                        <div className="mt-6 flex flex-col gap-3">
-                            <button onClick={() => setView('REGISTER')} className="text-sm text-zinc-500 hover:text-blue-400 transition-colors">Não tem conta? Cadastre-se</button>
-                            <button onClick={() => setView('RECOVER')} className="text-xs text-zinc-600 hover:text-zinc-400">Esqueci minha senha</button>
-                            <div className="pt-4 border-t border-zinc-800/50">
-                                <button onClick={() => setView('SETUP')} className="text-xs text-zinc-700 hover:text-zinc-500 flex items-center justify-center gap-1 w-full"><Wifi size={12} /> Configurar Servidor</button>
+                        <div className="mt-6 flex flex-col gap-3 text-center">
+                            <button onClick={() => setView('REGISTER')} className="text-sm text-slate-500 dark:text-zinc-500 hover:text-blue-600 dark:hover:text-blue-400 transition-colors">Não tem conta? Cadastre-se</button>
+                            <button onClick={() => setView('RECOVER')} className="text-xs text-slate-400 dark:text-zinc-600 hover:text-slate-600 dark:hover:text-zinc-400 transition-colors">Esqueci minha senha</button>
+                            <div className="pt-4 border-t border-slate-200 dark:border-zinc-800/50 w-full">
+                                <button onClick={() => setView('SETUP')} className="text-xs text-slate-400 dark:text-zinc-700 hover:text-slate-600 dark:hover:text-zinc-500 flex items-center justify-center gap-1 w-full transition-colors"><Wifi size={12} /> Configurar Servidor</button>
                             </div>
                         </div>
                     </div>
@@ -1823,12 +1823,12 @@ const App = () => {
                         {(auditTab === 'LEADER_HISTORY' || auditTab === 'MAINTENANCE_HISTORY') && (
                             <div className="space-y-4">
                                 {historyLogs.map(log => (
-                                    <div key={log.id} className="bg-zinc-900 border border-zinc-800 rounded-xl p-5 flex flex-col md:flex-row justify-between items-center gap-4 hover:border-zinc-700 transition-colors">
+                                    <div key={log.id} className="bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 rounded-xl p-5 flex flex-col md:flex-row justify-between items-center gap-4 hover:border-blue-500 dark:hover:border-zinc-700 transition-colors shadow-sm">
                                         <div className="flex items-center gap-4">
-                                            <div className={`w-10 h-10 rounded-full flex items-center justify-center text-lg font-bold ${log.ngCount > 0 ? 'bg-red-900/20 text-red-500 border border-red-900/30' : 'bg-green-900/20 text-green-500 border border-green-900/30'}`}>{log.ngCount > 0 ? '!' : '✓'}</div>
+                                            <div className={`w-10 h-10 rounded-full flex items-center justify-center text-lg font-bold ${log.ngCount > 0 ? 'bg-red-100 dark:bg-red-900/20 text-red-600 dark:text-red-500 border border-red-200 dark:border-red-900/30' : 'bg-green-100 dark:bg-green-900/20 text-green-600 dark:text-green-500 border border-green-200 dark:border-green-900/30'}`}>{log.ngCount > 0 ? '!' : '✓'}</div>
                                             <div>
-                                                <p className="font-bold text-zinc-200">{log.line} {log.maintenanceTarget ? `- ${log.maintenanceTarget}` : ''} <span className="text-zinc-500 text-sm font-normal">• {log.userName}</span></p>
-                                                <p className="text-sm text-zinc-400">{new Date(log.date).toLocaleString()} • {log.ngCount > 0 ? `${log.ngCount} Falhas` : '100% OK'}</p>
+                                                <p className="font-bold text-slate-900 dark:text-zinc-200">{log.line} {log.maintenanceTarget ? `- ${log.maintenanceTarget}` : ''} <span className="text-slate-500 dark:text-zinc-500 text-sm font-normal">• {log.userName}</span></p>
+                                                <p className="text-sm text-slate-500 dark:text-zinc-400">{new Date(log.date).toLocaleString()} • {log.ngCount > 0 ? `${log.ngCount} Falhas` : '100% OK'}</p>
                                             </div>
                                         </div>
                                         <div className="flex gap-2">
@@ -1846,16 +1846,16 @@ const App = () => {
                             <div className="overflow-x-auto pb-4">
                                 <table className="w-full min-w-[600px] text-sm border-collapse">
                                     <thead>
-                                        <tr className="bg-zinc-950 text-zinc-400 border-b border-zinc-800">
+                                        <tr className="bg-slate-50 dark:bg-zinc-950 text-slate-500 dark:text-zinc-400 border-b border-slate-200 dark:border-zinc-800">
                                             <th className="p-3 text-left min-w-[150px]">Linha</th>
                                             {['Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sab'].map(d => <th key={d} className="p-3 text-center">{d}</th>)}
                                             {linesShiftFilter !== 'ALL' && <th className="p-3 text-center">Ações</th>}
                                         </tr>
                                     </thead>
-                                    <tbody className="divide-y divide-zinc-800">
+                                    <tbody className="divide-y divide-slate-100 dark:divide-zinc-800">
                                         {(auditTab === 'LINES' ? linesMatrix : maintenanceMatrix).map((row) => (
-                                            <tr key={row.line} className="hover:bg-zinc-900/50">
-                                                <td className="p-3 font-bold text-white">{row.line}</td>
+                                            <tr key={row.line} className="hover:bg-slate-50 dark:hover:bg-zinc-900/50">
+                                                <td className="p-3 font-bold text-slate-900 dark:text-white">{row.line}</td>
                                                 {row.statuses.map((st, idx) => (
                                                     <td key={idx} className="p-3 text-center">
                                                         <div
@@ -1979,22 +1979,42 @@ const App = () => {
 
                         {adminTab === 'USERS' && (
                             <Card>
-                                <div className="flex justify-between items-center mb-4"><h3 className="text-lg font-bold">Usuários</h3><Button onClick={() => setView('REGISTER')} variant="outline" size="sm"><UserPlus size={16} /> Novo</Button></div>
-                                <div className="overflow-x-auto"><table className="w-full text-sm text-left text-zinc-300"><thead className="text-xs text-zinc-400 uppercase bg-zinc-950"><tr><th>Nome</th><th>Matrícula</th><th>Função</th><th>Admin</th><th>Ações</th></tr></thead><tbody className="divide-y divide-zinc-800">{usersList.map(u => (<tr key={u.matricula}><td className="px-4 py-3">{u.name}</td><td className="px-4 py-3">{u.matricula}</td><td className="px-4 py-3">{u.role}</td><td className="px-4 py-3">{u.isAdmin ? <span className="text-green-400 font-bold bg-green-900/30 px-2 py-1 rounded text-xs border border-green-900/50">ADMIN</span> : <span className="text-zinc-600">-</span>}</td><td className="px-4 py-3"><button onClick={() => openEditModal(u)} className="mr-2 text-blue-400"><Edit3 size={16} /></button><button onClick={async () => { if (confirm('Excluir?')) { await deleteUser(u.matricula); setUsersList(await getAllUsers()); } }} className="text-red-400"><Trash2 size={16} /></button></td></tr>))}</tbody></table></div>
+                                <div className="flex justify-between items-center mb-4"><h3 className="text-lg font-bold text-slate-900 dark:text-white">Usuários</h3><Button onClick={() => setView('REGISTER')} variant="outline" size="sm"><UserPlus size={16} /> Novo</Button></div>
+                                <div className="overflow-x-auto">
+                                    <table className="w-full text-sm text-left text-slate-700 dark:text-zinc-300">
+                                        <thead className="text-xs text-slate-500 dark:text-zinc-400 uppercase bg-slate-50 dark:bg-zinc-950 border-b border-slate-200 dark:border-zinc-800">
+                                            <tr><th>Nome</th><th>Matrícula</th><th>Função</th><th>Admin</th><th>Ações</th></tr>
+                                        </thead>
+                                        <tbody className="divide-y divide-slate-200 dark:divide-zinc-800">
+                                            {usersList.map(u => (
+                                                <tr key={u.matricula} className="hover:bg-slate-50 dark:hover:bg-zinc-900/50 transition-colors">
+                                                    <td className="px-4 py-3 font-medium text-slate-900 dark:text-white">{u.name}</td>
+                                                    <td className="px-4 py-3">{u.matricula}</td>
+                                                    <td className="px-4 py-3">{u.role}</td>
+                                                    <td className="px-4 py-3">{u.isAdmin ? <span className="text-green-600 dark:text-green-400 font-bold bg-green-100 dark:bg-green-900/30 px-2 py-1 rounded text-xs border border-green-200 dark:border-green-900/50">ADMIN</span> : <span className="text-slate-400 dark:text-zinc-600">-</span>}</td>
+                                                    <td className="px-4 py-3">
+                                                        <button onClick={() => openEditModal(u)} className="mr-2 text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300"><Edit3 size={16} /></button>
+                                                        <button onClick={async () => { if (confirm('Excluir?')) { await deleteUser(u.matricula); setUsersList(await getAllUsers()); } }} className="text-red-600 dark:text-red-400 hover:text-red-800 dark:hover:text-red-300"><Trash2 size={16} /></button>
+                                                    </td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                </div>
                             </Card>
                         )}
 
                         {showUserEditModal && editingUser && (
                             <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
-                                <Card className="w-full max-w-md bg-zinc-900 border-zinc-800">
-                                    <h3 className="text-xl font-bold mb-4">Editar Usuário</h3>
+                                <Card className="w-full max-w-md bg-white dark:bg-zinc-900 border-slate-200 dark:border-zinc-800">
+                                    <h3 className="text-xl font-bold mb-4 text-slate-900 dark:text-white">Editar Usuário</h3>
                                     <div className="space-y-3">
                                         <Input label="Nome" value={editingUser.name} onChange={e => setEditingUser({ ...editingUser, name: e.target.value })} />
                                         <Input label="Matrícula" value={editingUser.matricula} onChange={e => setEditingUser({ ...editingUser, matricula: e.target.value })} />
-                                        <div><label className="text-xs font-medium text-zinc-400 mb-1">Função</label><select className="w-full bg-zinc-950 border border-zinc-800 rounded p-2 text-white" value={editingUser.role} onChange={e => setEditingUser({ ...editingUser, role: e.target.value })}>{availableRoles.map(r => <option key={r.id} value={r.name}>{r.name}</option>)}</select></div>
-                                        <div><label className="text-xs font-medium text-zinc-400 mb-1">Turno</label><select className="w-full bg-zinc-950 border border-zinc-800 rounded p-2 text-white" value={editingUser.shift} onChange={e => setEditingUser({ ...editingUser, shift: e.target.value })}><option value="1">1º Turno</option><option value="2">2º Turno</option></select></div>
+                                        <div><label className="text-xs font-medium text-slate-500 dark:text-zinc-400 mb-1">Função</label><select className="w-full bg-slate-50 dark:bg-zinc-950 border border-slate-300 dark:border-zinc-800 rounded p-2 text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-blue-600/50" value={editingUser.role} onChange={e => setEditingUser({ ...editingUser, role: e.target.value })}>{availableRoles.map(r => <option key={r.id} value={r.name}>{r.name}</option>)}</select></div>
+                                        <div><label className="text-xs font-medium text-slate-500 dark:text-zinc-400 mb-1">Turno</label><select className="w-full bg-slate-50 dark:bg-zinc-950 border border-slate-300 dark:border-zinc-800 rounded p-2 text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-blue-600/50" value={editingUser.shift} onChange={e => setEditingUser({ ...editingUser, shift: e.target.value })}><option value="1">1º Turno</option><option value="2">2º Turno</option></select></div>
                                         <Input label="Nova Senha (Opcional)" value={editingUser.password || ''} onChange={e => setEditingUser({ ...editingUser, password: e.target.value })} />
-                                        <div className="flex items-center gap-2 mt-2"><input type="checkbox" id="isAdminCheck" checked={editingUser.isAdmin || false} onChange={e => setEditingUser({ ...editingUser, isAdmin: e.target.checked })} /><label htmlFor="isAdminCheck" className="text-sm text-zinc-300">Acesso Admin Global</label></div>
+                                        <div className="flex items-center gap-2 mt-2"><input type="checkbox" id="isAdminCheck" checked={editingUser.isAdmin || false} onChange={e => setEditingUser({ ...editingUser, isAdmin: e.target.checked })} /><label htmlFor="isAdminCheck" className="text-sm text-slate-600 dark:text-zinc-300 cursor-pointer">Acesso Admin Global</label></div>
                                         <div className="flex gap-2 mt-4"><Button variant="secondary" fullWidth onClick={() => setShowUserEditModal(false)}>Cancelar</Button><Button fullWidth onClick={saveUserChanges}>Salvar</Button></div>
                                     </div>
                                 </Card>

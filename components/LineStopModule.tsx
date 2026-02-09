@@ -99,7 +99,7 @@ export const LineStopModule: React.FC<LineStopModuleProps> = ({ currentUser, onB
                 <h1 className="text-2xl font-bold bg-gradient-to-r from-red-500 to-orange-500 bg-clip-text text-transparent">Parada de Linha</h1>
             </header>
 
-            <div className="flex gap-2 bg-zinc-900 p-2 rounded-xl w-fit">
+            <div className="flex gap-2 bg-slate-100 dark:bg-zinc-900 p-2 rounded-xl w-fit border border-slate-200 dark:border-zinc-800">
                 <Button variant={tab === 'NEW' ? 'primary' : 'ghost'} onClick={() => setTab('NEW')}>Nova Parada</Button>
                 <Button variant={tab === 'PENDING' ? 'primary' : 'ghost'} onClick={() => setTab('PENDING')}>Justificar</Button>
                 <Button variant={tab === 'UPLOAD' ? 'primary' : 'ghost'} onClick={() => setTab('UPLOAD')}>Upload Assinado</Button>
@@ -107,13 +107,22 @@ export const LineStopModule: React.FC<LineStopModuleProps> = ({ currentUser, onB
             </div>
 
             {tab === 'NEW' && (
-                <Card className="bg-zinc-900 border-zinc-800">
+                <Card className="bg-white dark:bg-zinc-900 border-slate-200 dark:border-zinc-800">
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <div><label className="label-text">Linha</label><select className="input-select" value={form.line} onChange={e => setForm({ ...form, line: e.target.value })}>{lines.map(l => <option key={l.name} value={l.name}>{l.name}</option>)}</select></div>
-                        <div><label className="label-text">Modelo</label><select className="input-select" value={form.model} onChange={e => setForm({ ...form, model: e.target.value })}>{models.map(m => <option key={m} value={m}>{m}</option>)}</select></div>
+                        <div>
+                            <label className="text-xs font-bold text-slate-500 dark:text-zinc-500 uppercase mb-1 block">Linha</label>
+                            <select className="w-full bg-white dark:bg-zinc-950 border border-slate-300 dark:border-zinc-800 rounded-lg p-2.5 text-sm text-slate-900 dark:text-zinc-100 outline-none focus:ring-2 focus:ring-blue-600/50" value={form.line} onChange={e => setForm({ ...form, line: e.target.value })}>{lines.map(l => <option key={l.name} value={l.name}>{l.name}</option>)}</select>
+                        </div>
+                        <div>
+                            <label className="text-xs font-bold text-slate-500 dark:text-zinc-500 uppercase mb-1 block">Modelo</label>
+                            <select className="w-full bg-white dark:bg-zinc-950 border border-slate-300 dark:border-zinc-800 rounded-lg p-2.5 text-sm text-slate-900 dark:text-zinc-100 outline-none focus:ring-2 focus:ring-blue-600/50" value={form.model} onChange={e => setForm({ ...form, model: e.target.value })}>{models.map(m => <option key={m} value={m}>{m}</option>)}</select>
+                        </div>
                         <Input type="time" label="Início" value={form.startTime} onChange={e => setForm({ ...form, startTime: e.target.value })} />
                         <Input type="time" label="Fim" value={form.endTime} onChange={e => setForm({ ...form, endTime: e.target.value })} />
-                        <div><label className="label-text">Setor Responsável</label><select className="input-select" value={form.responsibleSector} onChange={e => setForm({ ...form, responsibleSector: e.target.value })}><option value="">Select</option><option>Manutenção</option><option>Produção</option><option>Qualidade</option><option>Engenharia</option></select></div>
+                        <div>
+                            <label className="text-xs font-bold text-slate-500 dark:text-zinc-500 uppercase mb-1 block">Setor Responsável</label>
+                            <select className="w-full bg-white dark:bg-zinc-950 border border-slate-300 dark:border-zinc-800 rounded-lg p-2.5 text-sm text-slate-900 dark:text-zinc-100 outline-none focus:ring-2 focus:ring-blue-600/50" value={form.responsibleSector} onChange={e => setForm({ ...form, responsibleSector: e.target.value })}><option value="">Select</option><option>Manutenção</option><option>Produção</option><option>Qualidade</option><option>Engenharia</option></select>
+                        </div>
                         <div className="md:col-span-2"><Input label="Motivo (A7:J11)" value={form.motivo} onChange={e => setForm({ ...form, motivo: e.target.value })} /></div>
                     </div>
                     <Button className="mt-4" onClick={handleSave}><Save className="mr-2" /> Salvar Parada</Button>
@@ -123,16 +132,16 @@ export const LineStopModule: React.FC<LineStopModuleProps> = ({ currentUser, onB
             {tab === 'PENDING' && (
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     {logs.filter(l => l.status === 'WAITING_JUSTIFICATION').map(l => (
-                        <div key={l.id} className="bg-zinc-900 p-4 rounded-xl border border-l-4 border-l-red-500 border-zinc-800 cursor-pointer" onClick={() => setActiveLog(l)}>
-                            <h4 className="font-bold text-white">{l.line} - {(l.data as LineStopData).totalTime}</h4>
-                            <p className="text-sm text-zinc-400">Motivo: {(l.data as LineStopData).motivo}</p>
+                        <div key={l.id} className="bg-white dark:bg-zinc-900 p-4 rounded-xl border border-l-4 border-l-red-500 border-slate-200 dark:border-zinc-800 cursor-pointer shadow-sm hover:shadow-md transition-all" onClick={() => setActiveLog(l)}>
+                            <h4 className="font-bold text-slate-900 dark:text-white">{l.line} - {(l.data as LineStopData).totalTime}</h4>
+                            <p className="text-sm text-slate-500 dark:text-zinc-400">Motivo: {(l.data as LineStopData).motivo}</p>
                         </div>
                     ))}
                     {activeLog && (
-                        <div className="fixed inset-0 bg-black/80 flex items-center justify-center p-4">
-                            <Card className="w-full max-w-md">
-                                <h3 className="font-bold mb-4">Justificar Parada</h3>
-                                <textarea className="w-full bg-zinc-950 border border-zinc-800 p-3 text-white rounded-lg mb-4" rows={5} placeholder="Justifique..." value={justification} onChange={e => setJustification(e.target.value)} />
+                        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 z-[9999]">
+                            <Card className="w-full max-w-md bg-white dark:bg-zinc-900 border-slate-200 dark:border-zinc-800">
+                                <h3 className="font-bold mb-4 text-slate-900 dark:text-white">Justificar Parada</h3>
+                                <textarea className="w-full bg-slate-50 dark:bg-zinc-950 border border-slate-300 dark:border-zinc-800 p-3 text-slate-900 dark:text-white rounded-lg mb-4 outline-none focus:ring-2 focus:ring-blue-600/50" rows={5} placeholder="Justifique..." value={justification} onChange={e => setJustification(e.target.value)} />
                                 <div className="flex justify-end gap-2"><Button variant="ghost" onClick={() => setActiveLog(null)}>Cancelar</Button><Button onClick={handleJustify}>Salvar</Button></div>
                             </Card>
                         </div>
@@ -143,16 +152,16 @@ export const LineStopModule: React.FC<LineStopModuleProps> = ({ currentUser, onB
             {tab === 'UPLOAD' && (
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     {logs.filter(l => l.status === 'WAITING_SIGNATURE').map(l => (
-                        <div key={l.id} className="bg-zinc-900 p-4 rounded-xl border border-l-4 border-l-yellow-500 border-zinc-800 cursor-pointer" onClick={() => setActiveLog(l)}>
-                            <h4 className="font-bold text-white">{l.line} - {(l.data as LineStopData).justifiedBy}</h4>
-                            <p className="text-sm text-zinc-400">Clique para anexar foto assinada</p>
+                        <div key={l.id} className="bg-white dark:bg-zinc-900 p-4 rounded-xl border border-l-4 border-l-yellow-500 border-slate-200 dark:border-zinc-800 cursor-pointer shadow-sm hover:shadow-md transition-all" onClick={() => setActiveLog(l)}>
+                            <h4 className="font-bold text-slate-900 dark:text-white">{l.line} - {(l.data as LineStopData).justifiedBy}</h4>
+                            <p className="text-sm text-slate-500 dark:text-zinc-400">Clique para anexar foto assinada</p>
                         </div>
                     ))}
                     {activeLog && (
-                        <div className="fixed inset-0 bg-black/80 flex items-center justify-center p-4">
-                            <Card className="w-full max-w-md">
-                                <h3 className="font-bold mb-4">Anexar Documento Assinado</h3>
-                                <input type="file" accept="image/*" onChange={e => e.target.files?.[0] && handleUpload(e.target.files[0])} className="block w-full text-sm text-zinc-400 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:bg-blue-600 file:text-white hover:file:bg-blue-700" />
+                        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 z-[9999]">
+                            <Card className="w-full max-w-md bg-white dark:bg-zinc-900 border-slate-200 dark:border-zinc-800">
+                                <h3 className="font-bold mb-4 text-slate-900 dark:text-white">Anexar Documento Assinado</h3>
+                                <input type="file" accept="image/*" onChange={e => e.target.files?.[0] && handleUpload(e.target.files[0])} className="block w-full text-sm text-slate-500 dark:text-zinc-400 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:bg-blue-600 file:text-white hover:file:bg-blue-700" />
                                 <Button className="mt-4 w-full" variant="ghost" onClick={() => setActiveLog(null)}>Cancelar</Button>
                             </Card>
                         </div>
