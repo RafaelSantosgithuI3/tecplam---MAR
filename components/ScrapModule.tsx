@@ -300,7 +300,7 @@ const ScrapForm = ({ users, models, stations, lines, materials, onSuccess, curre
                     </div>
                 </div>
 
-                <hr className="border-zinc-800" />
+                <hr className="border-slate-200 dark:border-zinc-800" />
 
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                     <div>
@@ -492,7 +492,7 @@ const ScrapPending = ({ scraps, currentUser, onUpdate, users }: any) => {
                                 <Input label="Turno" value={selected.shift} readOnly />
                                 <Input label="Modelo" value={selected.model} readOnly />
                             </div>
-                            <hr className="border-zinc-800" />
+                            <hr className="border-slate-200 dark:border-zinc-800" />
                             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                                 <Input label="Cód. Matéria Prima" value={selected.code} readOnly />
                                 <Input label="Modelo Usado" value={selected.usedModel} readOnly />

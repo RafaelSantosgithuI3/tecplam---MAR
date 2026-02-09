@@ -70,7 +70,7 @@ export const NetworkConfig: React.FC<NetworkConfigProps> = ({ onConfigured }) =>
 
     return (
         <div className="w-full flex-1 flex flex-col items-center justify-center p-4 animate-in fade-in zoom-in duration-300">
-            <Card className="w-full max-w-md bg-zinc-900/80 backdrop-blur border-zinc-700 shadow-2xl">
+            <Card className="w-full max-w-md bg-white/80 dark:bg-zinc-900/80 backdrop-blur border-slate-200 dark:border-zinc-700 shadow-2xl">
                 <div className="text-center mb-8">
                     <div className="w-20 h-20 bg-blue-600/20 rounded-full flex items-center justify-center mx-auto mb-4 relative">
                         <Wifi size={32} className="text-blue-500" />
@@ -85,13 +85,13 @@ export const NetworkConfig: React.FC<NetworkConfigProps> = ({ onConfigured }) =>
                 </div>
 
                 <div className="space-y-4">
-                    <div className="bg-zinc-950/50 p-4 rounded-xl border border-zinc-800 flex items-center gap-3">
+                    <div className="bg-slate-50 dark:bg-zinc-950/50 p-4 rounded-xl border border-slate-200 dark:border-zinc-800 flex items-center gap-3">
                         <Server size={20} className="text-zinc-500" />
                         <div className="flex-1">
                             <label className="text-[10px] uppercase font-bold text-zinc-500 block mb-1">Endereço IP (Ex: 192.168.0.10)</label>
                             <input
                                 type="text"
-                                className="w-full bg-transparent border-none p-0 text-zinc-100 font-mono focus:ring-0 placeholder:text-zinc-700"
+                                className="w-full bg-transparent border-none p-0 text-slate-900 dark:text-zinc-100 font-mono focus:ring-0 placeholder:text-slate-400 dark:placeholder:text-zinc-700"
                                 placeholder="192.168.X.X"
                                 value={ip}
                                 onChange={e => setIp(e.target.value)}
