@@ -130,15 +130,15 @@ export const AuditModule = ({ currentUser, onBack, users, lines }: any) => {
         return (
             <div className="space-y-4">
                 {tab === 'MAINTENANCE_EDITOR' && (
-                    <div className="bg-zinc-900 p-4 rounded-xl border border-zinc-800">
-                        <label className="label-text">Selecionar Linha</label>
-                        <select className="input-select" value={maintLine} onChange={e => setMaintLine(e.target.value)}>
+                    <div className="bg-white dark:bg-zinc-900 p-4 rounded-xl border border-slate-200 dark:border-zinc-800">
+                        <label className="label-text text-slate-700 dark:text-zinc-400">Selecionar Linha</label>
+                        <select className="w-full bg-slate-50 dark:bg-zinc-950 border border-slate-300 dark:border-zinc-800 rounded-lg p-2.5 text-slate-900 dark:text-zinc-100 outline-none focus:ring-2 focus:ring-blue-600" value={maintLine} onChange={e => setMaintLine(e.target.value)}>
                             {lines.map((l: any) => <option key={l.id} value={l.name}>{l.name}</option>)}
                         </select>
                     </div>
                 )}
                 {list.map((item, idx) => (
-                    <div key={item.id} className="bg-zinc-900 p-4 rounded-xl border border-zinc-800 flex gap-4">
+                    <div key={item.id} className="bg-white dark:bg-zinc-900 p-4 rounded-xl border border-slate-200 dark:border-zinc-800 flex gap-4">
                         <div className="flex-1 space-y-2">
                             <Input label="Categoria" value={item.category} onChange={e => {
                                 const val = e.target.value;
@@ -163,7 +163,7 @@ export const AuditModule = ({ currentUser, onBack, users, lines }: any) => {
     // --- RENDER ---
     return (
         <div className="space-y-6">
-            <header className="flex items-center justify-between pb-6 border-b border-zinc-800">
+            <header className="flex items-center justify-between pb-6 border-b border-slate-200 dark:border-zinc-800">
                 <Button variant="ghost" onClick={onBack}><ArrowLeft /></Button>
                 <div className="flex gap-2 overflow-x-auto">
                     {[
@@ -182,11 +182,11 @@ export const AuditModule = ({ currentUser, onBack, users, lines }: any) => {
 
             {/* FILTERS */}
             {tab.includes('HISTORY') && (
-                <div className="flex gap-4 bg-zinc-900 p-4 rounded-xl border border-zinc-800">
+                <div className="flex gap-4 bg-white dark:bg-zinc-900 p-4 rounded-xl border border-slate-200 dark:border-zinc-800">
                     <Input type="date" value={dateFilter} onChange={e => setDateFilter(e.target.value)} label="Data" />
                     <div className="w-40">
-                        <label className="label-text">Turno</label>
-                        <select className="input-select" value={shiftFilter} onChange={e => setShiftFilter(e.target.value)}>
+                        <label className="label-text text-slate-700 dark:text-zinc-400">Turno</label>
+                        <select className="w-full bg-slate-50 dark:bg-zinc-950 border border-slate-300 dark:border-zinc-800 rounded-lg p-2.5 text-slate-900 dark:text-zinc-100 outline-none focus:ring-2 focus:ring-blue-600" value={shiftFilter} onChange={e => setShiftFilter(e.target.value)}>
                             <option value="ALL">Todos</option>
                             <option value="1">1º</option>
                             <option value="2">2º</option>
@@ -196,7 +196,7 @@ export const AuditModule = ({ currentUser, onBack, users, lines }: any) => {
             )}
 
             {tab.includes('MATRIX') || tab === 'LINES' || tab === 'LEADERS' ? (
-                <div className="flex gap-4 bg-zinc-900 p-4 rounded-xl border border-zinc-800">
+                <div className="flex gap-4 bg-white dark:bg-zinc-900 p-4 rounded-xl border border-slate-200 dark:border-zinc-800">
                     <Input type="week" value={weekFilter} onChange={e => setWeekFilter(e.target.value)} label="Semana" />
                 </div>
             ) : null}
@@ -207,14 +207,14 @@ export const AuditModule = ({ currentUser, onBack, users, lines }: any) => {
                     {/* Matrix Views */}
                     {(tab === 'LINES' || tab === 'MAINTENANCE_MATRIX') && (
                         <div className="overflow-x-auto"><table className="w-full text-sm text-center">
-                            <thead><tr><th className="p-2 text-left">Linha</th>{['S', 'T', 'Q', 'Q', 'S', 'S'].map(d => <th key={d} className="p-2">{d}</th>)}</tr></thead>
+                            <thead><tr className="bg-slate-100 dark:bg-zinc-950 border-b border-slate-200 dark:border-zinc-800 text-slate-600 dark:text-zinc-400"><th className="p-2 text-left">Linha</th>{['S', 'T', 'Q', 'Q', 'S', 'S'].map(d => <th key={d} className="p-2">{d}</th>)}</tr></thead>
                             <tbody>
                                 {(tab === 'LINES' ? linesMatrix : maintMatrix).map(r => (
-                                    <tr key={r.line} className="border-t border-zinc-800">
-                                        <td className="p-2 text-left font-bold">{r.line}</td>
+                                    <tr key={r.line} className="border-b border-slate-100 dark:border-zinc-800 hover:bg-slate-50 dark:hover:bg-zinc-900/50">
+                                        <td className="p-2 text-left font-bold text-slate-900 dark:text-white">{r.line}</td>
                                         {r.statuses.map((s, i) => (
                                             <td key={i} className="p-2">
-                                                <div className={`w-8 h-8 rounded-full flex items-center justify-center mx-auto ${s.status === 'OK' ? 'bg-green-900/50 text-green-500' : s.status === 'NG' ? 'bg-red-900/50 text-red-500' : 'bg-zinc-800 text-zinc-600'}`}>
+                                                <div className={`w-8 h-8 rounded-full flex items-center justify-center mx-auto text-xs font-bold ${s.status === 'OK' ? 'bg-green-100 dark:bg-green-900/50 text-green-700 dark:text-green-500' : s.status === 'NG' ? 'bg-red-100 dark:bg-red-900/50 text-red-700 dark:text-red-500' : 'bg-slate-200 dark:bg-zinc-800 text-slate-400 dark:text-zinc-600'}`}>
                                                     {s.status === 'OK' ? '✓' : s.status === 'NG' ? '!' : '-'}
                                                 </div>
                                             </td>
@@ -228,14 +228,14 @@ export const AuditModule = ({ currentUser, onBack, users, lines }: any) => {
                     {/* Leader Matrix */}
                     {tab === 'LEADERS' && (
                         <div className="overflow-x-auto"><table className="w-full text-sm text-center">
-                            <thead><tr><th className="p-2 text-left">Líder</th>{['S', 'T', 'Q', 'Q', 'S', 'S'].map(d => <th key={d} className="p-2">{d}</th>)}</tr></thead>
+                            <thead><tr className="bg-slate-100 dark:bg-zinc-950 border-b border-slate-200 dark:border-zinc-800 text-slate-600 dark:text-zinc-400"><th className="p-2 text-left">Líder</th>{['S', 'T', 'Q', 'Q', 'S', 'S'].map(d => <th key={d} className="p-2">{d}</th>)}</tr></thead>
                             <tbody>
                                 {leadersMatrix.map(r => (
-                                    <tr key={r.user.matricula} className="border-t border-zinc-800">
-                                        <td className="p-2 text-left font-bold">{r.user.name}</td>
+                                    <tr key={r.user.matricula} className="border-b border-slate-100 dark:border-zinc-800 hover:bg-slate-50 dark:hover:bg-zinc-900/50">
+                                        <td className="p-2 text-left font-bold text-slate-900 dark:text-white">{r.user.name}</td>
                                         {r.statuses.map((s, i) => (
                                             <td key={i} className="p-2">
-                                                <div className={`w-8 h-8 rounded-full flex items-center justify-center mx-auto ${s.status === 'OK' ? 'bg-green-900/50 text-green-500' : s.status === 'NG' ? 'bg-red-900/50 text-red-500' : 'bg-zinc-800 text-zinc-600'}`}>
+                                                <div className={`w-8 h-8 rounded-full flex items-center justify-center mx-auto text-xs font-bold ${s.status === 'OK' ? 'bg-green-100 dark:bg-green-900/50 text-green-700 dark:text-green-500' : s.status === 'NG' ? 'bg-red-100 dark:bg-red-900/50 text-red-700 dark:text-red-500' : 'bg-slate-200 dark:bg-zinc-800 text-slate-400 dark:text-zinc-600'}`}>
                                                     {s.status === 'OK' ? '✓' : s.status === 'NG' ? '!' : '-'}
                                                 </div>
                                             </td>
@@ -248,10 +248,10 @@ export const AuditModule = ({ currentUser, onBack, users, lines }: any) => {
 
                     {/* History List */}
                     {tab.includes('HISTORY') && logs.map(l => (
-                        <div key={l.id} className="bg-zinc-900 p-4 rounded-xl border border-zinc-800 flex justify-between items-center">
+                        <div key={l.id} className="bg-white dark:bg-zinc-900 p-4 rounded-xl border border-slate-200 dark:border-zinc-800 flex justify-between items-center hover:border-blue-500 dark:hover:border-zinc-700 transition-colors shadow-sm">
                             <div>
-                                <h4 className="font-bold text-white">{l.line} - {l.type === 'MAINTENANCE' ? l.maintenanceTarget : 'Checklist'}</h4>
-                                <p className="text-xs text-zinc-500">{new Date(l.date).toLocaleString()} • {l.userName}</p>
+                                <h4 className="font-bold text-slate-900 dark:text-white">{l.line} - {l.type === 'MAINTENANCE' ? l.maintenanceTarget : 'Checklist'}</h4>
+                                <p className="text-xs text-slate-500 dark:text-zinc-500">{new Date(l.date).toLocaleString()} • {l.userName}</p>
                             </div>
                             <div className="flex gap-2">
                                 <Button size="sm" variant="ghost" onClick={() => setPreviewLog(l)}><Eye size={16} /></Button>
@@ -264,19 +264,19 @@ export const AuditModule = ({ currentUser, onBack, users, lines }: any) => {
             {/* PREVIEW MODAL */}
             {previewLog && (
                 <div className="fixed inset-0 bg-black/90 backdrop-blur-sm flex items-center justify-center z-50 p-4" onClick={() => setPreviewLog(null)}>
-                    <Card className="max-w-xl w-full max-h-[80vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
-                        <div className="flex justify-between mb-4"><h3 className="font-bold">Detalhes</h3><button onClick={() => setPreviewLog(null)}><X /></button></div>
+                    <Card className="max-w-xl w-full max-h-[80vh] overflow-y-auto bg-white dark:bg-zinc-900 border-slate-200 dark:border-zinc-800" onClick={e => e.stopPropagation()}>
+                        <div className="flex justify-between mb-4 border-b border-slate-200 dark:border-zinc-800 pb-3"><h3 className="font-bold text-slate-900 dark:text-white">Detalhes</h3><button onClick={() => setPreviewLog(null)} className="text-slate-500 hover:text-slate-800 dark:text-zinc-500 dark:hover:text-zinc-300"><X /></button></div>
                         <div className="space-y-4">
-                            <div className="grid grid-cols-2 gap-4 text-sm text-zinc-400">
-                                <div>Linha: {previewLog.line}</div>
-                                <div>Data: {new Date(previewLog.date).toLocaleString()}</div>
-                                <div>Usuário: {previewLog.userName}</div>
-                                <div>NGs: {previewLog.ngCount}</div>
+                            <div className="grid grid-cols-2 gap-4 text-sm text-slate-500 dark:text-zinc-400">
+                                <div>Linha: <span className="text-slate-800 dark:text-zinc-200">{previewLog.line}</span></div>
+                                <div>Data: <span className="text-slate-800 dark:text-zinc-200">{new Date(previewLog.date).toLocaleString()}</span></div>
+                                <div>Usuário: <span className="text-slate-800 dark:text-zinc-200">{previewLog.userName}</span></div>
+                                <div>NGs: <span className="text-slate-800 dark:text-zinc-200">{previewLog.ngCount}</span></div>
                             </div>
                             {/* Items NG */}
                             {Object.entries(previewLog.data as any).map(([k, v]) => {
                                 if (v === 'NG') return (
-                                    <div key={k} className="bg-red-900/20 p-2 rounded text-red-300 text-sm border border-red-900/30">
+                                    <div key={k} className="bg-red-50 dark:bg-red-900/20 p-2 rounded text-red-600 dark:text-red-300 text-sm border border-red-200 dark:border-red-900/30">
                                         Item {k} Reprovado
                                         {/* Ideally we map ID to Text using items snapshot or fetching items */}
                                     </div>

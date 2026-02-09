@@ -795,6 +795,7 @@ const ScrapOperational = ({ scraps, users, lines, models }: any) => {
 
             <div className="bg-white dark:bg-zinc-900 rounded-xl overflow-hidden border border-slate-200 dark:border-zinc-800 shadow-sm">
                 <table className="w-full text-sm">
+
                     <thead className="bg-slate-50 dark:bg-zinc-950 text-slate-500 dark:text-zinc-400 border-b border-slate-200 dark:border-zinc-800">
                         <tr>
                             <th className="p-3 text-left">Data</th>
@@ -803,18 +804,18 @@ const ScrapOperational = ({ scraps, users, lines, models }: any) => {
                             <th className="p-3 text-right">Valor</th>
                         </tr>
                     </thead>
-                    <tbody className="divide-y divide-zinc-800">
+                    <tbody className="divide-y divide-slate-100 dark:divide-zinc-800">
                         {filtered.slice(0, 50).map(s => (
-                            <tr key={s.id} className="hover:bg-zinc-800/50 cursor-pointer" onClick={() => setSelected(s)}>
-                                <td className="p-3">{new Date(s.date).toLocaleDateString()}</td>
-                                <td className="p-3 text-zinc-300">{s.leaderName}</td>
-                                <td className="p-3">{s.item}</td>
-                                <td className="p-3 text-right font-mono text-zinc-300">{s.totalValue?.toFixed(2)}</td>
+                            <tr key={s.id} className="hover:bg-slate-50 dark:hover:bg-zinc-800/50 cursor-pointer transition-colors" onClick={() => setSelected(s)}>
+                                <td className="p-3 text-slate-700 dark:text-zinc-300">{new Date(s.date).toLocaleDateString()}</td>
+                                <td className="p-3 text-slate-700 dark:text-zinc-300">{s.leaderName}</td>
+                                <td className="p-3 text-slate-700 dark:text-zinc-300">{s.item}</td>
+                                <td className="p-3 text-right font-mono text-slate-700 dark:text-zinc-300">{s.totalValue?.toFixed(2)}</td>
                             </tr>
                         ))}
                     </tbody>
                 </table>
-                {filtered.length > 50 && <div className="p-2 text-center text-xs text-zinc-500">Exibindo 50 de {filtered.length} itens...</div>}
+                {filtered.length > 50 && <div className="p-2 text-center text-xs text-slate-500 dark:text-zinc-500">Exibindo 50 de {filtered.length} itens...</div>}
             </div>
 
             {selected && (
@@ -825,21 +826,21 @@ const ScrapOperational = ({ scraps, users, lines, models }: any) => {
                             <button onClick={() => setSelected(null)}><X size={24} className="text-slate-500 dark:text-zinc-400" /></button>
                         </div>
                         <div className="grid grid-cols-2 gap-4 text-sm">
-                            <div className="bg-zinc-950 p-3 rounded"><strong>Data:</strong> {new Date(selected.date).toLocaleDateString()}</div>
-                            <div className="bg-zinc-950 p-3 rounded"><strong>Horário:</strong> {selected.time}</div>
-                            <div className="bg-zinc-950 p-3 rounded"><strong>Líder:</strong> {selected.leaderName}</div>
-                            <div className="bg-zinc-950 p-3 rounded"><strong>Quem Registrou:</strong> {selected.responsible || selected.userId}</div>
-                            <div className="bg-zinc-950 p-3 rounded"><strong>Modelo:</strong> {selected.model}</div>
-                            <div className="bg-zinc-950 p-3 rounded"><strong>Linha:</strong> {selected.line}</div>
-                            <div className="bg-zinc-950 p-3 rounded"><strong>Item:</strong> {selected.item}</div>
-                            <div className="bg-zinc-950 p-3 rounded"><strong>Valor:</strong> R$ {selected.totalValue?.toFixed(2)}</div>
-                            <div className="col-span-2 bg-zinc-950 p-3 rounded">
-                                <strong>Motivo:</strong>
-                                <p className="mt-1 text-zinc-400">{selected.reason}</p>
+                            <div className="bg-slate-50 dark:bg-zinc-950 p-3 rounded border border-slate-200 dark:border-zinc-800"><strong className="text-slate-700 dark:text-zinc-400">Data:</strong> <span className="text-slate-900 dark:text-zinc-200">{new Date(selected.date).toLocaleDateString()}</span></div>
+                            <div className="bg-slate-50 dark:bg-zinc-950 p-3 rounded border border-slate-200 dark:border-zinc-800"><strong className="text-slate-700 dark:text-zinc-400">Horário:</strong> <span className="text-slate-900 dark:text-zinc-200">{selected.time}</span></div>
+                            <div className="bg-slate-50 dark:bg-zinc-950 p-3 rounded border border-slate-200 dark:border-zinc-800"><strong className="text-slate-700 dark:text-zinc-400">Líder:</strong> <span className="text-slate-900 dark:text-zinc-200">{selected.leaderName}</span></div>
+                            <div className="bg-slate-50 dark:bg-zinc-950 p-3 rounded border border-slate-200 dark:border-zinc-800"><strong className="text-slate-700 dark:text-zinc-400">Quem Registrou:</strong> <span className="text-slate-900 dark:text-zinc-200">{selected.responsible || selected.userId}</span></div>
+                            <div className="bg-slate-50 dark:bg-zinc-950 p-3 rounded border border-slate-200 dark:border-zinc-800"><strong className="text-slate-700 dark:text-zinc-400">Modelo:</strong> <span className="text-slate-900 dark:text-zinc-200">{selected.model}</span></div>
+                            <div className="bg-slate-50 dark:bg-zinc-950 p-3 rounded border border-slate-200 dark:border-zinc-800"><strong className="text-slate-700 dark:text-zinc-400">Linha:</strong> <span className="text-slate-900 dark:text-zinc-200">{selected.line}</span></div>
+                            <div className="bg-slate-50 dark:bg-zinc-950 p-3 rounded border border-slate-200 dark:border-zinc-800"><strong className="text-slate-700 dark:text-zinc-400">Item:</strong> <span className="text-slate-900 dark:text-zinc-200">{selected.item}</span></div>
+                            <div className="bg-slate-50 dark:bg-zinc-950 p-3 rounded border border-slate-200 dark:border-zinc-800"><strong className="text-slate-700 dark:text-zinc-400">Valor:</strong> <span className="text-slate-900 dark:text-zinc-200">R$ {selected.totalValue?.toFixed(2)}</span></div>
+                            <div className="col-span-2 bg-slate-50 dark:bg-zinc-950 p-3 rounded border border-slate-200 dark:border-zinc-800">
+                                <strong className="text-slate-700 dark:text-zinc-400">Motivo:</strong>
+                                <p className="mt-1 text-slate-600 dark:text-zinc-400">{selected.reason}</p>
                             </div>
-                            <div className="col-span-2 bg-zinc-950 p-3 rounded border border-green-900/30">
-                                <strong className="text-green-400">Contra Medida:</strong>
-                                <p className="mt-1 text-zinc-300">{selected.countermeasure || 'Pendente'}</p>
+                            <div className="col-span-2 bg-green-50 dark:bg-zinc-950 p-3 rounded border border-green-200 dark:border-green-900/30">
+                                <strong className="text-green-600 dark:text-green-400">Contra Medida:</strong>
+                                <p className="mt-1 text-slate-800 dark:text-zinc-300">{selected.countermeasure || 'Pendente'}</p>
                             </div>
                         </div>
                     </Card>
@@ -927,7 +928,7 @@ const ScrapManagementAdvanced = ({ scraps }: any) => {
                 <div className="flex justify-between items-center flex-wrap gap-4">
                     <h3 className="font-bold text-lg">Dashboard de Gestão</h3>
                     <div className="flex gap-2 items-center flex-wrap">
-                        <select className="bg-zinc-950 border border-zinc-800 p-2 rounded text-sm text-zinc-300" onChange={e => setFilters({ ...filters, period: e.target.value })} value={filters.period}>
+                        <select className="bg-slate-50 dark:bg-zinc-950 border border-slate-300 dark:border-zinc-800 p-2 rounded text-sm text-slate-900 dark:text-zinc-300 outline-none focus:ring-2 focus:ring-blue-600" onChange={e => setFilters({ ...filters, period: e.target.value })} value={filters.period}>
                             <option value="ALL">Todo Período</option>
                             <option value="DAY">Dia Específico</option>
                             <option value="WEEK">Semana Específica</option>
@@ -948,9 +949,9 @@ const ScrapManagementAdvanced = ({ scraps }: any) => {
                     <h3 className="font-bold text-emerald-400 mb-4 uppercase text-sm">Ranking Turnos (R$)</h3>
                     <div className="space-y-2">
                         {rankings.shift.map(([name, val], i) => (
-                            <div key={name} className="flex justify-between items-center p-2 bg-zinc-950 rounded border border-zinc-800">
-                                <span className="text-sm">Turno {name}</span>
-                                <span className="font-mono font-bold text-emerald-400">R$ {val.toFixed(2)}</span>
+                            <div key={name} className="flex justify-between items-center p-2 bg-slate-50 dark:bg-zinc-950 rounded border border-slate-200 dark:border-zinc-800">
+                                <span className="text-sm text-slate-700 dark:text-zinc-300">Turno {name}</span>
+                                <span className="font-mono font-bold text-emerald-600 dark:text-emerald-400">R$ {val.toFixed(2)}</span>
                             </div>
                         ))}
                     </div>
@@ -959,9 +960,9 @@ const ScrapManagementAdvanced = ({ scraps }: any) => {
                     <h3 className="font-bold text-purple-400 mb-4 uppercase text-sm">Ranking Linhas (R$)</h3>
                     <div className="space-y-2">
                         {rankings.line.map(([name, val], i) => (
-                            <div key={name} className="flex justify-between items-center p-2 bg-zinc-950 rounded border border-zinc-800">
-                                <span className="text-sm">{name}</span>
-                                <span className="font-mono font-bold text-purple-400">R$ {val.toFixed(2)}</span>
+                            <div key={name} className="flex justify-between items-center p-2 bg-slate-50 dark:bg-zinc-950 rounded border border-slate-200 dark:border-zinc-800">
+                                <span className="text-sm text-slate-700 dark:text-zinc-300">{name}</span>
+                                <span className="font-mono font-bold text-purple-600 dark:text-purple-400">R$ {val.toFixed(2)}</span>
                             </div>
                         ))}
                     </div>
@@ -970,9 +971,9 @@ const ScrapManagementAdvanced = ({ scraps }: any) => {
                     <h3 className="font-bold text-blue-400 mb-4 uppercase text-sm">Ranking Modelos (R$)</h3>
                     <div className="space-y-2">
                         {rankings.model.slice(0, 10).map(([name, val], i) => (
-                            <div key={name} className="flex justify-between items-center p-2 bg-zinc-950 rounded border border-zinc-800">
-                                <span className="text-sm truncate max-w-[150px]">{name}</span>
-                                <span className="font-mono font-bold text-blue-400">R$ {val.toFixed(2)}</span>
+                            <div key={name} className="flex justify-between items-center p-2 bg-slate-50 dark:bg-zinc-950 rounded border border-slate-200 dark:border-zinc-800">
+                                <span className="text-sm truncate max-w-[150px] text-slate-700 dark:text-zinc-300">{name}</span>
+                                <span className="font-mono font-bold text-blue-600 dark:text-blue-400">R$ {val.toFixed(2)}</span>
                             </div>
                         ))}
                     </div>
@@ -983,9 +984,9 @@ const ScrapManagementAdvanced = ({ scraps }: any) => {
                     <h3 className="font-bold text-red-400 mb-4 uppercase text-sm">Ranking Líderes (R$)</h3>
                     <div className="space-y-2">
                         {rankings.leader.slice(0, 10).map(([name, val], i) => (
-                            <div key={name} className="flex justify-between items-center p-2 bg-zinc-950 rounded border border-zinc-800">
-                                <span className="text-sm"><span className="font-bold text-zinc-500 mr-2">#{i + 1}</span> {name}</span>
-                                <span className="font-mono font-bold text-red-400">R$ {val.toFixed(2)}</span>
+                            <div key={name} className="flex justify-between items-center p-2 bg-slate-50 dark:bg-zinc-950 rounded border border-slate-200 dark:border-zinc-800">
+                                <span className="text-sm text-slate-700 dark:text-zinc-300"><span className="font-bold text-slate-500 dark:text-zinc-500 mr-2">#{i + 1}</span> {name}</span>
+                                <span className="font-mono font-bold text-red-600 dark:text-red-400">R$ {val.toFixed(2)}</span>
                             </div>
                         ))}
                     </div>
@@ -994,9 +995,9 @@ const ScrapManagementAdvanced = ({ scraps }: any) => {
                     <h3 className="font-bold text-yellow-500 mb-4 uppercase text-sm">Pendências (Qtd)</h3>
                     <div className="space-y-2">
                         {rankings.pending.slice(0, 10).map(([name, val], i) => (
-                            <div key={name} className="flex justify-between items-center p-2 bg-zinc-950 rounded border border-zinc-800">
-                                <span className="text-sm truncate max-w-[150px]">{name}</span>
-                                <span className="font-mono font-bold text-yellow-500">{val}</span>
+                            <div key={name} className="flex justify-between items-center p-2 bg-slate-50 dark:bg-zinc-950 rounded border border-slate-200 dark:border-zinc-800">
+                                <span className="text-sm truncate max-w-[150px] text-slate-700 dark:text-zinc-300">{name}</span>
+                                <span className="font-mono font-bold text-yellow-600 dark:text-yellow-500">{val}</span>
                             </div>
                         ))}
                     </div>
