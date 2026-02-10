@@ -645,51 +645,12 @@ const ScrapHistory = ({ scraps, currentUser, users }: any) => {
                 </div>
             </div>
 
-            {selected && (
-                <div className="fixed inset-0 bg-black/80 flex items-center justify-center p-4 z-50 backdrop-blur-sm">
-                    <Card className="max-w-4xl w-full bg-white dark:bg-zinc-900 border-slate-200 dark:border-zinc-700 max-h-[90vh] overflow-y-auto">
-                        <div className="flex justify-between items-center mb-6">
-                            <h3 className="font-bold text-xl text-slate-900 dark:text-white">Detalhes do Scrap</h3>
-                            <button onClick={() => setSelected(null)}><X size={24} className="text-slate-500 dark:text-zinc-400" /></button>
-                        </div>
-                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 text-sm">
-                            <div className="bg-slate-50 dark:bg-zinc-950 p-3 rounded border border-slate-200 dark:border-zinc-800"><strong className="block text-slate-500 dark:text-zinc-500 text-xs uppercase mb-1">Data</strong> <span className="text-slate-900 dark:text-zinc-200 text-base">{new Date(selected.date).toLocaleDateString()}</span></div>
-                            <div className="bg-slate-50 dark:bg-zinc-950 p-3 rounded border border-slate-200 dark:border-zinc-800"><strong className="block text-slate-500 dark:text-zinc-500 text-xs uppercase mb-1">Horário</strong> <span className="text-slate-900 dark:text-zinc-200 text-base">{selected.time}</span></div>
-                            <div className="md:col-span-2 bg-slate-50 dark:bg-zinc-950 p-3 rounded border border-slate-200 dark:border-zinc-800"><strong className="block text-slate-500 dark:text-zinc-500 text-xs uppercase mb-1">Líder</strong> <span className="text-slate-900 dark:text-zinc-200 text-base">{selected.leaderName}</span></div>
-
-                            <div className="bg-slate-50 dark:bg-zinc-950 p-3 rounded border border-slate-200 dark:border-zinc-800"><strong className="block text-slate-500 dark:text-zinc-500 text-xs uppercase mb-1">Quem Registrou</strong> <span className="text-slate-900 dark:text-zinc-200 text-base">{users.find((u: User) => u.matricula === selected.userId)?.name || selected.userId}</span></div>
-                            <div className="bg-slate-50 dark:bg-zinc-950 p-3 rounded border border-slate-200 dark:border-zinc-800"><strong className="block text-slate-500 dark:text-zinc-500 text-xs uppercase mb-1">Responsável</strong> <span className="text-slate-900 dark:text-zinc-200 text-base">{selected.responsible || '-'}</span></div>
-                            <div className="bg-slate-50 dark:bg-zinc-950 p-3 rounded border border-slate-200 dark:border-zinc-800"><strong className="block text-slate-500 dark:text-zinc-500 text-xs uppercase mb-1">Turno</strong> <span className="text-slate-900 dark:text-zinc-200 text-base">{selected.shift}</span></div>
-                            <div className="bg-slate-50 dark:bg-zinc-950 p-3 rounded border border-slate-200 dark:border-zinc-800"><strong className="block text-slate-500 dark:text-zinc-500 text-xs uppercase mb-1">Linha</strong> <span className="text-slate-900 dark:text-zinc-200 text-base">{selected.line}</span></div>
-                            <div className="bg-slate-50 dark:bg-zinc-950 p-3 rounded border border-slate-200 dark:border-zinc-800"><strong className="block text-slate-500 dark:text-zinc-500 text-xs uppercase mb-1">PQC</strong> <span className="text-slate-900 dark:text-zinc-200 text-base">{selected.pqc || '-'}</span></div>
-
-                            <div className="bg-slate-50 dark:bg-zinc-950 p-3 rounded border border-slate-200 dark:border-zinc-800"><strong className="block text-slate-500 dark:text-zinc-500 text-xs uppercase mb-1">Modelo</strong> <span className="text-slate-900 dark:text-zinc-200 text-base">{selected.model}</span></div>
-                            <div className="bg-slate-50 dark:bg-zinc-950 p-3 rounded border border-slate-200 dark:border-zinc-800"><strong className="block text-slate-500 dark:text-zinc-500 text-xs uppercase mb-1">Modelo Usado</strong> <span className="text-slate-900 dark:text-zinc-200 text-base">{selected.usedModel || '-'}</span></div>
-                            <div className="md:col-span-2 bg-slate-50 dark:bg-zinc-950 p-3 rounded border border-slate-200 dark:border-zinc-800"><strong className="block text-slate-500 dark:text-zinc-500 text-xs uppercase mb-1">Cód. Matéria Prima</strong> <span className="text-slate-900 dark:text-zinc-200 text-base">{selected.code || '-'}</span></div>
-
-                            <div className="md:col-span-4 bg-slate-50 dark:bg-zinc-950 p-3 rounded border border-slate-200 dark:border-zinc-800"><strong className="block text-slate-500 dark:text-zinc-500 text-xs uppercase mb-1">Descrição</strong> <span className="text-slate-900 dark:text-zinc-200 text-base">{selected.description || '-'}</span></div>
-
-                            <div className="bg-slate-50 dark:bg-zinc-950 p-3 rounded border border-slate-200 dark:border-zinc-800"><strong className="block text-slate-500 dark:text-zinc-500 text-xs uppercase mb-1">Quantidade</strong> <span className="text-slate-900 dark:text-zinc-200 text-base">{selected.qty}</span></div>
-                            <div className="bg-slate-50 dark:bg-zinc-950 p-3 rounded border border-slate-200 dark:border-zinc-800"><strong className="block text-slate-500 dark:text-zinc-500 text-xs uppercase mb-1">Item</strong> <span className="text-slate-900 dark:text-zinc-200 text-base">{selected.item}</span></div>
-                            <div className="bg-slate-50 dark:bg-zinc-950 p-3 rounded border border-slate-200 dark:border-zinc-800"><strong className="block text-slate-500 dark:text-zinc-500 text-xs uppercase mb-1">Status</strong> <span className="text-slate-900 dark:text-zinc-200 text-base">{selected.status}</span></div>
-                            <div className="bg-slate-50 dark:bg-zinc-950 p-3 rounded border border-slate-200 dark:border-zinc-800"><strong className="block text-slate-500 dark:text-zinc-500 text-xs uppercase mb-1">Estação</strong> <span className="text-slate-900 dark:text-zinc-200 text-base">{selected.station || '-'}</span></div>
-
-                            <div className="bg-slate-50 dark:bg-zinc-950 p-3 rounded border border-slate-200 dark:border-zinc-800"><strong className="block text-slate-500 dark:text-zinc-500 text-xs uppercase mb-1">Valor Unitário</strong> <span className="text-slate-900 dark:text-zinc-200 text-base">{formatCurrency(selected.unitValue)}</span></div>
-                            <div className="bg-red-50 dark:bg-red-900/10 p-3 rounded border border-red-200 dark:border-red-900/30"><strong className="block text-red-500 dark:text-red-400 text-xs uppercase mb-1">Valor Total</strong> <span className="text-red-600 dark:text-red-500 text-xl font-bold">{formatCurrency(selected.totalValue)}</span></div>
-                            <div className="md:col-span-2 bg-slate-50 dark:bg-zinc-950 p-3 rounded border border-slate-200 dark:border-zinc-800"><strong className="block text-slate-500 dark:text-zinc-500 text-xs uppercase mb-1">Causa Raiz</strong> <span className="text-slate-900 dark:text-zinc-200 text-base">{selected.rootCause || '-'}</span></div>
-
-                            <div className="col-span-1 md:col-span-2 lg:col-span-4 bg-slate-50 dark:bg-zinc-950 p-3 rounded border border-slate-200 dark:border-zinc-800">
-                                <strong className="block text-slate-500 dark:text-zinc-500 text-xs uppercase mb-1">Motivo</strong>
-                                <p className="mt-1 text-slate-600 dark:text-zinc-400">{selected.reason}</p>
-                            </div>
-                            <div className="col-span-1 md:col-span-2 lg:col-span-4 bg-green-50 dark:bg-zinc-950 p-3 rounded border border-green-200 dark:border-green-900/30">
-                                <strong className="block text-green-600 dark:text-green-400 text-xs uppercase mb-1">Contra Medida</strong>
-                                <p className="mt-1 text-slate-800 dark:text-zinc-300">{selected.countermeasure || 'Pendente'}</p>
-                            </div>
-                        </div>
-                    </Card>
-                </div>
-            )}
+            <ScrapDetailModal
+                isOpen={!!selected}
+                scrap={selected}
+                users={users}
+                onClose={() => setSelected(null)}
+            />
         </div>
     );
 };
@@ -832,51 +793,12 @@ const ScrapOperational = ({ scraps, users, lines, models }: any) => {
                 {filtered.length === 0 && <div className="p-8 text-center text-slate-500 dark:text-zinc-500">Nenhum registro encontrado.</div>}
             </div>
 
-            {selected && (
-                <div className="fixed inset-0 bg-black/80 flex items-center justify-center p-4 z-50 backdrop-blur-sm">
-                    <Card className="max-w-4xl w-full bg-white dark:bg-zinc-900 border-slate-200 dark:border-zinc-700 max-h-[90vh] overflow-y-auto">
-                        <div className="flex justify-between items-center mb-6">
-                            <h3 className="font-bold text-xl text-slate-900 dark:text-white">Detalhes do Scrap</h3>
-                            <button onClick={() => setSelected(null)}><X size={24} className="text-slate-500 dark:text-zinc-400" /></button>
-                        </div>
-                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 text-sm">
-                            <div className="bg-slate-50 dark:bg-zinc-950 p-3 rounded border border-slate-200 dark:border-zinc-800"><strong className="block text-slate-500 dark:text-zinc-500 text-xs uppercase mb-1">Data</strong> <span className="text-slate-900 dark:text-zinc-200 text-base">{new Date(selected.date).toLocaleDateString()}</span></div>
-                            <div className="bg-slate-50 dark:bg-zinc-950 p-3 rounded border border-slate-200 dark:border-zinc-800"><strong className="block text-slate-500 dark:text-zinc-500 text-xs uppercase mb-1">Horário</strong> <span className="text-slate-900 dark:text-zinc-200 text-base">{selected.time}</span></div>
-                            <div className="md:col-span-2 bg-slate-50 dark:bg-zinc-950 p-3 rounded border border-slate-200 dark:border-zinc-800"><strong className="block text-slate-500 dark:text-zinc-500 text-xs uppercase mb-1">Líder</strong> <span className="text-slate-900 dark:text-zinc-200 text-base">{selected.leaderName}</span></div>
-
-                            <div className="bg-slate-50 dark:bg-zinc-950 p-3 rounded border border-slate-200 dark:border-zinc-800"><strong className="block text-slate-500 dark:text-zinc-500 text-xs uppercase mb-1">Quem Registrou</strong> <span className="text-slate-900 dark:text-zinc-200 text-base">{users.find((u: User) => u.matricula === selected.userId)?.name || selected.userId}</span></div>
-                            <div className="bg-slate-50 dark:bg-zinc-950 p-3 rounded border border-slate-200 dark:border-zinc-800"><strong className="block text-slate-500 dark:text-zinc-500 text-xs uppercase mb-1">Responsável</strong> <span className="text-slate-900 dark:text-zinc-200 text-base">{selected.responsible || '-'}</span></div>
-                            <div className="bg-slate-50 dark:bg-zinc-950 p-3 rounded border border-slate-200 dark:border-zinc-800"><strong className="block text-slate-500 dark:text-zinc-500 text-xs uppercase mb-1">Turno</strong> <span className="text-slate-900 dark:text-zinc-200 text-base">{selected.shift}</span></div>
-                            <div className="bg-slate-50 dark:bg-zinc-950 p-3 rounded border border-slate-200 dark:border-zinc-800"><strong className="block text-slate-500 dark:text-zinc-500 text-xs uppercase mb-1">Linha</strong> <span className="text-slate-900 dark:text-zinc-200 text-base">{selected.line}</span></div>
-                            <div className="bg-slate-50 dark:bg-zinc-950 p-3 rounded border border-slate-200 dark:border-zinc-800"><strong className="block text-slate-500 dark:text-zinc-500 text-xs uppercase mb-1">PQC</strong> <span className="text-slate-900 dark:text-zinc-200 text-base">{selected.pqc || '-'}</span></div>
-
-                            <div className="bg-slate-50 dark:bg-zinc-950 p-3 rounded border border-slate-200 dark:border-zinc-800"><strong className="block text-slate-500 dark:text-zinc-500 text-xs uppercase mb-1">Modelo</strong> <span className="text-slate-900 dark:text-zinc-200 text-base">{selected.model}</span></div>
-                            <div className="bg-slate-50 dark:bg-zinc-950 p-3 rounded border border-slate-200 dark:border-zinc-800"><strong className="block text-slate-500 dark:text-zinc-500 text-xs uppercase mb-1">Modelo Usado</strong> <span className="text-slate-900 dark:text-zinc-200 text-base">{selected.usedModel || '-'}</span></div>
-                            <div className="md:col-span-2 bg-slate-50 dark:bg-zinc-950 p-3 rounded border border-slate-200 dark:border-zinc-800"><strong className="block text-slate-500 dark:text-zinc-500 text-xs uppercase mb-1">Cód. Matéria Prima</strong> <span className="text-slate-900 dark:text-zinc-200 text-base">{selected.code || '-'}</span></div>
-
-                            <div className="md:col-span-4 bg-slate-50 dark:bg-zinc-950 p-3 rounded border border-slate-200 dark:border-zinc-800"><strong className="block text-slate-500 dark:text-zinc-500 text-xs uppercase mb-1">Descrição</strong> <span className="text-slate-900 dark:text-zinc-200 text-base">{selected.description || '-'}</span></div>
-
-                            <div className="bg-slate-50 dark:bg-zinc-950 p-3 rounded border border-slate-200 dark:border-zinc-800"><strong className="block text-slate-500 dark:text-zinc-500 text-xs uppercase mb-1">Quantidade</strong> <span className="text-slate-900 dark:text-zinc-200 text-base">{selected.qty}</span></div>
-                            <div className="bg-slate-50 dark:bg-zinc-950 p-3 rounded border border-slate-200 dark:border-zinc-800"><strong className="block text-slate-500 dark:text-zinc-500 text-xs uppercase mb-1">Item</strong> <span className="text-slate-900 dark:text-zinc-200 text-base">{selected.item}</span></div>
-                            <div className="bg-slate-50 dark:bg-zinc-950 p-3 rounded border border-slate-200 dark:border-zinc-800"><strong className="block text-slate-500 dark:text-zinc-500 text-xs uppercase mb-1">Status</strong> <span className="text-slate-900 dark:text-zinc-200 text-base">{selected.status}</span></div>
-                            <div className="bg-slate-50 dark:bg-zinc-950 p-3 rounded border border-slate-200 dark:border-zinc-800"><strong className="block text-slate-500 dark:text-zinc-500 text-xs uppercase mb-1">Estação</strong> <span className="text-slate-900 dark:text-zinc-200 text-base">{selected.station || '-'}</span></div>
-
-                            <div className="bg-slate-50 dark:bg-zinc-950 p-3 rounded border border-slate-200 dark:border-zinc-800"><strong className="block text-slate-500 dark:text-zinc-500 text-xs uppercase mb-1">Valor Unitário</strong> <span className="text-slate-900 dark:text-zinc-200 text-base">{formatCurrency(selected.unitValue)}</span></div>
-                            <div className="bg-red-50 dark:bg-red-900/10 p-3 rounded border border-red-200 dark:border-red-900/30"><strong className="block text-red-500 dark:text-red-400 text-xs uppercase mb-1">Valor Total</strong> <span className="text-red-600 dark:text-red-500 text-xl font-bold">{formatCurrency(selected.totalValue)}</span></div>
-                            <div className="md:col-span-2 bg-slate-50 dark:bg-zinc-950 p-3 rounded border border-slate-200 dark:border-zinc-800"><strong className="block text-slate-500 dark:text-zinc-500 text-xs uppercase mb-1">Causa Raiz</strong> <span className="text-slate-900 dark:text-zinc-200 text-base">{selected.rootCause || '-'}</span></div>
-
-                            <div className="col-span-1 md:col-span-2 lg:col-span-4 bg-slate-50 dark:bg-zinc-950 p-3 rounded border border-slate-200 dark:border-zinc-800">
-                                <strong className="block text-slate-500 dark:text-zinc-500 text-xs uppercase mb-1">Motivo</strong>
-                                <p className="mt-1 text-slate-600 dark:text-zinc-400">{selected.reason}</p>
-                            </div>
-                            <div className="col-span-1 md:col-span-2 lg:col-span-4 bg-green-50 dark:bg-zinc-950 p-3 rounded border border-green-200 dark:border-green-900/30">
-                                <strong className="block text-green-600 dark:text-green-400 text-xs uppercase mb-1">Contra Medida</strong>
-                                <p className="mt-1 text-slate-800 dark:text-zinc-300">{selected.countermeasure || 'Pendente'}</p>
-                            </div>
-                        </div>
-                    </Card>
-                </div>
-            )}
+            <ScrapDetailModal
+                isOpen={!!selected}
+                scrap={selected}
+                users={users}
+                onClose={() => setSelected(null)}
+            />
         </div>
     )
 }
@@ -1037,3 +959,139 @@ const ScrapManagementAdvanced = ({ scraps }: any) => {
         </div>
     );
 };
+
+// --- SHARED DETAIL MODAL ---
+
+interface ScrapDetailModalProps {
+    isOpen: boolean;
+    scrap: ScrapData | null;
+    users: User[];
+    onClose: () => void;
+}
+
+const ScrapDetailModal: React.FC<ScrapDetailModalProps> = ({ isOpen, scrap, users, onClose }) => {
+    if (!isOpen || !scrap) return null;
+
+    // Logic to find the name of the user who registered the scrap (not the responsible for the fault)
+    const registeredBy = users.find(u => u.matricula === scrap.userId)?.name || scrap.userId;
+
+    return (
+        <div className="fixed inset-0 bg-black/80 flex items-center justify-center p-4 z-50 backdrop-blur-sm">
+            <Card className="max-w-4xl w-full bg-white dark:bg-zinc-900 border-slate-200 dark:border-zinc-700 max-h-[90vh] overflow-y-auto custom-scrollbar shadow-2xl">
+                {/* Header */}
+                <div className="flex justify-between items-start mb-6 border-b border-slate-100 dark:border-zinc-800 pb-4">
+                    <div>
+                        <h3 className="font-bold text-xl text-slate-900 dark:text-white">Detalhes do Apontamento</h3>
+                        <div className="flex gap-2 mt-1">
+                            <span className="text-xs font-mono text-slate-500 bg-slate-100 dark:bg-zinc-800 px-2 py-0.5 rounded">ID: {scrap.id || 'N/A'}</span>
+                            <span className={`text-xs font-bold px-2 py-0.5 rounded uppercase ${!scrap.countermeasure ? 'bg-red-100 text-red-600 dark:bg-red-900/30 dark:text-red-400' : 'bg-green-100 text-green-600 dark:bg-green-900/30 dark:text-green-400'}`}>
+                                {scrap.status}
+                            </span>
+                        </div>
+                    </div>
+                    <button onClick={onClose} className="p-1 hover:bg-slate-100 dark:hover:bg-zinc-800 rounded-full transition-colors">
+                        <X size={24} className="text-slate-500 dark:text-zinc-400" />
+                    </button>
+                </div>
+
+                <div className="space-y-6">
+                    {/* Bloco 1: Contexto Operacional */}
+                    <div className="bg-slate-50/50 dark:bg-zinc-950/50 p-4 rounded-xl border border-slate-200/50 dark:border-zinc-800/50">
+                        <h4 className="text-xs font-bold text-blue-500 uppercase mb-3 flex items-center gap-2">
+                            <LayoutDashboard size={14} /> Contexto Operacional
+                        </h4>
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                            <DetailItem label="Data" value={new Date(scrap.date).toLocaleDateString()} />
+                            <DetailItem label="Semana" value={scrap.week} />
+                            <DetailItem label="Líder" value={scrap.leaderName} />
+                            <DetailItem label="Linha" value={scrap.line} />
+                            <DetailItem label="Turno" value={scrap.shift} />
+                        </div>
+                    </div>
+
+                    {/* Bloco 2: Produto & Material */}
+                    <div className="bg-slate-50/50 dark:bg-zinc-950/50 p-4 rounded-xl border border-slate-200/50 dark:border-zinc-800/50">
+                        <h4 className="text-xs font-bold text-purple-500 uppercase mb-3 flex items-center gap-2">
+                            <Settings size={14} /> Dados do Material
+                        </h4>
+                        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                            <DetailItem label="Modelo (Produto)" value={scrap.model} />
+                            <DetailItem label="Cód. Matéria Prima" value={scrap.code || '-'} />
+                            <div className="md:col-span-2">
+                                <DetailItem label="Descrição" value={scrap.description || '-'} />
+                            </div>
+                            <DetailItem label="Modelo Usado" value={scrap.usedModel || '-'} />
+                        </div>
+                    </div>
+
+                    {/* Bloco 3: Defeito & Custos */}
+                    <div className="bg-slate-50/50 dark:bg-zinc-950/50 p-4 rounded-xl border border-slate-200/50 dark:border-zinc-800/50">
+                        <h4 className="text-xs font-bold text-red-500 uppercase mb-3 flex items-center gap-2">
+                            <BarChart3 size={14} /> Quantidades e Custos
+                        </h4>
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 items-end">
+                            <DetailItem label="Quantidade" value={scrap.qty} className="text-lg font-bold" />
+                            <DetailItem label="Item / Categoria" value={scrap.item} />
+                            <DetailItem label="Valor Unitário" value={formatCurrency(scrap.unitValue)} />
+                            <div className="bg-white dark:bg-zinc-900 p-2.5 rounded border border-slate-100 dark:border-zinc-800 shadow-sm border-l-4 border-l-red-500">
+                                <label className="block text-[10px] font-bold text-slate-400 dark:text-zinc-500 uppercase mb-1 tracking-wider">Valor Total</label>
+                                <div className="text-xl font-bold text-red-600 dark:text-red-400 truncate">{formatCurrency(scrap.totalValue)}</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Bloco 4: Rastreabilidade */}
+                    <div className="bg-slate-50/50 dark:bg-zinc-950/50 p-4 rounded-xl border border-slate-200/50 dark:border-zinc-800/50">
+                        <h4 className="text-xs font-bold text-orange-500 uppercase mb-3 flex items-center gap-2">
+                            <Shield size={14} /> Rastreabilidade
+                        </h4>
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                            <DetailItem label="Causa Raiz" value={scrap.rootCause || '-'} />
+                            <DetailItem label="Estação / Posto" value={scrap.station || '-'} />
+                            <DetailItem label="Responsável da Falha" value={scrap.responsible || '-'} />
+                        </div>
+                    </div>
+
+                    {/* Bloco 5: Autoria e Justificativas */}
+                    <div className="space-y-4 pt-2">
+                        <div className="bg-blue-50 dark:bg-blue-900/10 p-3 rounded border border-blue-100 dark:border-blue-900/30 flex items-center justify-between">
+                            <div className="flex gap-3 items-center">
+                                <span className="bg-blue-200 dark:bg-blue-800 text-blue-700 dark:text-blue-200 text-xs font-bold px-2 py-0.5 rounded uppercase">Registrado Por</span>
+                                <span className="text-sm font-bold text-slate-900 dark:text-zinc-100">{registeredBy}</span>
+                            </div>
+                            <span className="text-xs font-mono text-slate-500">{scrap.time}</span>
+                        </div>
+
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div>
+                                <label className="block text-xs font-bold text-slate-500 dark:text-zinc-500 mb-2 uppercase flex items-center gap-2"><FileText size={14} /> Motivo Detalhado</label>
+                                <div className="bg-slate-100 dark:bg-zinc-950 p-4 rounded-lg border border-slate-200 dark:border-zinc-800 text-sm min-h-[100px] text-slate-700 dark:text-zinc-300 leading-relaxed shadow-inner">
+                                    {scrap.reason}
+                                </div>
+                            </div>
+                            <div>
+                                <label className="block text-xs font-bold text-green-600 dark:text-green-500 mb-2 uppercase flex items-center gap-2"><CheckCircle2 size={14} /> Contra Medida</label>
+                                <div className={`p-4 rounded-lg border text-sm min-h-[100px] shadow-inner leading-relaxed ${scrap.countermeasure ? 'bg-green-50 dark:bg-green-900/10 border-green-200 dark:border-green-900/30 text-slate-800 dark:text-zinc-200' : 'bg-slate-50 dark:bg-zinc-950 border-slate-200 dark:border-zinc-800 text-slate-400 italic'}`}>
+                                    {scrap.countermeasure || 'Nenhuma contra medida registrada.'}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div className="mt-6 pt-4 border-t border-slate-100 dark:border-zinc-800 text-center">
+                    <Button variant="ghost" onClick={onClose} className="text-slate-500 dark:text-zinc-500 hover:text-slate-800 dark:hover:text-zinc-200">
+                        Fechar Visualização
+                    </Button>
+                </div>
+            </Card>
+        </div>
+    );
+};
+
+// Helper component for uniform items
+const DetailItem = ({ label, value, className = "" }: any) => (
+    <div className="bg-white dark:bg-zinc-900 p-2.5 rounded border border-slate-100 dark:border-zinc-800 shadow-sm transition-all hover:border-blue-200 dark:hover:border-blue-800/50">
+        <label className="block text-[10px] font-bold text-slate-400 dark:text-zinc-500 uppercase mb-1 tracking-wider">{label}</label>
+        <div className={`text-sm text-slate-700 dark:text-zinc-300 font-medium truncate ${className}`}>{value}</div>
+    </div>
+);

@@ -133,10 +133,15 @@ const App = () => {
     const [regError, setRegError] = useState('');
 
     // Recover Password State
+    // Recover Password State
     const [recoverMatricula, setRecoverMatricula] = useState('');
-    const [recoverEmail, setRecoverEmail] = useState('');
     const [recoverName, setRecoverName] = useState('');
-    const [recoverNewPassword, setRecoverNewPassword] = useState('');
+    const [recoverRole, setRecoverRole] = useState('');
+
+    // Admin Recovery State
+    const [recoveryRequests, setRecoveryRequests] = useState<any[]>([]);
+    const [recoveryNewPassword, setRecoveryNewPassword] = useState('');
+    const [selectedRequest, setSelectedRequest] = useState<any>(null);
 
     // Configs
     const [availableRoles, setAvailableRoles] = useState<ConfigItem[]>([]);
@@ -187,7 +192,7 @@ const App = () => {
     const [previewMeeting, setPreviewMeeting] = useState<MeetingLog | null>(null);
 
     // Admin / Audit / Management
-    const [adminTab, setAdminTab] = useState<'USERS' | 'PERMISSIONS'>('USERS');
+    const [adminTab, setAdminTab] = useState<'USERS' | 'PERMISSIONS' | 'RECOVERY'>('USERS');
     const [managementTab, setManagementTab] = useState<'LINES' | 'ROLES' | 'MODELS' | 'STATIONS'>('LINES');
     const [auditTab, setAuditTab] = useState<'LEADER_HISTORY' | 'MAINTENANCE_HISTORY' | 'LEADER_EDITOR' | 'MAINTENANCE_EDITOR' | 'LEADERS' | 'LINES' | 'MAINTENANCE_MATRIX'>('LEADER_HISTORY');
     const [historyLogs, setHistoryLogs] = useState<ChecklistLog[]>([]);
@@ -524,6 +529,22 @@ const App = () => {
         fetchAlerts();
     }, [view, currentUser]);
 
+    useEffect(() => {
+        const fetchAlerts = async () => {
+            if (view === 'MENU') {
+                // ... existing menu alerts ...
+            }
+
+            if (view === 'ADMIN' && adminTab === 'RECOVERY') {
+                try {
+                    const reqs = await apiFetch('/admin/recovery-requests');
+                    setRecoveryRequests(reqs);
+                } catch (e) { console.error(e); }
+            }
+        };
+        fetchAlerts();
+    }, [view, adminTab, currentUser]);
+
     const initApp = async () => {
         setIsLoading(true);
         try {
@@ -720,13 +741,36 @@ const App = () => {
     const handleRecover = async (e: React.FormEvent) => {
         e.preventDefault();
         setIsLoading(true);
-        const res = await recoverPassword(recoverEmail, recoverMatricula);
+        const res = await recoverPassword(recoverMatricula, recoverName, recoverRole);
         setIsLoading(false);
         if (res.success) {
-            alert("Senha redefinida com sucesso!");
+            alert(res.message);
             setView('LOGIN');
         } else {
             alert(res.message);
+        }
+    };
+
+    const handleAdminResetPassword = async () => {
+        if (!selectedRequest || !recoveryNewPassword) return;
+        setIsLoading(true);
+        try {
+            await apiFetch('/admin/reset-password', {
+                method: 'POST',
+                body: JSON.stringify({
+                    requestId: selectedRequest.id,
+                    matricula: selectedRequest.matricula,
+                    newPassword: recoveryNewPassword
+                })
+            });
+            alert('Senha redefinida com sucesso!');
+            setRecoveryRequests(prev => prev.filter(r => r.id !== selectedRequest.id));
+            setSelectedRequest(null);
+            setRecoveryNewPassword('');
+        } catch (e: any) {
+            alert(e.message || 'Erro ao redefinir');
+        } finally {
+            setIsLoading(false);
         }
     };
 
@@ -1419,14 +1463,19 @@ const App = () => {
         <Layout variant="auth" onToggleTheme={toggleTheme} isDark={isDark}>
             <div className="flex flex-col items-center justify-center min-h-screen px-4">
                 <div className="bg-white/80 dark:bg-zinc-900/80 backdrop-blur-xl border border-slate-200 dark:border-zinc-800 rounded-2xl p-8 shadow-2xl w-full max-w-md">
-                    <h2 className="text-xl font-bold mb-4 text-slate-900 dark:text-white text-center">Recuperar Senha</h2>
-                    <p className="text-sm text-slate-500 dark:text-zinc-400 mb-6 text-center">Digite seus dados completos para redefinir a senha.</p>
+                    <h2 className="text-xl font-bold mb-4 text-slate-900 dark:text-white text-center">Solicitar Recuperação</h2>
+                    <p className="text-sm text-slate-500 dark:text-zinc-400 mb-6 text-center">Informe seus dados para solicitar o reset ao Admin.</p>
                     <form onSubmit={handleRecover} className="space-y-4">
                         <Input label="Matrícula" value={recoverMatricula} onChange={e => setRecoverMatricula(e.target.value)} icon={<UserIcon size={18} />} />
                         <Input label="Nome Completo" value={recoverName} onChange={e => setRecoverName(toTitleCase(e.target.value))} icon={<UserIcon size={18} />} />
-                        <Input label="Email" type="email" value={recoverEmail} onChange={e => setRecoverEmail(e.target.value)} icon={<Briefcase size={18} />} />
-                        <Input label="Nova Senha" type="password" value={recoverNewPassword} onChange={e => setRecoverNewPassword(e.target.value)} icon={<Lock size={18} />} />
-                        <Button fullWidth type="submit" disabled={isLoading}>{isLoading ? 'Enviando...' : 'Redefinir Senha'}</Button>
+                        <div>
+                            <label className="block text-xs font-medium text-slate-600 dark:text-zinc-400 mb-1.5 uppercase tracking-wide">Função</label>
+                            <select className="w-full bg-white dark:bg-zinc-950 border border-slate-300 dark:border-zinc-800 rounded-lg p-2.5 text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-600/50 outline-none" value={recoverRole} onChange={e => setRecoverRole(e.target.value)}>
+                                <option value="">Selecione...</option>
+                                {availableRoles.map(r => <option key={r.id} value={r.name}>{r.name}</option>)}
+                            </select>
+                        </div>
+                        <Button fullWidth type="submit" disabled={isLoading}>{isLoading ? 'Enviando...' : 'Solicitar Reset'}</Button>
                     </form>
                     <div className="mt-4 pt-4 border-t border-zinc-800/50">
                         <Button variant="ghost" fullWidth onClick={() => setView('LOGIN')}>Voltar ao Login</Button>
@@ -1938,7 +1987,51 @@ const App = () => {
                         <div className="flex gap-2 mb-6 overflow-x-auto pb-2">
                             <Button variant={adminTab === 'USERS' ? 'primary' : 'secondary'} onClick={() => setAdminTab('USERS')}><Users size={16} /> Usuários</Button>
                             <Button variant={adminTab === 'PERMISSIONS' ? 'primary' : 'secondary'} onClick={() => setAdminTab('PERMISSIONS')}><Shield size={16} /> Permissões</Button>
+                            <Button variant={adminTab === 'RECOVERY' ? 'primary' : 'secondary'} onClick={() => { setAdminTab('RECOVERY'); }} className="relative">
+                                <AlertTriangle size={16} /> Solicitações
+                                {recoveryRequests.length > 0 && <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[10px] w-5 h-5 flex items-center justify-center rounded-full animate-pulse">{recoveryRequests.length}</span>}
+                            </Button>
                         </div>
+
+                        {adminTab === 'RECOVERY' && (
+                            <Card>
+                                <h3 className="text-lg font-bold mb-4 text-slate-900 dark:text-white">Solicitações de Recuperação de Senha</h3>
+                                {recoveryRequests.length === 0 ? (
+                                    <p className="text-slate-500 text-center py-6">Nenhuma solicitação pendente.</p>
+                                ) : (
+                                    <div className="space-y-4">
+                                        {recoveryRequests.map(req => (
+                                            <div key={req.id} className="bg-slate-50 dark:bg-zinc-950 p-4 rounded-lg border border-slate-200 dark:border-zinc-800 flex justify-between items-center">
+                                                <div>
+                                                    <p className="font-bold text-slate-900 dark:text-white">{req.name} <span className="text-xs font-normal text-slate-500">({req.matricula})</span></p>
+                                                    <p className="text-sm text-slate-600 dark:text-zinc-400">{req.role} • {new Date(req.createdAt).toLocaleString()}</p>
+                                                </div>
+                                                <Button onClick={() => setSelectedRequest(req)}>Redefinir</Button>
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+                            </Card>
+                        )}
+
+                        {selectedRequest && (
+                            <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
+                                <Card className="w-full max-w-sm bg-white dark:bg-zinc-900 border-slate-200 dark:border-zinc-800">
+                                    <h3 className="text-xl font-bold mb-4 text-slate-900 dark:text-white">Nova Senha para {selectedRequest.name}</h3>
+                                    <Input
+                                        label="Nova Senha"
+                                        type="text"
+                                        value={recoveryNewPassword}
+                                        onChange={e => setRecoveryNewPassword(e.target.value)}
+                                        autoFocus
+                                    />
+                                    <div className="flex gap-2 mt-4">
+                                        <Button variant="secondary" fullWidth onClick={() => { setSelectedRequest(null); setRecoveryNewPassword(''); }}>Cancelar</Button>
+                                        <Button fullWidth onClick={handleAdminResetPassword}>Confirmar Reset</Button>
+                                    </div>
+                                </Card>
+                            </div>
+                        )}
 
                         {adminTab === 'PERMISSIONS' && (
                             <Card className="overflow-x-auto">

@@ -68,36 +68,27 @@ app.post('/api/register', async (req, res) => {
 });
 
 app.post('/api/recover', async (req, res) => {
-    const { matricula, email, name, newPassword } = req.body;
+    const { matricula, name, role } = req.body;
     try {
-        // Prisma doesn't support SQL-like LOWER() functions directly in where clause easily for SQLite without raw query
-        // But we can try to find first and match in checks or use raw query if strict matching is not enough.
-        // For compatibility with previous 'LOWER(TRIM(?))' logic, raw query is safest or exact match if data is clean.
-        // Let's use exact match first for performance, if fails, we might need to adjust.
-        // However, the previous code was very specific. Let's stick to simple findFirst for now assuming mostly correct input,
-        // or fetch by matricula and validate others in JS.
-
         const user = await prisma.user.findUnique({
             where: { matricula: String(matricula) }
         });
 
-        if (!user) return res.status(401).json({ error: "Dados incorretos" });
+        if (!user) return res.status(404).json({ error: "Usuário não encontrado" });
 
-        const normalize = (s) => String(s || '').trim().toLowerCase();
-        if (normalize(user.email) !== normalize(email) || normalize(user.name) !== normalize(name)) {
-            return res.status(401).json({ error: "Dados incorretos" });
-        }
-
-        const hash = await bcrypt.hash(newPassword, SALT_ROUNDS);
-        await prisma.user.update({
-            where: { matricula: user.matricula },
-            data: { password: hash }
+        await prisma.recoveryRequest.create({
+            data: {
+                matricula: String(matricula),
+                name,
+                role,
+                status: 'PENDING'
+            }
         });
 
-        res.json({ message: "Senha atualizada" });
+        res.json({ message: "Solicitação enviada ao Administrador. Aguarde o contato." });
     } catch (e) {
-        console.error("Recover Error:", e);
-        res.status(500).json({ error: "Erro servidor" });
+        console.error("Recover Request Error:", e);
+        res.status(500).json({ error: "Erro ao enviar solicitação" });
     }
 });
 
@@ -153,6 +144,43 @@ app.delete('/api/users/:id', async (req, res) => {
         res.json({ message: "Deletado" });
     } catch (e) {
         res.status(500).json({ error: e.message });
+    }
+});
+
+// ADMIN RECOVERY ROUTES
+app.get('/api/admin/recovery-requests', async (req, res) => {
+    try {
+        const requests = await prisma.recoveryRequest.findMany({
+            where: { status: 'PENDING' },
+            orderBy: { createdAt: 'desc' }
+        });
+        res.json(requests);
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+app.post('/api/admin/reset-password', async (req, res) => {
+    const { requestId, matricula, newPassword } = req.body;
+    try {
+        const hash = await bcrypt.hash(newPassword, SALT_ROUNDS);
+
+        // Transaction to update user password and close request
+        await prisma.$transaction([
+            prisma.user.update({
+                where: { matricula: String(matricula) },
+                data: { password: hash }
+            }),
+            prisma.recoveryRequest.update({
+                where: { id: requestId },
+                data: { status: 'COMPLETED' }
+            })
+        ]);
+
+        res.json({ message: "Senha redefinida com sucesso" });
+    } catch (e) {
+        console.error("Admin Reset Error:", e);
+        res.status(500).json({ error: "Erro ao redefinir senha" });
     }
 });
 
@@ -394,8 +422,8 @@ app.post('/api/line-stops', async (req, res) => {
 app.get('/api/config/roles', async (req, res) => {
     try {
         const roles = await prisma.configRole.findMany();
-        // Return simulated ID (using name as key effectively, but frontend wants id)
-        res.json(roles.map((r, i) => ({ id: i + 1, name: r.name })));
+        // Return name as ID since that's what the schema uses
+        res.json(roles.map(r => ({ id: r.name, name: r.name })));
     } catch (e) {
         res.status(500).json({ error: e.message });
     }
@@ -414,30 +442,14 @@ app.post('/api/config/roles', async (req, res) => {
 });
 
 app.delete('/api/config/roles/:id', async (req, res) => {
-    // Delete by Name is safer if we don't have real IDs. 
-    // Legacy code used 'rowid'. 
-    // Here we can't easily use rowid with Prisma.
-    // If frontend sends 'rowid' as ID, we can't delete by it easily.
-    // WORKAROUND: Delete doesn't work well without real ID in Prisma for this table (it has @id on name).
-    // If frontend passes rowid, we are stuck.
-    // But schema says `name String @id`. So we should expect DELETE /roles/:name.
-    // If frontend calls /roles/123, it fails.
-    // We'll try to find by name from the param if possible, or just fail.
-    // Recommendation: Frontend should pass name.
-
-    // Assuming backend refactor: We can try to match what frontend sends?
-    // Let's assume frontend might send name or we can't support delete by rowid easily.
-    // But wait, the schema we approved has `name` as `@id`.
     try {
-        // Try deleting by name (param id might be the name)
+        // ID passed is actually the name
         await prisma.configRole.delete({
             where: { name: req.params.id }
         });
         res.json({ message: "Cargo deletado" });
     } catch (e) {
-        // If failed, maybe try to fetch all, find by index (rowid equivalent) and delete?
-        // Risky. Let's return error.
-        res.status(500).json({ error: "Erro ao deletar (use o nome como ID): " + e.message });
+        res.status(500).json({ error: "Erro ao deletar: " + e.message });
     }
 });
 
@@ -445,7 +457,8 @@ app.delete('/api/config/roles/:id', async (req, res) => {
 app.get('/api/config/lines', async (req, res) => {
     try {
         const lines = await prisma.configLine.findMany();
-        res.json(lines.map((l, i) => ({ id: i + 1, name: l.name })));
+        // Return name as ID since that's what the schema uses
+        res.json(lines.map(l => ({ id: l.name, name: l.name })));
     } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -459,7 +472,9 @@ app.post('/api/config/lines', async (req, res) => {
 
 app.delete('/api/config/lines/:id', async (req, res) => {
     try {
-        await prisma.configLine.delete({ where: { name: req.params.id } });
+        await prisma.configLine.delete({
+            where: { name: req.params.id }
+        });
         res.json({ message: "Linha deletada" });
     } catch (e) { res.status(500).json({ error: e.message }); }
 });

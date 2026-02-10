@@ -9,45 +9,45 @@ const ADMIN_ROLES = ['SUPERVISOR', 'COORDENADOR', 'DIRETOR', 'GERENTE', 'TI'];
 // --- AUTH BASIC ---
 
 export const registerUser = async (user: User): Promise<{ success: boolean; message: string }> => {
-  if (!isServerConfigured()) return { success: false, message: 'Servidor não configurado.' };
+    if (!isServerConfigured()) return { success: false, message: 'Servidor não configurado.' };
 
-  try {
-    const response = await apiFetch('/register', {
-        method: 'POST',
-        body: JSON.stringify(user)
-    });
-    return { success: true, message: response.message };
-  } catch (error: any) {
-    return { success: false, message: error.message || 'Erro ao cadastrar.' };
-  }
+    try {
+        const response = await apiFetch('/register', {
+            method: 'POST',
+            body: JSON.stringify(user)
+        });
+        return { success: true, message: response.message };
+    } catch (error: any) {
+        return { success: false, message: error.message || 'Erro ao cadastrar.' };
+    }
 };
 
 export const loginUser = async (matricula: string, password: string): Promise<{ success: boolean; user?: User; message: string }> => {
-  if (!isServerConfigured()) return { success: false, message: 'Servidor não configurado.' };
+    if (!isServerConfigured()) return { success: false, message: 'Servidor não configurado.' };
 
-  try {
-    const response = await apiFetch('/login', {
-        method: 'POST',
-        body: JSON.stringify({ matricula, password })
-    });
+    try {
+        const response = await apiFetch('/login', {
+            method: 'POST',
+            body: JSON.stringify({ matricula, password })
+        });
 
-    const user = response.user;
-    // Alterado para sessionStorage para não persistir após fechar o navegador
-    sessionStorage.setItem(CURRENT_USER_KEY, JSON.stringify(user));
-    return { success: true, user, message: 'Login realizado.' };
+        const user = response.user;
+        // Alterado para sessionStorage para não persistir após fechar o navegador
+        sessionStorage.setItem(CURRENT_USER_KEY, JSON.stringify(user));
+        return { success: true, user, message: 'Login realizado.' };
 
-  } catch (error: any) {
-    return { success: false, message: error.message || 'Erro ao fazer login.' };
-  }
+    } catch (error: any) {
+        return { success: false, message: error.message || 'Erro ao fazer login.' };
+    }
 };
 
 export const logoutUser = () => {
-  sessionStorage.removeItem(CURRENT_USER_KEY);
+    sessionStorage.removeItem(CURRENT_USER_KEY);
 };
 
 export const getSessionUser = (): User | null => {
-  const userStr = sessionStorage.getItem(CURRENT_USER_KEY);
-  return userStr ? JSON.parse(userStr) : null;
+    const userStr = sessionStorage.getItem(CURRENT_USER_KEY);
+    return userStr ? JSON.parse(userStr) : null;
 };
 
 export const updateSessionUser = (user: User) => {
@@ -61,11 +61,11 @@ export const isAdmin = (user: User | null): boolean => {
     return ADMIN_ROLES.includes(user.role.toUpperCase());
 };
 
-export const recoverPassword = async (email: string, matricula: string): Promise<{ success: boolean; message: string }> => {
+export const recoverPassword = async (matricula: string, name: string, role: string): Promise<{ success: boolean; message: string }> => {
     try {
         const response = await apiFetch('/recover', {
             method: 'POST',
-            body: JSON.stringify({ email, matricula })
+            body: JSON.stringify({ matricula, name, role })
         });
         return { success: true, message: response.message };
     } catch (error: any) {

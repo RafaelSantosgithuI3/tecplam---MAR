@@ -139,6 +139,17 @@ model Material {
   @@map("materials")
 }
 
+model RecoveryRequest {
+  id        Int      @id @default(autoincrement())
+  matricula String
+  name      String
+  role      String
+  status    String   @default("PENDING") // PENDING, COMPLETED
+  createdAt DateTime @default(now())
+
+  @@map("recovery_requests")
+}
+
 model ConfigLine {
   name String @id
 
