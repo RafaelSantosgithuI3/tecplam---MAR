@@ -72,7 +72,7 @@ export const Layout: React.FC<LayoutProps> = ({ children, variant = 'dashboard',
         <div className="flex flex-col h-full w-full relative">
           {/* Toggle Button Removed from absolute position - should be integrated in Sidebar content */}
 
-          <div onClick={() => window.innerWidth < 1024 && setIsSidebarOpen(false)}>
+          <div className="flex flex-col h-full" onClick={() => window.innerWidth < 1024 && setIsSidebarOpen(false)}>
             {sidebar}
           </div>
         </div>

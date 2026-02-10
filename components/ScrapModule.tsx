@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
     LayoutDashboard, AlertTriangle, FileText, CheckCircle2,
     ArrowLeft, Save, Search, Filter, Download, Plus, X,
-    History, BarChart3, Settings, Upload, Trash2, Shield
+    History, BarChart3, Settings, Upload, Trash2, Shield, Eye
 } from 'lucide-react';
 import { Card } from './Card';
 import { Button } from './Button';
@@ -18,6 +18,10 @@ import {
 } from '../services/scrapService';
 import * as authService from '../services/authService';
 import { exportScrapToExcel } from '../services/excelService';
+
+const formatCurrency = (val: number | undefined) => {
+    return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(val || 0);
+};
 
 interface ScrapModuleProps {
     currentUser: User;
@@ -135,7 +139,7 @@ export const ScrapModule: React.FC<ScrapModuleProps> = ({ currentUser, onBack, i
                     />
                 )}
                 {activeTab === 'HISTORY' && (
-                    <ScrapHistory scraps={scraps} currentUser={currentUser} />
+                    <ScrapHistory scraps={scraps} currentUser={currentUser} users={users} />
                 )}
                 {activeTab === 'OPERATIONAL' && (
                     <ScrapOperational
@@ -352,13 +356,13 @@ const ScrapForm = ({ users, models, stations, lines, materials, onSuccess, curre
                             {SCRAP_STATUS.map(i => <option key={i} value={i} />)}
                         </datalist>
                     </div>
-                    <Input label="Valor UN (R$)" value={formData.unitValue?.toFixed(2)} readOnly className="opacity-50" />
+                    <Input label="Valor UN" value={formatCurrency(formData.unitValue)} readOnly className="opacity-50" />
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                     <div className="bg-red-50 dark:bg-red-900/10 p-4 rounded-xl border border-red-200 dark:border-red-900/30 flex flex-col justify-center">
-                        <label className="text-xs font-bold text-red-600 dark:text-red-400 uppercase">Valor Total (R$)</label>
-                        <span className="text-2xl font-bold text-red-600 dark:text-red-500">{formData.totalValue?.toFixed(2)}</span>
+                        <label className="text-xs font-bold text-red-600 dark:text-red-400 uppercase">Valor Total</label>
+                        <span className="text-2xl font-bold text-red-600 dark:text-red-500">{formatCurrency(formData.totalValue)}</span>
                     </div>
                     <div>
                         <label className="block text-xs font-medium text-slate-500 dark:text-zinc-400 mb-1.5 uppercase">Causa Raiz</label>
@@ -417,17 +421,19 @@ const ScrapPending = ({ scraps, currentUser, onUpdate, users }: any) => {
     const [selected, setSelected] = useState<ScrapData | null>(null);
     const [cm, setCm] = useState('');
     const [reason, setReason] = useState('');
+    const [responsible, setResponsible] = useState('');
 
     const openModal = (s: ScrapData) => {
         setSelected(s);
         setCm(s.countermeasure || '');
         setReason(s.reason || '');
+        setResponsible(s.responsible || '');
     };
 
     const handleSave = async () => {
         if (selected && selected.id) {
             if (!cm.trim()) { alert("Contra Medida é obrigatória."); return; }
-            await updateScrap(selected.id, { countermeasure: cm, reason: reason });
+            await updateScrap(selected.id, { countermeasure: cm, reason: reason, responsible: responsible });
             await onUpdate();
             setSelected(null);
         }
@@ -462,7 +468,7 @@ const ScrapPending = ({ scraps, currentUser, onUpdate, users }: any) => {
                                     <td className="p-4">{s.shift}</td>
                                     <td className="p-4 text-zinc-300">{s.model}</td>
                                     <td className="p-4">{s.qty}</td>
-                                    <td className="p-4 font-mono text-red-400">R$ {s.totalValue?.toFixed(2)}</td>
+                                    <td className="p-4 font-mono text-red-400">{formatCurrency(s.totalValue)}</td>
                                     <td className="p-4 text-right">
                                         <Button size="sm" onClick={() => openModal(s)} variant="ghost"> <AlertTriangle size={14} className="text-yellow-500 mr-2" /> Contra Medida</Button>
                                     </td>
@@ -484,7 +490,8 @@ const ScrapPending = ({ scraps, currentUser, onUpdate, users }: any) => {
                             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                                 <Input label="Data" value={selected.date} readOnly />
                                 <Input label="Semana" value={selected.week} readOnly />
-                                <div className="md:col-span-2"><Input label="Líder" value={selected.leaderName} readOnly /></div>
+                                <Input label="Líder" value={selected.leaderName} readOnly />
+                                <Input label="Responsável (Falha/Estação)" value={responsible} onChange={e => setResponsible(e.target.value)} />
                             </div>
                             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                                 <Input label="Linha" value={selected.line} readOnly />
@@ -502,12 +509,12 @@ const ScrapPending = ({ scraps, currentUser, onUpdate, users }: any) => {
                                 <Input label="Quantidade" value={selected.qty} readOnly />
                                 <Input label="Item (Categoria)" value={selected.item} readOnly />
                                 <Input label="Status" value={selected.status} readOnly />
-                                <Input label="Valor UN" value={selected.unitValue?.toFixed(2)} readOnly />
+                                <Input label="Valor UN" value={formatCurrency(selected.unitValue)} readOnly />
                             </div>
                             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                                 <div className="bg-red-900/10 p-4 rounded-xl border border-red-900/30 flex flex-col justify-center">
-                                    <label className="text-xs font-bold text-red-400 uppercase">Valor Total (R$)</label>
-                                    <span className="text-2xl font-bold text-red-500">{selected.totalValue?.toFixed(2)}</span>
+                                    <label className="text-xs font-bold text-red-400 uppercase">Valor Total</label>
+                                    <span className="text-2xl font-bold text-red-500">{formatCurrency(selected.totalValue)}</span>
                                 </div>
                                 <Input label="Causa Raiz" value={selected.rootCause} readOnly />
                                 <Input label="Estação" value={selected.station} readOnly />
@@ -543,7 +550,7 @@ const ScrapPending = ({ scraps, currentUser, onUpdate, users }: any) => {
     );
 }
 
-const ScrapHistory = ({ scraps, currentUser }: any) => {
+const ScrapHistory = ({ scraps, currentUser, users }: any) => {
     const [filters, setFilters] = useState({
         period: 'ALL', // ALL, DAY, WEEK, MONTH, YEAR
         specificDate: '',
@@ -588,7 +595,7 @@ const ScrapHistory = ({ scraps, currentUser }: any) => {
             <div className="grid grid-cols-2 gap-4">
                 <Card className="bg-indigo-900/20 border-indigo-500/30">
                     <h3 className="text-indigo-400 text-xs font-bold uppercase">Meu Total (Período)</h3>
-                    <p className="text-3xl font-bold mt-2">R$ {total.toFixed(2)}</p>
+                    <p className="text-3xl font-bold mt-2">{formatCurrency(total)}</p>
                 </Card>
                 <Card className="bg-orange-900/20 border-orange-500/30">
                     <h3 className="text-orange-400 text-xs font-bold uppercase">Minhas Pendências</h3>
@@ -619,14 +626,19 @@ const ScrapHistory = ({ scraps, currentUser }: any) => {
                 <div className="grid grid-cols-1 gap-2">
                     {filtered.length === 0 && <p className="text-zinc-500 text-center py-8">Nenhum registro encontrado no período.</p>}
                     {filtered.map((s: ScrapData) => (
-                        <div key={s.id} onClick={() => setSelected(s)} className="bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 p-4 rounded-lg flex justify-between items-center cursor-pointer hover:bg-slate-50 dark:hover:bg-zinc-800 transition-colors shadow-sm">
-                            <div>
+                        <div key={s.id} className="bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 p-4 rounded-lg flex justify-between items-center hover:bg-slate-50 dark:hover:bg-zinc-800 transition-colors shadow-sm group">
+                            <div onClick={() => setSelected(s)} className="cursor-pointer flex-1">
                                 <p className="font-bold text-slate-800 dark:text-zinc-200">{s.item} <span className="text-slate-500 dark:text-zinc-500 font-normal">| {s.model}</span></p>
                                 <p className="text-xs text-slate-500 dark:text-zinc-500">{new Date(s.date).toLocaleDateString()} • {s.leaderName}</p>
                             </div>
-                            <div className="text-right">
-                                <p className={`font-bold ${!s.countermeasure ? 'text-red-500 dark:text-red-400' : 'text-green-600 dark:text-green-400'}`}>R$ {s.totalValue?.toFixed(2)}</p>
-                                <span className="text-[10px] uppercase text-slate-500 dark:text-zinc-600">{s.status}</span>
+                            <div className="flex items-center gap-4">
+                                <div className="text-right">
+                                    <p className={`font-bold ${!s.countermeasure ? 'text-red-500 dark:text-red-400' : 'text-green-600 dark:text-green-400'}`}>{formatCurrency(s.totalValue)}</p>
+                                    <span className="text-[10px] uppercase text-slate-500 dark:text-zinc-600">{s.status}</span>
+                                </div>
+                                <Button size="sm" variant="ghost" onClick={() => setSelected(s)} className="opacity-0 group-hover:opacity-100 transition-opacity">
+                                    <Eye size={18} className="text-slate-500 dark:text-zinc-400 hover:text-blue-500" />
+                                </Button>
                             </div>
                         </div>
                     ))}
@@ -635,27 +647,44 @@ const ScrapHistory = ({ scraps, currentUser }: any) => {
 
             {selected && (
                 <div className="fixed inset-0 bg-black/80 flex items-center justify-center p-4 z-50 backdrop-blur-sm">
-                    <Card className="max-w-2xl w-full bg-white dark:bg-zinc-900 border-slate-200 dark:border-zinc-700">
+                    <Card className="max-w-4xl w-full bg-white dark:bg-zinc-900 border-slate-200 dark:border-zinc-700 max-h-[90vh] overflow-y-auto">
                         <div className="flex justify-between items-center mb-6">
                             <h3 className="font-bold text-xl text-slate-900 dark:text-white">Detalhes do Scrap</h3>
                             <button onClick={() => setSelected(null)}><X size={24} className="text-slate-500 dark:text-zinc-400" /></button>
                         </div>
-                        <div className="grid grid-cols-2 gap-4 text-sm text-slate-700 dark:text-zinc-300">
-                            <div className="bg-slate-50 dark:bg-zinc-950 p-3 rounded border border-slate-200 dark:border-zinc-800"><strong>Data:</strong> {new Date(selected.date).toLocaleDateString()}</div>
-                            <div className="bg-slate-50 dark:bg-zinc-950 p-3 rounded border border-slate-200 dark:border-zinc-800"><strong>Horário:</strong> {selected.time}</div>
-                            <div className="bg-slate-50 dark:bg-zinc-950 p-3 rounded border border-slate-200 dark:border-zinc-800"><strong>Líder:</strong> {selected.leaderName}</div>
-                            <div className="bg-slate-50 dark:bg-zinc-950 p-3 rounded border border-slate-200 dark:border-zinc-800"><strong>Quem Registrou:</strong> {selected.responsible || selected.userId}</div>
-                            <div className="bg-slate-50 dark:bg-zinc-950 p-3 rounded border border-slate-200 dark:border-zinc-800"><strong>Modelo:</strong> {selected.model}</div>
-                            <div className="bg-slate-50 dark:bg-zinc-950 p-3 rounded border border-slate-200 dark:border-zinc-800"><strong>Linha:</strong> {selected.line}</div>
-                            <div className="bg-slate-50 dark:bg-zinc-950 p-3 rounded border border-slate-200 dark:border-zinc-800"><strong>Item:</strong> {selected.item}</div>
-                            <div className="bg-slate-50 dark:bg-zinc-950 p-3 rounded border border-slate-200 dark:border-zinc-800"><strong>Valor:</strong> R$ {selected.totalValue?.toFixed(2)}</div>
-                            <div className="col-span-2 bg-slate-50 dark:bg-zinc-950 p-3 rounded border border-slate-200 dark:border-zinc-800">
-                                <strong>Motivo:</strong>
-                                <p className="mt-1 text-zinc-400">{selected.reason}</p>
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 text-sm">
+                            <div className="bg-slate-50 dark:bg-zinc-950 p-3 rounded border border-slate-200 dark:border-zinc-800"><strong className="block text-slate-500 dark:text-zinc-500 text-xs uppercase mb-1">Data</strong> <span className="text-slate-900 dark:text-zinc-200 text-base">{new Date(selected.date).toLocaleDateString()}</span></div>
+                            <div className="bg-slate-50 dark:bg-zinc-950 p-3 rounded border border-slate-200 dark:border-zinc-800"><strong className="block text-slate-500 dark:text-zinc-500 text-xs uppercase mb-1">Horário</strong> <span className="text-slate-900 dark:text-zinc-200 text-base">{selected.time}</span></div>
+                            <div className="md:col-span-2 bg-slate-50 dark:bg-zinc-950 p-3 rounded border border-slate-200 dark:border-zinc-800"><strong className="block text-slate-500 dark:text-zinc-500 text-xs uppercase mb-1">Líder</strong> <span className="text-slate-900 dark:text-zinc-200 text-base">{selected.leaderName}</span></div>
+
+                            <div className="bg-slate-50 dark:bg-zinc-950 p-3 rounded border border-slate-200 dark:border-zinc-800"><strong className="block text-slate-500 dark:text-zinc-500 text-xs uppercase mb-1">Quem Registrou</strong> <span className="text-slate-900 dark:text-zinc-200 text-base">{users.find((u: User) => u.matricula === selected.userId)?.name || selected.userId}</span></div>
+                            <div className="bg-slate-50 dark:bg-zinc-950 p-3 rounded border border-slate-200 dark:border-zinc-800"><strong className="block text-slate-500 dark:text-zinc-500 text-xs uppercase mb-1">Responsável</strong> <span className="text-slate-900 dark:text-zinc-200 text-base">{selected.responsible || '-'}</span></div>
+                            <div className="bg-slate-50 dark:bg-zinc-950 p-3 rounded border border-slate-200 dark:border-zinc-800"><strong className="block text-slate-500 dark:text-zinc-500 text-xs uppercase mb-1">Turno</strong> <span className="text-slate-900 dark:text-zinc-200 text-base">{selected.shift}</span></div>
+                            <div className="bg-slate-50 dark:bg-zinc-950 p-3 rounded border border-slate-200 dark:border-zinc-800"><strong className="block text-slate-500 dark:text-zinc-500 text-xs uppercase mb-1">Linha</strong> <span className="text-slate-900 dark:text-zinc-200 text-base">{selected.line}</span></div>
+                            <div className="bg-slate-50 dark:bg-zinc-950 p-3 rounded border border-slate-200 dark:border-zinc-800"><strong className="block text-slate-500 dark:text-zinc-500 text-xs uppercase mb-1">PQC</strong> <span className="text-slate-900 dark:text-zinc-200 text-base">{selected.pqc || '-'}</span></div>
+
+                            <div className="bg-slate-50 dark:bg-zinc-950 p-3 rounded border border-slate-200 dark:border-zinc-800"><strong className="block text-slate-500 dark:text-zinc-500 text-xs uppercase mb-1">Modelo</strong> <span className="text-slate-900 dark:text-zinc-200 text-base">{selected.model}</span></div>
+                            <div className="bg-slate-50 dark:bg-zinc-950 p-3 rounded border border-slate-200 dark:border-zinc-800"><strong className="block text-slate-500 dark:text-zinc-500 text-xs uppercase mb-1">Modelo Usado</strong> <span className="text-slate-900 dark:text-zinc-200 text-base">{selected.usedModel || '-'}</span></div>
+                            <div className="md:col-span-2 bg-slate-50 dark:bg-zinc-950 p-3 rounded border border-slate-200 dark:border-zinc-800"><strong className="block text-slate-500 dark:text-zinc-500 text-xs uppercase mb-1">Cód. Matéria Prima</strong> <span className="text-slate-900 dark:text-zinc-200 text-base">{selected.code || '-'}</span></div>
+
+                            <div className="md:col-span-4 bg-slate-50 dark:bg-zinc-950 p-3 rounded border border-slate-200 dark:border-zinc-800"><strong className="block text-slate-500 dark:text-zinc-500 text-xs uppercase mb-1">Descrição</strong> <span className="text-slate-900 dark:text-zinc-200 text-base">{selected.description || '-'}</span></div>
+
+                            <div className="bg-slate-50 dark:bg-zinc-950 p-3 rounded border border-slate-200 dark:border-zinc-800"><strong className="block text-slate-500 dark:text-zinc-500 text-xs uppercase mb-1">Quantidade</strong> <span className="text-slate-900 dark:text-zinc-200 text-base">{selected.qty}</span></div>
+                            <div className="bg-slate-50 dark:bg-zinc-950 p-3 rounded border border-slate-200 dark:border-zinc-800"><strong className="block text-slate-500 dark:text-zinc-500 text-xs uppercase mb-1">Item</strong> <span className="text-slate-900 dark:text-zinc-200 text-base">{selected.item}</span></div>
+                            <div className="bg-slate-50 dark:bg-zinc-950 p-3 rounded border border-slate-200 dark:border-zinc-800"><strong className="block text-slate-500 dark:text-zinc-500 text-xs uppercase mb-1">Status</strong> <span className="text-slate-900 dark:text-zinc-200 text-base">{selected.status}</span></div>
+                            <div className="bg-slate-50 dark:bg-zinc-950 p-3 rounded border border-slate-200 dark:border-zinc-800"><strong className="block text-slate-500 dark:text-zinc-500 text-xs uppercase mb-1">Estação</strong> <span className="text-slate-900 dark:text-zinc-200 text-base">{selected.station || '-'}</span></div>
+
+                            <div className="bg-slate-50 dark:bg-zinc-950 p-3 rounded border border-slate-200 dark:border-zinc-800"><strong className="block text-slate-500 dark:text-zinc-500 text-xs uppercase mb-1">Valor Unitário</strong> <span className="text-slate-900 dark:text-zinc-200 text-base">{formatCurrency(selected.unitValue)}</span></div>
+                            <div className="bg-red-50 dark:bg-red-900/10 p-3 rounded border border-red-200 dark:border-red-900/30"><strong className="block text-red-500 dark:text-red-400 text-xs uppercase mb-1">Valor Total</strong> <span className="text-red-600 dark:text-red-500 text-xl font-bold">{formatCurrency(selected.totalValue)}</span></div>
+                            <div className="md:col-span-2 bg-slate-50 dark:bg-zinc-950 p-3 rounded border border-slate-200 dark:border-zinc-800"><strong className="block text-slate-500 dark:text-zinc-500 text-xs uppercase mb-1">Causa Raiz</strong> <span className="text-slate-900 dark:text-zinc-200 text-base">{selected.rootCause || '-'}</span></div>
+
+                            <div className="col-span-1 md:col-span-2 lg:col-span-4 bg-slate-50 dark:bg-zinc-950 p-3 rounded border border-slate-200 dark:border-zinc-800">
+                                <strong className="block text-slate-500 dark:text-zinc-500 text-xs uppercase mb-1">Motivo</strong>
+                                <p className="mt-1 text-slate-600 dark:text-zinc-400">{selected.reason}</p>
                             </div>
-                            <div className="col-span-2 bg-zinc-950 p-3 rounded border border-green-900/30">
-                                <strong className="text-green-400">Contra Medida:</strong>
-                                <p className="mt-1 text-zinc-300">{selected.countermeasure || 'Pendente'}</p>
+                            <div className="col-span-1 md:col-span-2 lg:col-span-4 bg-green-50 dark:bg-zinc-950 p-3 rounded border border-green-200 dark:border-green-900/30">
+                                <strong className="block text-green-600 dark:text-green-400 text-xs uppercase mb-1">Contra Medida</strong>
+                                <p className="mt-1 text-slate-800 dark:text-zinc-300">{selected.countermeasure || 'Pendente'}</p>
                             </div>
                         </div>
                     </Card>
@@ -709,7 +738,6 @@ const ScrapOperational = ({ scraps, users, lines, models }: any) => {
             else if (filters.period === 'YEAR' && filters.specificYear) {
                 res = res.filter(s => s.date.startsWith(filters.specificYear));
             }
-            // Fallback default
             else if (filters.period === 'MONTH' && !filters.specificMonth) {
                 const m = (d.getMonth() + 1).toString().padStart(2, '0');
                 const y = d.getFullYear();
@@ -768,7 +796,7 @@ const ScrapOperational = ({ scraps, users, lines, models }: any) => {
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <Card className="bg-blue-900/20 border-blue-900/50 p-6">
                     <h3 className="text-blue-400 font-bold uppercase text-xs">Total Filtrado</h3>
-                    <p className="text-3xl font-bold mt-2">R$ {filtered.reduce((a, b) => a + (b.totalValue || 0), 0).toFixed(2)}</p>
+                    <p className="text-3xl font-bold mt-2">{formatCurrency(filtered.reduce((a, b) => a + (b.totalValue || 0), 0))}</p>
                 </Card>
                 <Card className="bg-white dark:bg-zinc-900 border-slate-200 dark:border-zinc-800 p-6 flex flex-col justify-center items-center cursor-pointer hover:bg-slate-50 dark:hover:bg-zinc-800 shadow-sm" onClick={downloadExcel}>
                     <Download size={32} className="text-green-600 dark:text-green-500 mb-2" />
@@ -778,51 +806,71 @@ const ScrapOperational = ({ scraps, users, lines, models }: any) => {
 
             <div className="bg-white dark:bg-zinc-900 rounded-xl overflow-hidden border border-slate-200 dark:border-zinc-800 shadow-sm">
                 <table className="w-full text-sm">
-
                     <thead className="bg-slate-50 dark:bg-zinc-950 text-slate-500 dark:text-zinc-400 border-b border-slate-200 dark:border-zinc-800">
                         <tr>
                             <th className="p-3 text-left">Data</th>
                             <th className="p-3 text-left">Líder</th>
+                            <th className="p-3 text-left">Modelo</th>
+                            <th className="p-3 text-left">Linha</th>
                             <th className="p-3 text-left">Item</th>
                             <th className="p-3 text-right">Valor</th>
                         </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100 dark:divide-zinc-800">
-                        {filtered.slice(0, 50).map(s => (
+                        {filtered.map(s => (
                             <tr key={s.id} className="hover:bg-slate-50 dark:hover:bg-zinc-800/50 cursor-pointer transition-colors" onClick={() => setSelected(s)}>
                                 <td className="p-3 text-slate-700 dark:text-zinc-300">{new Date(s.date).toLocaleDateString()}</td>
                                 <td className="p-3 text-slate-700 dark:text-zinc-300">{s.leaderName}</td>
+                                <td className="p-3 text-slate-700 dark:text-zinc-300">{s.model}</td>
+                                <td className="p-3 text-slate-700 dark:text-zinc-300">{s.line}</td>
                                 <td className="p-3 text-slate-700 dark:text-zinc-300">{s.item}</td>
-                                <td className="p-3 text-right font-mono text-slate-700 dark:text-zinc-300">{s.totalValue?.toFixed(2)}</td>
+                                <td className="p-3 text-right font-mono text-slate-700 dark:text-zinc-300">{formatCurrency(s.totalValue)}</td>
                             </tr>
                         ))}
                     </tbody>
                 </table>
-                {filtered.length > 50 && <div className="p-2 text-center text-xs text-slate-500 dark:text-zinc-500">Exibindo 50 de {filtered.length} itens...</div>}
+                {filtered.length === 0 && <div className="p-8 text-center text-slate-500 dark:text-zinc-500">Nenhum registro encontrado.</div>}
             </div>
 
             {selected && (
                 <div className="fixed inset-0 bg-black/80 flex items-center justify-center p-4 z-50 backdrop-blur-sm">
-                    <Card className="max-w-2xl w-full bg-white dark:bg-zinc-900 border-slate-200 dark:border-zinc-700">
+                    <Card className="max-w-4xl w-full bg-white dark:bg-zinc-900 border-slate-200 dark:border-zinc-700 max-h-[90vh] overflow-y-auto">
                         <div className="flex justify-between items-center mb-6">
                             <h3 className="font-bold text-xl text-slate-900 dark:text-white">Detalhes do Scrap</h3>
                             <button onClick={() => setSelected(null)}><X size={24} className="text-slate-500 dark:text-zinc-400" /></button>
                         </div>
-                        <div className="grid grid-cols-2 gap-4 text-sm">
-                            <div className="bg-slate-50 dark:bg-zinc-950 p-3 rounded border border-slate-200 dark:border-zinc-800"><strong className="text-slate-700 dark:text-zinc-400">Data:</strong> <span className="text-slate-900 dark:text-zinc-200">{new Date(selected.date).toLocaleDateString()}</span></div>
-                            <div className="bg-slate-50 dark:bg-zinc-950 p-3 rounded border border-slate-200 dark:border-zinc-800"><strong className="text-slate-700 dark:text-zinc-400">Horário:</strong> <span className="text-slate-900 dark:text-zinc-200">{selected.time}</span></div>
-                            <div className="bg-slate-50 dark:bg-zinc-950 p-3 rounded border border-slate-200 dark:border-zinc-800"><strong className="text-slate-700 dark:text-zinc-400">Líder:</strong> <span className="text-slate-900 dark:text-zinc-200">{selected.leaderName}</span></div>
-                            <div className="bg-slate-50 dark:bg-zinc-950 p-3 rounded border border-slate-200 dark:border-zinc-800"><strong className="text-slate-700 dark:text-zinc-400">Quem Registrou:</strong> <span className="text-slate-900 dark:text-zinc-200">{selected.responsible || selected.userId}</span></div>
-                            <div className="bg-slate-50 dark:bg-zinc-950 p-3 rounded border border-slate-200 dark:border-zinc-800"><strong className="text-slate-700 dark:text-zinc-400">Modelo:</strong> <span className="text-slate-900 dark:text-zinc-200">{selected.model}</span></div>
-                            <div className="bg-slate-50 dark:bg-zinc-950 p-3 rounded border border-slate-200 dark:border-zinc-800"><strong className="text-slate-700 dark:text-zinc-400">Linha:</strong> <span className="text-slate-900 dark:text-zinc-200">{selected.line}</span></div>
-                            <div className="bg-slate-50 dark:bg-zinc-950 p-3 rounded border border-slate-200 dark:border-zinc-800"><strong className="text-slate-700 dark:text-zinc-400">Item:</strong> <span className="text-slate-900 dark:text-zinc-200">{selected.item}</span></div>
-                            <div className="bg-slate-50 dark:bg-zinc-950 p-3 rounded border border-slate-200 dark:border-zinc-800"><strong className="text-slate-700 dark:text-zinc-400">Valor:</strong> <span className="text-slate-900 dark:text-zinc-200">R$ {selected.totalValue?.toFixed(2)}</span></div>
-                            <div className="col-span-2 bg-slate-50 dark:bg-zinc-950 p-3 rounded border border-slate-200 dark:border-zinc-800">
-                                <strong className="text-slate-700 dark:text-zinc-400">Motivo:</strong>
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 text-sm">
+                            <div className="bg-slate-50 dark:bg-zinc-950 p-3 rounded border border-slate-200 dark:border-zinc-800"><strong className="block text-slate-500 dark:text-zinc-500 text-xs uppercase mb-1">Data</strong> <span className="text-slate-900 dark:text-zinc-200 text-base">{new Date(selected.date).toLocaleDateString()}</span></div>
+                            <div className="bg-slate-50 dark:bg-zinc-950 p-3 rounded border border-slate-200 dark:border-zinc-800"><strong className="block text-slate-500 dark:text-zinc-500 text-xs uppercase mb-1">Horário</strong> <span className="text-slate-900 dark:text-zinc-200 text-base">{selected.time}</span></div>
+                            <div className="md:col-span-2 bg-slate-50 dark:bg-zinc-950 p-3 rounded border border-slate-200 dark:border-zinc-800"><strong className="block text-slate-500 dark:text-zinc-500 text-xs uppercase mb-1">Líder</strong> <span className="text-slate-900 dark:text-zinc-200 text-base">{selected.leaderName}</span></div>
+
+                            <div className="bg-slate-50 dark:bg-zinc-950 p-3 rounded border border-slate-200 dark:border-zinc-800"><strong className="block text-slate-500 dark:text-zinc-500 text-xs uppercase mb-1">Quem Registrou</strong> <span className="text-slate-900 dark:text-zinc-200 text-base">{users.find((u: User) => u.matricula === selected.userId)?.name || selected.userId}</span></div>
+                            <div className="bg-slate-50 dark:bg-zinc-950 p-3 rounded border border-slate-200 dark:border-zinc-800"><strong className="block text-slate-500 dark:text-zinc-500 text-xs uppercase mb-1">Responsável</strong> <span className="text-slate-900 dark:text-zinc-200 text-base">{selected.responsible || '-'}</span></div>
+                            <div className="bg-slate-50 dark:bg-zinc-950 p-3 rounded border border-slate-200 dark:border-zinc-800"><strong className="block text-slate-500 dark:text-zinc-500 text-xs uppercase mb-1">Turno</strong> <span className="text-slate-900 dark:text-zinc-200 text-base">{selected.shift}</span></div>
+                            <div className="bg-slate-50 dark:bg-zinc-950 p-3 rounded border border-slate-200 dark:border-zinc-800"><strong className="block text-slate-500 dark:text-zinc-500 text-xs uppercase mb-1">Linha</strong> <span className="text-slate-900 dark:text-zinc-200 text-base">{selected.line}</span></div>
+                            <div className="bg-slate-50 dark:bg-zinc-950 p-3 rounded border border-slate-200 dark:border-zinc-800"><strong className="block text-slate-500 dark:text-zinc-500 text-xs uppercase mb-1">PQC</strong> <span className="text-slate-900 dark:text-zinc-200 text-base">{selected.pqc || '-'}</span></div>
+
+                            <div className="bg-slate-50 dark:bg-zinc-950 p-3 rounded border border-slate-200 dark:border-zinc-800"><strong className="block text-slate-500 dark:text-zinc-500 text-xs uppercase mb-1">Modelo</strong> <span className="text-slate-900 dark:text-zinc-200 text-base">{selected.model}</span></div>
+                            <div className="bg-slate-50 dark:bg-zinc-950 p-3 rounded border border-slate-200 dark:border-zinc-800"><strong className="block text-slate-500 dark:text-zinc-500 text-xs uppercase mb-1">Modelo Usado</strong> <span className="text-slate-900 dark:text-zinc-200 text-base">{selected.usedModel || '-'}</span></div>
+                            <div className="md:col-span-2 bg-slate-50 dark:bg-zinc-950 p-3 rounded border border-slate-200 dark:border-zinc-800"><strong className="block text-slate-500 dark:text-zinc-500 text-xs uppercase mb-1">Cód. Matéria Prima</strong> <span className="text-slate-900 dark:text-zinc-200 text-base">{selected.code || '-'}</span></div>
+
+                            <div className="md:col-span-4 bg-slate-50 dark:bg-zinc-950 p-3 rounded border border-slate-200 dark:border-zinc-800"><strong className="block text-slate-500 dark:text-zinc-500 text-xs uppercase mb-1">Descrição</strong> <span className="text-slate-900 dark:text-zinc-200 text-base">{selected.description || '-'}</span></div>
+
+                            <div className="bg-slate-50 dark:bg-zinc-950 p-3 rounded border border-slate-200 dark:border-zinc-800"><strong className="block text-slate-500 dark:text-zinc-500 text-xs uppercase mb-1">Quantidade</strong> <span className="text-slate-900 dark:text-zinc-200 text-base">{selected.qty}</span></div>
+                            <div className="bg-slate-50 dark:bg-zinc-950 p-3 rounded border border-slate-200 dark:border-zinc-800"><strong className="block text-slate-500 dark:text-zinc-500 text-xs uppercase mb-1">Item</strong> <span className="text-slate-900 dark:text-zinc-200 text-base">{selected.item}</span></div>
+                            <div className="bg-slate-50 dark:bg-zinc-950 p-3 rounded border border-slate-200 dark:border-zinc-800"><strong className="block text-slate-500 dark:text-zinc-500 text-xs uppercase mb-1">Status</strong> <span className="text-slate-900 dark:text-zinc-200 text-base">{selected.status}</span></div>
+                            <div className="bg-slate-50 dark:bg-zinc-950 p-3 rounded border border-slate-200 dark:border-zinc-800"><strong className="block text-slate-500 dark:text-zinc-500 text-xs uppercase mb-1">Estação</strong> <span className="text-slate-900 dark:text-zinc-200 text-base">{selected.station || '-'}</span></div>
+
+                            <div className="bg-slate-50 dark:bg-zinc-950 p-3 rounded border border-slate-200 dark:border-zinc-800"><strong className="block text-slate-500 dark:text-zinc-500 text-xs uppercase mb-1">Valor Unitário</strong> <span className="text-slate-900 dark:text-zinc-200 text-base">{formatCurrency(selected.unitValue)}</span></div>
+                            <div className="bg-red-50 dark:bg-red-900/10 p-3 rounded border border-red-200 dark:border-red-900/30"><strong className="block text-red-500 dark:text-red-400 text-xs uppercase mb-1">Valor Total</strong> <span className="text-red-600 dark:text-red-500 text-xl font-bold">{formatCurrency(selected.totalValue)}</span></div>
+                            <div className="md:col-span-2 bg-slate-50 dark:bg-zinc-950 p-3 rounded border border-slate-200 dark:border-zinc-800"><strong className="block text-slate-500 dark:text-zinc-500 text-xs uppercase mb-1">Causa Raiz</strong> <span className="text-slate-900 dark:text-zinc-200 text-base">{selected.rootCause || '-'}</span></div>
+
+                            <div className="col-span-1 md:col-span-2 lg:col-span-4 bg-slate-50 dark:bg-zinc-950 p-3 rounded border border-slate-200 dark:border-zinc-800">
+                                <strong className="block text-slate-500 dark:text-zinc-500 text-xs uppercase mb-1">Motivo</strong>
                                 <p className="mt-1 text-slate-600 dark:text-zinc-400">{selected.reason}</p>
                             </div>
-                            <div className="col-span-2 bg-green-50 dark:bg-zinc-950 p-3 rounded border border-green-200 dark:border-green-900/30">
-                                <strong className="text-green-600 dark:text-green-400">Contra Medida:</strong>
+                            <div className="col-span-1 md:col-span-2 lg:col-span-4 bg-green-50 dark:bg-zinc-950 p-3 rounded border border-green-200 dark:border-green-900/30">
+                                <strong className="block text-green-600 dark:text-green-400 text-xs uppercase mb-1">Contra Medida</strong>
                                 <p className="mt-1 text-slate-800 dark:text-zinc-300">{selected.countermeasure || 'Pendente'}</p>
                             </div>
                         </div>
@@ -934,7 +982,7 @@ const ScrapManagementAdvanced = ({ scraps }: any) => {
                         {rankings.shift.map(([name, val], i) => (
                             <div key={name} className="flex justify-between items-center p-2 bg-slate-50 dark:bg-zinc-950 rounded border border-slate-200 dark:border-zinc-800">
                                 <span className="text-sm text-slate-700 dark:text-zinc-300">Turno {name}</span>
-                                <span className="font-mono font-bold text-emerald-600 dark:text-emerald-400">R$ {val.toFixed(2)}</span>
+                                <span className="font-mono font-bold text-emerald-600 dark:text-emerald-400">{formatCurrency(val)}</span>
                             </div>
                         ))}
                     </div>
@@ -945,7 +993,7 @@ const ScrapManagementAdvanced = ({ scraps }: any) => {
                         {rankings.line.map(([name, val], i) => (
                             <div key={name} className="flex justify-between items-center p-2 bg-slate-50 dark:bg-zinc-950 rounded border border-slate-200 dark:border-zinc-800">
                                 <span className="text-sm text-slate-700 dark:text-zinc-300">{name}</span>
-                                <span className="font-mono font-bold text-purple-600 dark:text-purple-400">R$ {val.toFixed(2)}</span>
+                                <span className="font-mono font-bold text-purple-600 dark:text-purple-400">{formatCurrency(val)}</span>
                             </div>
                         ))}
                     </div>
@@ -956,7 +1004,7 @@ const ScrapManagementAdvanced = ({ scraps }: any) => {
                         {rankings.model.slice(0, 10).map(([name, val], i) => (
                             <div key={name} className="flex justify-between items-center p-2 bg-slate-50 dark:bg-zinc-950 rounded border border-slate-200 dark:border-zinc-800">
                                 <span className="text-sm truncate max-w-[150px] text-slate-700 dark:text-zinc-300">{name}</span>
-                                <span className="font-mono font-bold text-blue-600 dark:text-blue-400">R$ {val.toFixed(2)}</span>
+                                <span className="font-mono font-bold text-blue-600 dark:text-blue-400">{formatCurrency(val)}</span>
                             </div>
                         ))}
                     </div>
@@ -969,7 +1017,7 @@ const ScrapManagementAdvanced = ({ scraps }: any) => {
                         {rankings.leader.slice(0, 10).map(([name, val], i) => (
                             <div key={name} className="flex justify-between items-center p-2 bg-slate-50 dark:bg-zinc-950 rounded border border-slate-200 dark:border-zinc-800">
                                 <span className="text-sm text-slate-700 dark:text-zinc-300"><span className="font-bold text-slate-500 dark:text-zinc-500 mr-2">#{i + 1}</span> {name}</span>
-                                <span className="font-mono font-bold text-red-600 dark:text-red-400">R$ {val.toFixed(2)}</span>
+                                <span className="font-mono font-bold text-red-600 dark:text-red-400">{formatCurrency(val)}</span>
                             </div>
                         ))}
                     </div>

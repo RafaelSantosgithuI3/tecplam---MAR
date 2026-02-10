@@ -595,6 +595,13 @@ export const exportLineStopToExcel = async (log: ChecklistLog) => {
 }
 
 export const exportScrapToExcel = async (scraps: any[]) => {
+    // 1. Sort Scraps: Oldest to Newest
+    scraps.sort((a, b) => {
+        const da = new Date(a.date).getTime();
+        const db = new Date(b.date).getTime();
+        return da - db;
+    });
+
     const workbook = new ExcelJS.Workbook();
     try {
         const response = await fetch('/template_scrap.xlsx');
@@ -621,32 +628,53 @@ export const exportScrapToExcel = async (scraps: any[]) => {
     const greenMedium = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFC6E0B4' } } as ExcelJS.Fill; // Verde Médio
     const greenLight = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE2EFDA' } } as ExcelJS.Fill; // Verde Claro
 
+    // Column Width Tracking
+    const columnWidths: { [key: string]: number } = {
+        'B': 12, 'C': 8, 'D': 8, 'E': 10, 'F': 20, 'G': 15, 'H': 15, 'I': 8,
+        'J': 15, 'K': 10, 'L': 12, 'M': 40, 'N': 12, 'O': 12, 'P': 15, 'Q': 15,
+        'R': 12, 'S': 30, 'T': 20, 'U': 30
+    };
+
+    const updateWidth = (col: string, val: any) => {
+        if (!val) return;
+        const len = String(val).length;
+        if (len > (columnWidths[col] || 10)) {
+            columnWidths[col] = Math.min(len + 2, 60); // Cap width at 60
+        }
+    };
+
     scraps.forEach((scrap, index) => {
         const currentRow = startRow + index;
         const row = worksheet.getRow(currentRow);
 
-        // Zebra Striping
-        const fillStyle = index % 2 === 0 ? greenMedium : greenLight;
-
-        // Helper to set cell
-        const setCell = (col: string, val: any, format?: string) => {
-            const cell = worksheet.getCell(`${col}${currentRow}`);
-            cell.value = val;
-            cell.border = borderStyle;
-            cell.fill = fillStyle;
-            cell.alignment = centerStyle;
-            if (format) cell.numFmt = format;
-            return cell;
-        };
+        // 2. Fixed Row Height
+        row.height = 25;
 
         // Date Formatting dd/mm/yyyy
         let dateVal = scrap.date;
         try {
             if (dateVal) {
                 const d = new Date(dateVal);
-                dateVal = d.toLocaleDateString('pt-BR');
+                // Adjust for timezone offset if necessary, but assuming input is YYYY-MM-DD string or ISO
+                const userTimezoneOffset = d.getTimezoneOffset() * 60000;
+                const offsetDate = new Date(d.getTime() + userTimezoneOffset);
+                dateVal = offsetDate.toLocaleDateString('pt-BR');
             }
         } catch (e) { }
+
+        // Zebra Striping
+        const fillStyle = index % 2 === 0 ? greenMedium : greenLight;
+
+        // Mapeamento e escrita
+        const setCell = (col: string, val: any, format?: string, alignIsLeft = false) => {
+            const cell = worksheet.getCell(`${col}${currentRow}`);
+            cell.value = val;
+            cell.border = borderStyle;
+            cell.fill = fillStyle;
+            cell.alignment = alignIsLeft ? leftStyle : centerStyle;
+            if (format) cell.numFmt = format;
+            updateWidth(col, val); // Track width
+        };
 
         setCell('B', dateVal);
         setCell('C', scrap.week);
@@ -659,19 +687,20 @@ export const exportScrapToExcel = async (scraps: any[]) => {
         setCell('J', scrap.item);
         setCell('K', scrap.status || 'NG');
         setCell('L', scrap.code);
-
-        const descCell = setCell('M', scrap.description);
-        descCell.alignment = leftStyle; // Description aligned left
-
-        setCell('N', scrap.unitValue, '"R$"#,##0.00'); // Currency
-        setCell('O', scrap.totalValue, '"R$"#,##0.00'); // Currency
-
+        setCell('M', scrap.description, undefined, true); // Left align
+        setCell('N', scrap.unitValue, '"R$"#,##0.00');
+        setCell('O', scrap.totalValue, '"R$"#,##0.00');
         setCell('P', scrap.usedModel || scrap.model);
-        setCell('Q', scrap.responsible || scrap.station); // Responsible can fall back to station or vice versa depending on logic, user asked for Responsible (Operador ou Estação)
+        setCell('Q', scrap.responsible);
         setCell('R', scrap.station);
-        setCell('S', scrap.reason);
+        setCell('S', scrap.reason, undefined, true);
         setCell('T', scrap.rootCause);
-        setCell('U', scrap.countermeasure);
+        setCell('U', scrap.countermeasure, undefined, true);
+    });
+
+    // 3. Apply Auto-Fit Widths
+    Object.keys(columnWidths).forEach(col => {
+        worksheet.getColumn(col).width = columnWidths[col];
     });
 
     const buffer = await workbook.xlsx.writeBuffer();
