@@ -68,8 +68,8 @@ export const saveMaterials = async (materials: import('../types').Material[]) =>
 };
 
 export const SCRAP_ITEMS = [
-    'BATERIA', 'REAR', 'TAPE', 'CAMERA RW1', 'CAMERA FW1', 'CAMERA RB1',
-    'BAG', 'SIMTRAY', 'CAIXA MASTER', 'CAIXA GIFT', 'FRONT', 'OCTA',
+    'BATERIA', 'REAR', 'CAMERA RW1', 'CAMERA FW1', 'CAMERA RB1', 'OCTA', 'FRONT',
+    'MIUDEZAS', 'BAG', 'SIMTRAY', 'CAIXA MASTER', 'CAIXA GIFT', 'TAPE',
     'CABO COAXIAL', 'CABO FLAT', 'BRACKET', 'BACK COVER', 'PARAFUSO',
     'SUB PBA', 'SPK', 'RCV', 'BLINDAGEM'
 ];

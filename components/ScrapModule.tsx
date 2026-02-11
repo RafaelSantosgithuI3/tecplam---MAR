@@ -219,8 +219,8 @@ const ScrapForm = ({ users, models, stations, lines, materials, onSuccess, curre
     };
 
     const handleSubmit = async () => {
-        if (!formData.leaderName || !formData.model || !formData.item || !formData.reason || !formData.line || !formData.pqc) {
-            alert("Preencha todos os campos obrigatórios (Líder, Linha, PQC, Modelo, Item, Motivo)!");
+        if (!formData.leaderName || !formData.model || !formData.item || !formData.line) {
+            alert("Preencha todos os campos obrigatórios (Líder, Linha, Modelo, Item)!");
             return;
         }
 
