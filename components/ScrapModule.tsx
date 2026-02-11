@@ -486,7 +486,7 @@ const ScrapPending = ({ scraps, currentUser, onUpdate, users }: any) => {
                             <h3 className="font-bold text-xl">Resolver Pendência de Scrap</h3>
                             <button onClick={() => setSelected(null)}><X size={24} /></button>
                         </div>
-                        <div className="space-y-6 opacity-80 pointer-events-none">
+                        <div className="space-y-6 opacity-80">
                             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                                 <Input label="Data" value={selected.date} readOnly />
                                 <Input label="Semana" value={selected.week} readOnly />

@@ -13,6 +13,21 @@ const prisma = new PrismaClient({
     log: ['error', 'warn'], // Optional: Add 'query' for debugging
 });
 
+let SCRAP_CACHE = null; // In-Memory Cache for Scraps
+
+const loadScrapCache = async () => {
+    console.log("🔄 Carregando Scraps para a RAM...");
+    try {
+        SCRAP_CACHE = await prisma.scrapLog.findMany({
+            orderBy: [{ date: 'desc' }, { time: 'desc' }]
+        });
+        console.log(`✅ Cache carregado: ${SCRAP_CACHE.length} registros.`);
+    } catch (e) {
+        console.error("❌ Erro ao carregar cache de scraps:", e);
+        SCRAP_CACHE = []; // Fallback to empty array to prevent null errors
+    }
+};
+
 const PORT = 3000;
 const SALT_ROUNDS = 10;
 
@@ -611,23 +626,20 @@ app.post('/api/meetings', async (req, res) => {
 
 app.get('/api/scraps', async (req, res) => {
     try {
-        // Order by date DESC, time DESC. 
-        // string time sort might be imperfect but works for HH:MM usually.
-        const scraps = await prisma.scrapLog.findMany({
-            orderBy: [
-                { date: 'desc' },
-                { time: 'desc' }
-            ]
-        });
-        res.json(scraps);
-    } catch (e) { res.status(500).json({ error: e.message }); }
+        if (!SCRAP_CACHE) {
+            await loadScrapCache();
+        }
+        res.json(SCRAP_CACHE);
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
 });
 
 app.post('/api/scraps', async (req, res) => {
     try {
         const { id, ...rest } = req.body; // Remove ID to let DB autoincrement
 
-        await prisma.scrapLog.create({
+        const newScrap = await prisma.scrapLog.create({
             data: {
                 userId: rest.userId,
                 date: rest.date,
@@ -649,10 +661,16 @@ app.post('/api/scraps', async (req, res) => {
                 station: rest.station,
                 reason: rest.reason,
                 rootCause: rest.rootCause,
-                countermeasure: rest.countermeasure || null, // Handle undefined
+                countermeasure: rest.countermeasure || null,
                 line: rest.line
             }
         });
+
+        // Write-Through Cache
+        if (SCRAP_CACHE) {
+            SCRAP_CACHE.unshift(newScrap);
+        }
+
         res.json({ message: "Scrap salvo" });
     } catch (e) {
         console.error("Scrap Create Error:", e);
@@ -667,12 +685,12 @@ app.put('/api/scraps/:id', async (req, res) => {
 
     const updates = req.body;
 
-    // Use Prisma field names directly or map if coming from snake_case
     const dataToUpdate = {};
 
     if (updates.countermeasure !== undefined) dataToUpdate.countermeasure = updates.countermeasure;
     if (updates.reason !== undefined) dataToUpdate.reason = updates.reason;
     if (updates.status !== undefined) dataToUpdate.status = updates.status;
+    if (updates.responsible !== undefined) dataToUpdate.responsible = updates.responsible; // Added responsible explicit update support
 
     // Leader Name
     if (updates.leaderName !== undefined) dataToUpdate.leaderName = updates.leaderName;
@@ -689,10 +707,19 @@ app.put('/api/scraps/:id', async (req, res) => {
     if (Object.keys(dataToUpdate).length === 0) return res.json({ message: "Nada a atualizar" });
 
     try {
-        await prisma.scrapLog.update({
+        const updatedScrap = await prisma.scrapLog.update({
             where: { id: numericId },
             data: dataToUpdate
         });
+
+        // Update Cache Manually (Write-Through)
+        if (SCRAP_CACHE) {
+            const index = SCRAP_CACHE.findIndex(s => s.id === numericId);
+            if (index !== -1) {
+                SCRAP_CACHE[index] = updatedScrap;
+            }
+        }
+
         res.json({ message: "Scrap atualizado" });
     } catch (e) {
         console.error("Update Scrap Error:", e);
@@ -788,11 +815,14 @@ function getLocalIp() {
 }
 
 console.log("🚀 Iniciando servidor...");
-app.listen(PORT, '0.0.0.0', () => {
-    console.log(`✅ SERVIDOR RODANDO! (Prisma ORM)`);
-    console.log(`--------------------------------------------------`);
-    console.log(`💻 ACESSO LOCAL:     http://localhost:${PORT}`);
-    console.log(`📱 ACESSO NA REDE:   http://${getLocalIp()}:${PORT}`);
-    console.log(`--------------------------------------------------`);
-    console.log(`Conectado ao database via Prisma.`);
+// Warm-up Cache before listening matches user request "Chame essa função assim que o servidor iniciar (antes do app.listen)"
+loadScrapCache().then(() => {
+    app.listen(PORT, '0.0.0.0', () => {
+        console.log(`✅ SERVIDOR RODANDO! (Prisma ORM | RAM Cache Enabled)`);
+        console.log(`--------------------------------------------------`);
+        console.log(`💻 ACESSO LOCAL:     http://localhost:${PORT}`);
+        console.log(`📱 ACESSO NA REDE:   http://${getLocalIp()}:${PORT}`);
+        console.log(`--------------------------------------------------`);
+        console.log(`Conectado ao database via Prisma.`);
+    });
 });
