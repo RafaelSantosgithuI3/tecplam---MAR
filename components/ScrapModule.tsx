@@ -84,11 +84,22 @@ export const ScrapModule: React.FC<ScrapModuleProps> = ({ currentUser, onBack, i
     const isLeader = currentUser.role.toLowerCase().includes('líder') || currentUser.role.toLowerCase().includes('supervisor');
     const isAdmin = currentUser.isAdmin || currentUser.role.toLowerCase().includes('admin') || currentUser.role.toLowerCase().includes('gerente');
 
-    const canEditDelete = isAdmin ||
-        currentUser.role.toLowerCase().includes('TI') ||
-        currentUser.role.toLowerCase().includes('Supervisor') ||
-        currentUser.role.toLowerCase().includes('IQC Inspetor') ||
-        currentUser.role.toLowerCase().includes('admin');
+    const canEditDelete = useMemo(() => {
+        if (!currentUser) return false;
+
+        const role = (currentUser.role || '').toLowerCase().trim();
+
+        // Palavras-chave que liberam o acesso
+        const allowedKeywords = [
+            'admin',
+            'ti',
+            'supervisor',
+            'diretor',
+            'iqc inspetor'
+        ];
+
+        return currentUser.isAdmin || allowedKeywords.some(keyword => role.includes(keyword));
+    }, [currentUser]);
 
     return (
         <div className="min-h-screen bg-gray-50 dark:bg-zinc-950 text-gray-900 dark:text-zinc-100 p-4 md:p-8 space-y-6 transition-colors duration-200">
