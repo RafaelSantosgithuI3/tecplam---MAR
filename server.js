@@ -684,26 +684,49 @@ app.put('/api/scraps/:id', async (req, res) => {
     if (isNaN(numericId)) return res.status(400).json({ error: "Invalid ID" });
 
     const updates = req.body;
-
     const dataToUpdate = {};
 
-    if (updates.countermeasure !== undefined) dataToUpdate.countermeasure = updates.countermeasure;
-    if (updates.reason !== undefined) dataToUpdate.reason = updates.reason;
-    if (updates.status !== undefined) dataToUpdate.status = updates.status;
-    if (updates.responsible !== undefined) dataToUpdate.responsible = updates.responsible; // Added responsible explicit update support
-
-    // Leader Name
+    // Fields mapping and type conversion
+    if (updates.date !== undefined) dataToUpdate.date = updates.date;
+    if (updates.time !== undefined) dataToUpdate.time = updates.time;
+    if (updates.week !== undefined) dataToUpdate.week = Number(updates.week);
+    if (updates.shift !== undefined) dataToUpdate.shift = String(updates.shift);
     if (updates.leaderName !== undefined) dataToUpdate.leaderName = updates.leaderName;
-    else if (updates.leader_name !== undefined) dataToUpdate.leaderName = updates.leader_name;
-
-    // Qty
+    if (updates.pqc !== undefined) dataToUpdate.pqc = updates.pqc;
+    if (updates.model !== undefined) dataToUpdate.model = updates.model;
     if (updates.qty !== undefined) dataToUpdate.qty = Number(updates.qty);
-
-    // Total Value
+    if (updates.item !== undefined) dataToUpdate.item = updates.item;
+    if (updates.status !== undefined) dataToUpdate.status = updates.status;
+    if (updates.code !== undefined) dataToUpdate.code = updates.code;
+    if (updates.description !== undefined) dataToUpdate.description = updates.description;
+    if (updates.unitValue !== undefined) dataToUpdate.unitValue = Number(updates.unitValue);
     if (updates.totalValue !== undefined) dataToUpdate.totalValue = Number(updates.totalValue);
-    else if (updates.total_value !== undefined) dataToUpdate.totalValue = Number(updates.total_value);
+    if (updates.usedModel !== undefined) dataToUpdate.usedModel = updates.usedModel;
+    if (updates.responsible !== undefined) dataToUpdate.responsible = updates.responsible;
+    if (updates.station !== undefined) dataToUpdate.station = updates.station;
+    if (updates.reason !== undefined) dataToUpdate.reason = updates.reason;
+    if (updates.rootCause !== undefined) dataToUpdate.rootCause = updates.rootCause;
+    if (updates.countermeasure !== undefined) dataToUpdate.countermeasure = updates.countermeasure;
+    if (updates.line !== undefined) dataToUpdate.line = updates.line;
+
+    // Handle snake_case inputs if coming from raw JSON manually
+    if (updates.leader_name !== undefined) dataToUpdate.leaderName = updates.leader_name;
+    if (updates.total_value !== undefined) dataToUpdate.totalValue = Number(updates.total_value);
 
     // If nothing to update, return early
+    // EXCEPTION: If we are saving from Edit Modal, we might want to force update even if no fields changed, 
+    // but usually fields change. However, for the 'tracking' requirement, we always update time/user if requested.
+
+    // NEW RULE: Traceability & Edit Override
+    // If userId is provided in updates, it means we are editing and want to override author.
+    // Also update time to current server time.
+    if (updates.userId) {
+        dataToUpdate.userId = updates.userId;
+        const now = new Date();
+        // Server time HH:MM
+        dataToUpdate.time = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
+    }
+
     if (Object.keys(dataToUpdate).length === 0) return res.json({ message: "Nada a atualizar" });
 
     try {
@@ -723,6 +746,28 @@ app.put('/api/scraps/:id', async (req, res) => {
         res.json({ message: "Scrap atualizado" });
     } catch (e) {
         console.error("Update Scrap Error:", e);
+        res.status(500).json({ error: e.message });
+    }
+});
+
+app.delete('/api/scraps/:id', async (req, res) => {
+    const { id } = req.params;
+    const numericId = parseInt(id, 10);
+    if (isNaN(numericId)) return res.status(400).json({ error: "Invalid ID" });
+
+    try {
+        await prisma.scrapLog.delete({
+            where: { id: numericId }
+        });
+
+        // Remove from Cache
+        if (SCRAP_CACHE) {
+            SCRAP_CACHE = SCRAP_CACHE.filter(s => s.id !== numericId);
+        }
+
+        res.json({ message: "Scrap deletado" });
+    } catch (e) {
+        console.error("Delete Scrap Error:", e);
         res.status(500).json({ error: e.message });
     }
 });

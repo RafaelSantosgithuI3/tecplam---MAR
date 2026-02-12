@@ -46,6 +46,17 @@ export const updateScrap = async (id: string, updates: Partial<ScrapData>) => {
     }
 };
 
+export const deleteScrap = async (id: string) => {
+    try {
+        await apiFetch(`/scraps/${id}`, {
+            method: 'DELETE'
+        });
+    } catch (e) {
+        console.error("Erro ao deletar scrap", e);
+        throw e;
+    }
+};
+
 export const getMaterials = async (): Promise<import('../types').Material[]> => {
     try {
         return await apiFetch('/materials');
@@ -69,7 +80,7 @@ export const saveMaterials = async (materials: import('../types').Material[]) =>
 
 export const SCRAP_ITEMS = [
     'BATERIA', 'REAR', 'CAMERA RW1', 'CAMERA FW1', 'CAMERA RB1', 'OCTA', 'FRONT',
-    'MIUDEZAS', 'BAG', 'SIMTRAY', 'CAIXA MASTER', 'CAIXA GIFT', 'TAPE',
+    'MIUDEZA(S)', 'BAG', 'SIMTRAY', 'CAIXA MASTER', 'CAIXA GIFT', 'TAPE',
     'CABO COAXIAL', 'CABO FLAT', 'BRACKET', 'BACK COVER', 'PARAFUSO',
     'SUB PBA', 'SPK', 'RCV', 'BLINDAGEM'
 ];
