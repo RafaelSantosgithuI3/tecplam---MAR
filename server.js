@@ -8,18 +8,32 @@ const os = require('os');
 const { PrismaClient } = require('@prisma/client');
 // const sqlite3 = require('sqlite3').verbose(); // Removed
 
+const compression = require('compression');
+
 const app = express();
 const prisma = new PrismaClient({
     log: ['error', 'warn'], // Optional: Add 'query' for debugging
 });
+
+// OTIMIZAÇÃO 1: SQLite WAL Mode (Evita travamentos em HD lento)
+async function enableWAL() {
+    try {
+        await prisma.$queryRawUnsafe('PRAGMA journal_mode = WAL;');
+        await prisma.$queryRawUnsafe('PRAGMA synchronous = NORMAL;'); // Menos flush no disco
+        console.log('⚡ SQLite WAL Mode Enabled (Optimized for HDD)');
+    } catch (e) {
+        console.error('Failed to enable WAL', e);
+    }
+}
+enableWAL();
 
 let SCRAP_CACHE = null; // In-Memory Cache for Scraps
 
 const loadScrapCache = async () => {
     console.log("🔄 Carregando Scraps para a RAM...");
     try {
-        // Enable WAL Mode for Performance
-        await prisma.$queryRawUnsafe('PRAGMA journal_mode = WAL;');
+        // WAL Mode is enabled globally at start
+
 
         SCRAP_CACHE = await prisma.scrapLog.findMany({
             orderBy: [{ date: 'desc' }, { time: 'desc' }]
@@ -35,6 +49,7 @@ const PORT = 3000;
 const SALT_ROUNDS = 10;
 
 // Middleware
+app.use(compression()); // OTIMIZAÇÃO 2: Compressão Gzip (Reduz tráfego de rede)
 app.use(cors());
 app.use(bodyParser.json({ limit: '50mb' }));
 app.use(bodyParser.urlencoded({ limit: '50mb', extended: true }));
@@ -633,9 +648,13 @@ app.post('/api/meetings', async (req, res) => {
 
 app.get('/api/preparation-logs', async (req, res) => {
     try {
+        const limit = parseInt(req.query.limit) || 500;
+        const offset = parseInt(req.query.skip) || 0;
+
         const logs = await prisma.preparationLog.findMany({
             orderBy: { createdAt: 'desc' },
-            take: 500
+            take: limit,
+            skip: offset
         });
         res.json(logs);
     } catch (e) {
@@ -980,9 +999,14 @@ app.get('/api/admin/backup', (req, res) => {
     else res.status(404).json({ error: "DB não encontrado" });
 });
 
-// --- STATIC SERVER ---
+// --- STATIC SERVER (OTIMIZAÇÃO 3: Cache Estático Longo) ---
 const distPath = path.join(__dirname, 'dist');
-app.use(express.static(distPath));
+
+// Servir arquivos estáticos com Cache Longo (1 ano) para aliviar o HD
+app.use(express.static(distPath, {
+    maxAge: '1y',
+    etag: false
+}));
 app.get('*', (req, res) => {
     const indexFile = path.join(distPath, 'index.html');
     if (fs.existsSync(indexFile)) res.sendFile(indexFile);

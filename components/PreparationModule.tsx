@@ -110,7 +110,7 @@ export const PreparationModule: React.FC<PreparationModuleProps> = ({ currentUse
     const renderMetricsGrid = (log: PreparationLog) => {
         const metrics = [
             { k: 'plate', l: 'Placa' }, { k: 'rear', l: 'Rear' }, { k: 'btFt', l: 'Bt-Ft' }, { k: 'pba', l: 'Pba' },
-            { k: 'currentRfCal', l: 'Corrent/RF' }, { k: 'input', l: 'Input' }, { k: 'preKey', l: 'Pré-Key' }, { k: 'lcia', l: 'LCIA' },
+            { k: 'currentRfCal', l: 'Corrente/RF' }, { k: 'input', l: 'Input' }, { k: 'preKey', l: 'Pré-Key' }, { k: 'lcia', l: 'LCIA' },
             { k: 'audio', l: 'Audio' }, { k: 'radiation', l: 'Radiação' }, { k: 'imei', l: 'IMEI' }, { k: 'vct', l: 'VCT' },
             { k: 'revision', l: 'Revisão' }, { k: 'desmonte', l: 'Desmonte' }, { k: 'oven', l: 'Forno' }, { k: 'repair', l: 'Reparo' }
         ];
@@ -118,12 +118,22 @@ export const PreparationModule: React.FC<PreparationModuleProps> = ({ currentUse
         return (
             <div className="grid grid-cols-4 gap-2 mt-3">
                 {metrics.map(m => {
-                    const val = log[m.k as keyof PreparationLog] as string | number | undefined;
-                    if (val === undefined || val === null || val === '0' || val === 0) return null; // Only show non-zero/non-empty
+                    const rawVal = log[m.k as keyof PreparationLog];
+                    // Coerce to number 0 if null/undefined/empty string
+                    const val = (rawVal === undefined || rawVal === null || rawVal === '') ? 0 : Number(rawVal);
+
+                    const isZero = val === 0;
+
                     return (
-                        <div key={m.k} className="bg-slate-100 dark:bg-zinc-800 p-1.5 rounded flex flex-col items-center">
-                            <span className="text-[10px] text-slate-500 dark:text-zinc-500 uppercase font-bold">{m.l}</span>
-                            <span className="text-sm font-bold text-slate-900 dark:text-zinc-200">{val}</span>
+                        <div key={m.k} className={`p-1.5 rounded flex flex-col items-center border ${isZero
+                            ? 'bg-slate-50 dark:bg-zinc-900/50 border-slate-100 dark:border-zinc-800'
+                            : 'bg-slate-100 dark:bg-zinc-800 border-slate-200 dark:border-zinc-700'}`}>
+                            <span className="text-[9px] text-slate-400 dark:text-zinc-500 uppercase font-bold tracking-wider">{m.l}</span>
+                            <span className={`text-sm ${isZero
+                                ? 'text-slate-300 dark:text-zinc-600 font-normal'
+                                : 'text-slate-900 dark:text-zinc-100 font-bold'}`}>
+                                {val}
+                            </span>
                         </div>
                     );
                 })}

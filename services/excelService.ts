@@ -751,7 +751,7 @@ export const exportScrapToExcel = async (scraps: any[]) => {
     saveAs(blob, `Relatorio_Scrap_Agrupado_${dateStr}.xlsx`);
 };
 
-export const exportExecutiveReport = async (scraps: ScrapData[], fileNamePrefix: string = 'Relatorio_Executivo_Completo') => {
+export const exportExecutiveReport = async (scraps: ScrapData[], fileNamePrefix: string = 'Relatorio_Detalhado_SCRAP-IQC') => {
     const workbook = new ExcelJS.Workbook();
 
     // --------------------------------------------------------------------------------
@@ -1242,10 +1242,29 @@ export const downloadPreparationExcel = async (logs: PreparationLog[], filters: 
 
             // Copy Headers (Rows 6 and 7)
             copyRowStyleAndValue(6, headerRowIdx);
+
+            // 1. Update Title
             sheet.getRow(headerRowIdx).getCell(2).value = "2º TURNO";
-            try { sheet.mergeCells(headerRowIdx, 2, headerRowIdx, 4); } catch (e) { }
+
+            // 2. Fix Merges for Header Row (Row 6 copy)
+            try {
+                sheet.unMergeCells(`B${headerRowIdx}:D${headerRowIdx}`); // Safety unmerge
+                sheet.mergeCells(`B${headerRowIdx}:D${headerRowIdx}`);   // Title
+            } catch (e) { }
+
+            try {
+                sheet.unMergeCells(`T${headerRowIdx}:V${headerRowIdx}`); // Safety unmerge
+                sheet.mergeCells(`T${headerRowIdx}:V${headerRowIdx}`);   // Defeitos Group
+            } catch (e) { }
 
             copyRowStyleAndValue(7, subHeaderRowIdx);
+
+            // 3. Fix Merges for SubHeader Row (Row 7 copy)
+            // "LINHA" usually spans B:D
+            try {
+                sheet.unMergeCells(`B${subHeaderRowIdx}:D${subHeaderRowIdx}`);
+                sheet.mergeCells(`B${subHeaderRowIdx}:D${subHeaderRowIdx}`);
+            } catch (e) { }
 
             currentRow += 2; // Move past new headers
 

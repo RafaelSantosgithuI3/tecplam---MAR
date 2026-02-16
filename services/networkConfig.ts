@@ -1,30 +1,24 @@
 
-const SERVER_URL_KEY = 'lider_check_server_url';
+// Ajuste na Base URL
+export const BASE_URL = import.meta.env.DEV
+    ? 'http://localhost:3000'
+    : window.location.origin;
 
-export const saveServerUrl = (url: string) => {
-    // Garante que não tenha barra no final
-    const cleanUrl = url.endsWith('/') ? url.slice(0, -1) : url;
-    localStorage.setItem(SERVER_URL_KEY, cleanUrl);
-};
-
-export const getServerUrl = (): string | null => {
-    return localStorage.getItem(SERVER_URL_KEY);
-};
-
-export const clearServerUrl = () => {
-    localStorage.removeItem(SERVER_URL_KEY);
-};
-
-export const isServerConfigured = (): boolean => {
-    return !!getServerUrl();
-};
+// Mantido para compatibilidade, mas agora retorna sempre true/BASE_URL
+export const saveServerUrl = (url: string) => { console.log('Server URL is auto-configured', url); };
+export const getServerUrl = (): string | null => BASE_URL;
+export const clearServerUrl = () => { };
+export const isServerConfigured = (): boolean => true;
 
 export const apiFetch = async (endpoint: string, options: RequestInit = {}) => {
-    const baseUrl = getServerUrl();
+    const baseUrl = BASE_URL;
     if (!baseUrl) throw new Error("Servidor não configurado");
 
-    const url = `${baseUrl}/api${endpoint}`;
-    
+    // Ensure endpoint starts with / if not present (safeguard)
+    const safeEndpoint = endpoint.startsWith('/') ? endpoint : `/${endpoint}`;
+    const url = `${baseUrl}/api${safeEndpoint}`;
+
+
     try {
         const response = await fetch(url, {
             ...options,
@@ -33,7 +27,7 @@ export const apiFetch = async (endpoint: string, options: RequestInit = {}) => {
                 ...options.headers,
             },
         });
-        
+
         if (!response.ok) {
             const errorData = await response.json().catch(() => ({}));
             throw new Error(errorData.error || `Erro na requisição: ${response.status}`);

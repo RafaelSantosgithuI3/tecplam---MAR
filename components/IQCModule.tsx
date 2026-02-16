@@ -72,7 +72,7 @@ export const IQCModule = ({ currentUser, onBack }: { currentUser: User, onBack: 
                             <Truck size={24} className="text-blue-600" />
                             Painel IQC & Logística
                         </h1>
-                        <p className="text-slate-500 dark:text-zinc-400 text-sm">Controle de envio e baixa fiscal de sucata</p>
+                        <p className="text-slate-500 dark:text-zinc-400 text-sm">Controle de envio e baixa fiscal de SCRAP</p>
                     </div>
                 </div>
 
@@ -87,7 +87,7 @@ export const IQCModule = ({ currentUser, onBack }: { currentUser: User, onBack: 
                         <History size={16} /> Histórico de Envios
                     </Button>
                     <Button variant={activeTab === 'DASHBOARD' ? 'primary' : 'ghost'} onClick={() => setActiveTab('DASHBOARD')} size="sm">
-                        <BarChart3 size={16} /> Dashboard Executivo
+                        <BarChart3 size={16} /> Dashboard Detalhado
                     </Button>
                 </div>
             </div>
@@ -205,7 +205,7 @@ const ExecutiveDashboard = ({ scraps }: { scraps: ScrapData[] }) => {
         <div className="space-y-6">
             <Card>
                 <div className="flex justify-between items-center flex-wrap gap-4">
-                    <h3 className="font-bold text-lg">Indicadores Executivos</h3>
+                    <h3 className="font-bold text-lg">Indicadores Detalhados</h3>
                     <div className="flex flex-wrap gap-2 items-center">
                         <div className="flex flex-wrap items-center gap-2 w-full md:w-auto">
                             <select className="bg-slate-50 dark:bg-zinc-950 border border-slate-300 dark:border-zinc-800 p-2 rounded text-sm outline-none w-full md:w-auto" onChange={e => setFilters({ ...filters, period: e.target.value })} value={filters.period}>
@@ -465,7 +465,7 @@ const BatchProcessTab = ({ scraps, onProcess, currentUser, lines }: { scraps: Sc
             {showModal && (
                 <div className="fixed inset-0 bg-black/80 flex items-center justify-center p-4 z-50 backdrop-blur-sm">
                     <Card className="max-w-md w-full bg-white dark:bg-zinc-900 border-slate-200 dark:border-zinc-700">
-                        <h3 className="font-bold text-xl mb-4">Confirmar Baixa de Sucata</h3>
+                        <h3 className="font-bold text-xl mb-4">Confirmar Baixa de SCRAP</h3>
                         <p className="text-sm text-slate-500 mb-6">
                             Você está prestes a dar baixa em <b>{selectedIds.length} itens</b> totalizando <b>{formatCurrency(totalSelectedValue)}</b>.
                         </p>

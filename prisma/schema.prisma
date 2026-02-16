@@ -222,4 +222,7 @@ model PreparationLog {
   createdAt   DateTime @default(now()) @map("created_at")
 
   @@map("preparation_logs")
+  @@index([date])
+  @@index([shift])
+  @@index([model])
 }

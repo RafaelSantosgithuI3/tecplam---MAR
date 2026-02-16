@@ -64,7 +64,7 @@ const MODULE_NAMES: Record<string, string> = {
     ADMIN: 'Administração',
     MANAGEMENT: 'Gestão',
     SCRAP: 'Gestão de SCRAP',
-    IQC: 'Painel IQC & Logística',
+    IQC: 'Painel IQC',
     PREPARATION: 'Preparação de Linhas'
 };
 
@@ -116,11 +116,12 @@ const App = () => {
 
     // --- State ---
     const [currentUser, setCurrentUser] = useState<User | null>(null);
-    const [view, setView] = useState<ViewState>('SETUP');
+    const [view, setView] = useState<ViewState>('LOGIN');
     const [isLoading, setIsLoading] = useState(false);
 
     // Network Setup
-    const [serverIp, setServerIp] = useState('');
+    // Network Setup - Removed
+    // const [serverIp, setServerIp] = useState('');
 
     // Auth States
     const [loginMatricula, setLoginMatricula] = useState('');
@@ -268,10 +269,8 @@ const App = () => {
         if (module === 'MAINTENANCE') return true;
         if (module === 'LINE_STOP') return true;
         if (module === 'SCRAP') return true;
-        if (module === 'IQC') {
-            const role = (currentUser.role || '').toUpperCase();
-            return role.includes('QUALIDADE') || role.includes('IQC') || role.includes('SUPERVISOR') || role.includes('DIRETOR') || role.includes('GERENTE') || role.includes('ADMIN') || role.includes('FINANCEIRO');
-        }
+        if (module === 'PREPARATION') return true;
+        if (module === 'IQC') return true;
         if (module === 'AUDIT' || module === 'ADMIN' || module === 'MANAGEMENT') return false;
 
         return false;
@@ -328,14 +327,7 @@ const App = () => {
 
     // --- Effects ---
     useEffect(() => {
-        if (isServerConfigured()) {
-            const storedIp = getServerUrl();
-            if (storedIp) setServerIp(storedIp);
-            initApp();
-        } else {
-            setServerIp('http://10.20.84:3000/');
-            setView('SETUP');
-        }
+        initApp();
     }, []);
 
     useEffect(() => {
@@ -594,8 +586,8 @@ const App = () => {
             }
         } catch (e) {
             console.error("Erro ao inicializar:", e);
-            alert("Não foi possível conectar ao servidor. Verifique o IP.");
-            setView('SETUP');
+            alert("Não foi possível conectar ao servidor.");
+            setView('LOGIN');
         } finally {
             setIsLoading(false);
         }
@@ -1396,6 +1388,12 @@ const App = () => {
                         </>
                     )}
 
+                    {hasPermission('PREPARATION') && (
+                        <button onClick={() => setView('PREPARATION')} className={navItemClass(view === 'PREPARATION')}>
+                            <FileText size={18} /> Preparação de Linhas
+                        </button>
+                    )}
+
                     {hasPermission('LINE_STOP') && (
                         <button onClick={() => setView('LINE_STOP_DASHBOARD')} className={navItemClass(view === 'LINE_STOP_DASHBOARD')}>
                             <AlertTriangle size={18} /> Parada de Linha
@@ -1436,9 +1434,12 @@ const App = () => {
                         </button>
                     )}
 
-                    <button onClick={() => setView('SCRAP')} className={navItemClass(view === 'SCRAP')}>
-                        <AlertTriangle size={18} /> Gestão de SCRAP
-                    </button>
+                    {hasPermission('SCRAP') && (
+                        <button onClick={() => setView('SCRAP')} className={navItemClass(view === 'SCRAP')}>
+                            <AlertTriangle size={18} /> Gestão de SCRAP
+                        </button>
+                    )}
+
                     {hasPermission('IQC') && (
                         <button onClick={() => setView('IQC')} className={navItemClass(view === 'IQC')}>
                             <Truck size={18} /> Painel IQC
@@ -1510,17 +1511,7 @@ const App = () => {
         </Layout>
     );
 
-    if (view === 'SETUP') return (
-        <Layout variant="auth" onToggleTheme={toggleTheme} isDark={isDark}>
-            <div className="flex flex-col items-center justify-center min-h-screen px-4">
-                <div className="bg-white/80 dark:bg-zinc-900/80 backdrop-blur-xl border border-slate-200 dark:border-zinc-800 rounded-2xl p-8 shadow-2xl w-full max-w-md">
-                    <h1 className="text-2xl font-bold text-center mb-4 text-slate-900 dark:text-white">Configuração de Rede</h1>
-                    <Input label="IP do Servidor" value={serverIp} onChange={e => setServerIp(e.target.value)} placeholder="http://192.168.X.X:3000" />
-                    <Button onClick={async () => { if (serverIp) { saveServerUrl(serverIp); await initApp(); } }} fullWidth className="mt-6">Conectar</Button>
-                </div>
-            </div>
-        </Layout>
-    );
+
 
     if (view === 'LOGIN') {
         return (
@@ -1572,9 +1563,7 @@ const App = () => {
                         <div className="mt-6 flex flex-col gap-3 text-center">
                             <button onClick={() => setView('REGISTER')} className="text-sm text-slate-500 dark:text-zinc-500 hover:text-blue-600 dark:hover:text-blue-400 transition-colors">Não tem conta? Cadastre-se</button>
                             <button onClick={() => setView('RECOVER')} className="text-xs text-slate-400 dark:text-zinc-600 hover:text-slate-600 dark:hover:text-zinc-400 transition-colors">Esqueci minha senha</button>
-                            <div className="pt-4 border-t border-slate-200 dark:border-zinc-800/50 w-full">
-                                <button onClick={() => setView('SETUP')} className="text-xs text-slate-400 dark:text-zinc-700 hover:text-slate-600 dark:hover:text-zinc-500 flex items-center justify-center gap-1 w-full transition-colors"><Wifi size={12} /> Configurar Servidor</button>
-                            </div>
+
                         </div>
                     </div>
                 </div>
@@ -1638,7 +1627,7 @@ const App = () => {
                                 <h3 className="font-bold text-red-800 dark:text-red-400">Pendências de Scrap</h3>
                                 <p className="text-xs text-red-600 dark:text-red-300">Você possui {pendingScrapCount} itens de scrap sem contra medida.</p>
                             </div>
-                            <Button size="sm" onClick={() => { setScrapTab('PENDING'); setView('SCRAP'); }}>Resolver</Button>
+                            <Button size="sm" onClick={() => { setScrapTab('PENDING'); setView('SCRAP'); }}>Responder</Button>
                         </div>
                     )}
                     {pendingLineStopsCount > 0 && (
@@ -1672,7 +1661,6 @@ const App = () => {
 
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                     {hasPermission('CHECKLIST') && (
-                        // CORREÇÃO AQUI: Chama a função que prepara o modal e reseta a linha
                         <div onClick={handleStartChecklist} className="group bg-white dark:bg-zinc-900 p-6 rounded-2xl border border-slate-200 dark:border-zinc-800 hover:border-blue-600/50 hover:bg-slate-50 dark:hover:bg-zinc-800 transition-all cursor-pointer relative overflow-hidden h-40 flex flex-col justify-center shadow-sm">
                             <div className="flex items-center gap-4">
                                 <div className="w-12 h-12 bg-blue-600/10 dark:bg-blue-600/20 text-blue-600 dark:text-blue-500 rounded-xl flex items-center justify-center group-hover:scale-110 transition-transform"><CheckSquare size={24} /></div>
@@ -1725,7 +1713,7 @@ const App = () => {
                             <div className="flex items-center gap-4">
                                 <div className="w-12 h-12 bg-violet-600/10 dark:bg-violet-600/20 text-violet-600 dark:text-violet-500 rounded-xl flex items-center justify-center group-hover:scale-110 transition-transform"><FileText size={24} /></div>
                                 <div>
-                                    <h3 className="font-bold text-xl text-slate-900 dark:text-zinc-100">Preparação</h3>
+                                    <h3 className="font-bold text-xl text-slate-900 dark:text-zinc-100">Preparação de Linhas</h3>
                                     <p className="text-xs text-slate-500 dark:text-zinc-500 mt-1">Lançamento e Consulta</p>
                                 </div>
                             </div>
@@ -1784,7 +1772,7 @@ const App = () => {
                                 <div className="w-12 h-12 bg-blue-500/10 dark:bg-blue-500/20 text-blue-600 dark:text-blue-500 rounded-xl flex items-center justify-center group-hover:scale-110 transition-transform"><Truck size={24} /></div>
                                 <div>
                                     <h3 className="font-bold text-xl text-slate-900 dark:text-zinc-100">Painel IQC</h3>
-                                    <p className="text-xs text-slate-500 dark:text-zinc-500 mt-1">Logística e Fiscal</p>
+                                    <p className="text-xs text-slate-500 dark:text-zinc-500 mt-1">Controle de Notas Fiscais</p>
                                 </div>
                             </div>
                         </div>
@@ -2089,7 +2077,7 @@ const App = () => {
                                     <thead>
                                         <tr className="bg-slate-50 dark:bg-zinc-950 text-slate-500 dark:text-zinc-400 border-b border-slate-200 dark:border-zinc-800">
                                             <th className="p-3 text-left">Cargo</th>
-                                            {['CHECKLIST', 'LINE_STOP', 'MEETING', 'MAINTENANCE', 'AUDIT', 'ADMIN', 'MANAGEMENT', 'SCRAP', 'IQC'].map(mod => (
+                                            {['CHECKLIST', 'LINE_STOP', 'MEETING', 'MAINTENANCE', 'AUDIT', 'ADMIN', 'MANAGEMENT', 'SCRAP', 'IQC', 'PREPARATION'].map(mod => (
                                                 <th key={mod} className="p-3">{mod}</th>
                                             ))}
                                         </tr>

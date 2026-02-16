@@ -985,7 +985,7 @@ export const ScrapManagementAdvanced = ({ scraps }: any) => {
                 </Card>
                 <Card className="bg-white dark:bg-zinc-900 border-slate-200 dark:border-zinc-800 p-6 flex flex-col justify-center items-center cursor-pointer hover:bg-slate-50 dark:hover:bg-zinc-800 shadow-sm" onClick={() => exportExecutiveReport(filtered)}>
                     <Download size={32} className="text-green-600 dark:text-green-500 mb-2" />
-                    <span className="text-sm font-bold text-green-600 dark:text-green-400">Baixar Relatório Executivo (Excel)</span>
+                    <span className="text-sm font-bold text-green-600 dark:text-green-400">Baixar Relatório Detalhado (Excel)</span>
                 </Card>
             </div>
 
