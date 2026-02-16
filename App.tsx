@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { ScrapModule } from './components/ScrapModule';
+import { IQCModule } from './components/IQCModule';
 import { Layout } from './components/Layout';
 import { getScraps } from './services/scrapService';
 import { Card } from './components/Card';
@@ -7,6 +8,8 @@ import { Button } from './components/Button';
 import { Input } from './components/Input';
 import { User, ChecklistData, ChecklistItem, ChecklistLog, MeetingLog, ChecklistEvidence, Permission, LineStopData, ConfigItem, Material } from './types';
 import { getMaterials } from './services/materialService';
+import { ManagementModule } from './components/ManagementModule';
+import { PreparationModule } from './components/PreparationModule';
 import { MaterialsManager } from './components/MaterialsManager';
 import {
     loginUser, logoutUser, getSessionUser, seedAdmin,
@@ -27,11 +30,12 @@ import {
     CheckSquare, LogOut, UserPlus, AlertCircle,
     Save, ArrowLeft, History, Edit3, Trash2, Plus,
     Settings, Users, List, Search, Calendar, Eye, Download, Wifi, User as UserIcon, Upload, X, UserCheck, Check,
-    Camera, FileText, QrCode, Hammer, AlertTriangle, Shield, LayoutDashboard, Clock, Printer, EyeOff, Briefcase, Box, Lock, CheckCircle2, Sun, Moon
+    Camera, FileText, QrCode, Hammer, AlertTriangle, Shield, LayoutDashboard, Clock, Printer, EyeOff, Briefcase, Box, Lock, CheckCircle2, Sun, Moon,
+    Truck
 } from 'lucide-react';
 import jsQR from 'jsqr';
 
-type ViewState = 'SETUP' | 'LOGIN' | 'REGISTER' | 'RECOVER' | 'MENU' | 'CHECKLIST_MENU' | 'AUDIT_MENU' | 'DASHBOARD' | 'ADMIN' | 'SUCCESS' | 'PERSONAL' | 'PROFILE' | 'MEETING_MENU' | 'MEETING_FORM' | 'MEETING_HISTORY' | 'MAINTENANCE_QR' | 'LINE_STOP_DASHBOARD' | 'MANAGEMENT' | 'SCRAP';
+type ViewState = 'SETUP' | 'LOGIN' | 'REGISTER' | 'RECOVER' | 'MENU' | 'CHECKLIST_MENU' | 'AUDIT_MENU' | 'DASHBOARD' | 'ADMIN' | 'SUCCESS' | 'PERSONAL' | 'PROFILE' | 'MEETING_MENU' | 'MEETING_FORM' | 'MEETING_HISTORY' | 'MAINTENANCE_QR' | 'LINE_STOP_DASHBOARD' | 'MANAGEMENT' | 'SCRAP' | 'IQC' | 'PREPARATION';
 
 interface LineStatus {
     status: 'OK' | 'NG' | 'PENDING';
@@ -59,7 +63,9 @@ const MODULE_NAMES: Record<string, string> = {
     AUDIT: 'Auditoria',
     ADMIN: 'Administração',
     MANAGEMENT: 'Gestão',
-    SCRAP: 'Gestão de SCRAP'
+    SCRAP: 'Gestão de SCRAP',
+    IQC: 'Painel IQC & Logística',
+    PREPARATION: 'Preparação de Linhas'
 };
 
 const toTitleCase = (str: string) => str.replace(/\b\w/g, l => l.toUpperCase());
@@ -249,7 +255,7 @@ const App = () => {
     const isSuperAdmin = currentUser ? (currentUser.matricula === 'admin' || currentUser.role === 'Admin' || currentUser.isAdmin === true) : false;
 
     // --- PERMISSION HELPERS ---
-    const hasPermission = (module: 'CHECKLIST' | 'MEETING' | 'MAINTENANCE' | 'AUDIT' | 'ADMIN' | 'LINE_STOP' | 'MANAGEMENT' | 'SCRAP') => {
+    const hasPermission = (module: 'CHECKLIST' | 'MEETING' | 'MAINTENANCE' | 'AUDIT' | 'ADMIN' | 'LINE_STOP' | 'MANAGEMENT' | 'SCRAP' | 'IQC' | 'PREPARATION') => {
         if (!currentUser) return false;
         if (isSuperAdmin) return true;
 
@@ -262,6 +268,10 @@ const App = () => {
         if (module === 'MAINTENANCE') return true;
         if (module === 'LINE_STOP') return true;
         if (module === 'SCRAP') return true;
+        if (module === 'IQC') {
+            const role = (currentUser.role || '').toUpperCase();
+            return role.includes('QUALIDADE') || role.includes('IQC') || role.includes('SUPERVISOR') || role.includes('DIRETOR') || role.includes('GERENTE') || role.includes('ADMIN') || role.includes('FINANCEIRO');
+        }
         if (module === 'AUDIT' || module === 'ADMIN' || module === 'MANAGEMENT') return false;
 
         return false;
@@ -493,7 +503,12 @@ const App = () => {
             if (view === 'MENU') {
                 try {
                     const stops = await getLineStops();
-                    setPendingLineStopsCount(stops.filter(s => s.status === 'WAITING_JUSTIFICATION').length);
+                    // Filter: Only show alert if user can justify the stop
+                    const visibleStops = stops.filter(s =>
+                        s.status === 'WAITING_JUSTIFICATION' &&
+                        canUserJustify(currentUser, s)
+                    );
+                    setPendingLineStopsCount(visibleStops.length);
 
                     if (hasPermission('AUDIT') || isSuperAdmin) {
                         const all = await getAllUsers();
@@ -609,7 +624,12 @@ const App = () => {
             if (view === 'MENU') {
                 try {
                     const stops = await getLineStops();
-                    setPendingLineStopsCount(stops.filter(s => s.status === 'WAITING_JUSTIFICATION').length);
+                    // Filter: Only show alert if user can justify the stop
+                    const visibleStops = stops.filter(s =>
+                        s.status === 'WAITING_JUSTIFICATION' &&
+                        canUserJustify(currentUser, s)
+                    );
+                    setPendingLineStopsCount(visibleStops.length);
 
                     const allScraps = await getScraps();
                     const myPending = allScraps.filter(s => s.leaderName === currentUser?.name && !s.countermeasure);
@@ -1343,14 +1363,14 @@ const App = () => {
 
     const SidebarContent = () => {
         const navItemClass = (active: boolean) =>
-            `flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-all ${active
+            `flex items-center gap-3 px-4 py-2 rounded-lg text-sm font-medium transition-all ${active
                 ? 'bg-blue-600 text-white shadow-lg shadow-blue-900/20'
                 : 'text-slate-600 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-zinc-100 hover:bg-slate-100 dark:hover:bg-zinc-800'
             }`;
 
         return (
             <div className="flex flex-col h-full">
-                <div className="p-6 border-b border-slate-200 dark:border-zinc-800">
+                <div className="p-4 border-b border-slate-200 dark:border-zinc-800">
                     <div className="flex items-center gap-3">
                         <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-600 to-indigo-700 flex items-center justify-center text-white shadow-lg shadow-blue-900/20 overflow-hidden">
                             <img src="/logo.png" className="w-full h-full object-contain" alt="LC" />
@@ -1419,6 +1439,11 @@ const App = () => {
                     <button onClick={() => setView('SCRAP')} className={navItemClass(view === 'SCRAP')}>
                         <AlertTriangle size={18} /> Gestão de SCRAP
                     </button>
+                    {hasPermission('IQC') && (
+                        <button onClick={() => setView('IQC')} className={navItemClass(view === 'IQC')}>
+                            <Truck size={18} /> Painel IQC
+                        </button>
+                    )}
                 </nav>
 
                 <div className="p-4 border-t border-slate-200 dark:border-zinc-800 bg-slate-50 dark:bg-zinc-900/50">
@@ -1428,7 +1453,7 @@ const App = () => {
                             <div className="w-8 h-8 rounded-full bg-slate-200 dark:bg-zinc-700 flex items-center justify-center text-slate-700 dark:text-zinc-300 font-bold border border-slate-300 dark:border-zinc-600">
                                 {currentUser?.name.charAt(0)}
                             </div>
-                            <div className="hidden lg:block">
+                            <div className="block pl-2">
                                 <p className="text-xs font-bold text-slate-700 dark:text-zinc-200 truncate max-w-[100px]">{currentUser?.name.split(' ')[0]}</p>
                                 <p className="text-[10px] text-slate-500 dark:text-zinc-500 truncate">{currentUser?.role}</p>
                             </div>
@@ -1599,8 +1624,8 @@ const App = () => {
     if (view === 'MENU') {
         return (
             <Layout sidebar={<SidebarContent />} onToggleTheme={toggleTheme} isDark={isDark}>
-                <header className="mb-8">
-                    <h1 className="text-2xl font-bold mb-2 text-slate-900 dark:text-white">Bem-vindo, {currentUser?.name.split(' ')[0]}</h1>
+                <header className="mb-4 md:mb-8">
+                    <h1 className="text-lg md:text-2xl font-bold mb-2 text-slate-900 dark:text-white">Bem-vindo, {currentUser?.name.split(' ')[0]}</h1>
                     <p className="text-slate-500 dark:text-zinc-400">Selecione um módulo para iniciar.</p>
                 </header>
 
@@ -1695,6 +1720,18 @@ const App = () => {
                         </div>
                     )}
 
+                    {hasPermission('PREPARATION') && (
+                        <div onClick={() => setView('PREPARATION')} className="group bg-white dark:bg-zinc-900 p-6 rounded-2xl border border-slate-200 dark:border-zinc-800 hover:border-violet-600/50 hover:bg-slate-50 dark:hover:bg-zinc-800 transition-all cursor-pointer relative overflow-hidden h-40 flex flex-col justify-center shadow-sm">
+                            <div className="flex items-center gap-4">
+                                <div className="w-12 h-12 bg-violet-600/10 dark:bg-violet-600/20 text-violet-600 dark:text-violet-500 rounded-xl flex items-center justify-center group-hover:scale-110 transition-transform"><FileText size={24} /></div>
+                                <div>
+                                    <h3 className="font-bold text-xl text-slate-900 dark:text-zinc-100">Preparação</h3>
+                                    <p className="text-xs text-slate-500 dark:text-zinc-500 mt-1">Lançamento e Consulta</p>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
                     {hasPermission('AUDIT') && (
                         <div onClick={() => { setView('AUDIT_MENU'); setAuditTab('LEADER_HISTORY'); }} className="group bg-white dark:bg-zinc-900 p-6 rounded-2xl border border-slate-200 dark:border-zinc-800 hover:border-yellow-600/50 hover:bg-slate-50 dark:hover:bg-zinc-800 transition-all cursor-pointer relative overflow-hidden h-40 flex flex-col justify-center shadow-sm">
                             <div className="flex items-center gap-4">
@@ -1740,6 +1777,18 @@ const App = () => {
                             </div>
                         </div>
                     </div>
+
+                    {hasPermission('IQC') && (
+                        <div onClick={() => setView('IQC')} className="group bg-white dark:bg-zinc-900 p-6 rounded-2xl border border-slate-200 dark:border-zinc-800 hover:border-blue-500/50 hover:bg-slate-50 dark:hover:bg-zinc-800 transition-all cursor-pointer relative overflow-hidden h-40 flex flex-col justify-center shadow-sm">
+                            <div className="flex items-center gap-4">
+                                <div className="w-12 h-12 bg-blue-500/10 dark:bg-blue-500/20 text-blue-600 dark:text-blue-500 rounded-xl flex items-center justify-center group-hover:scale-110 transition-transform"><Truck size={24} /></div>
+                                <div>
+                                    <h3 className="font-bold text-xl text-slate-900 dark:text-zinc-100">Painel IQC</h3>
+                                    <p className="text-xs text-slate-500 dark:text-zinc-500 mt-1">Logística e Fiscal</p>
+                                </div>
+                            </div>
+                        </div>
+                    )}
                 </div>
             </Layout>
         );
@@ -1756,9 +1805,9 @@ const App = () => {
             return (
                 <Layout sidebar={<SidebarContent />} onToggleTheme={toggleTheme} isDark={isDark}>
                     <div className="w-full max-w-7xl mx-auto space-y-6">
-                        <header className="flex flex-col gap-4 mb-8 pb-6 border-b border-zinc-800">
+                        <header className="flex flex-col gap-4 mb-4 md:mb-8 pb-4 md:pb-6 border-b border-zinc-800">
                             <div className="flex items-center justify-between">
-                                <h1 className="text-2xl font-bold text-slate-900 dark:text-zinc-100 flex items-center gap-2"><Search className="text-yellow-500" /> Auditoria</h1>
+                                <h1 className="text-lg md:text-2xl font-bold text-slate-900 dark:text-zinc-100 flex items-center gap-2"><Search className="text-yellow-500" /> Auditoria</h1>
                                 <Button variant="outline" onClick={() => { setView('AUDIT_MENU'); setAuditTab('LEADER_HISTORY'); }}><ArrowLeft size={16} /> Voltar</Button>
                             </div>
                         </header>
@@ -1824,9 +1873,9 @@ const App = () => {
             return (
                 <Layout sidebar={<SidebarContent />} onToggleTheme={toggleTheme} isDark={isDark}>
                     <div className="w-full max-w-7xl mx-auto space-y-6">
-                        <header className="flex flex-col gap-4 mb-8 pb-6 border-b border-zinc-800">
+                        <header className="flex flex-col gap-4 mb-4 md:mb-8 pb-4 md:pb-6 border-b border-zinc-800">
                             <div className="flex items-center justify-between">
-                                <h1 className="text-2xl font-bold text-slate-900 dark:text-zinc-100 flex items-center gap-2"><Search className="text-yellow-500" /> Auditoria e Relatórios</h1>
+                                <h1 className="text-lg md:text-2xl font-bold text-slate-900 dark:text-zinc-100 flex items-center gap-2"><Search className="text-yellow-500" /> Auditoria e Relatórios</h1>
                                 <Button variant="outline" onClick={() => setView('MENU')}><ArrowLeft size={16} /> Voltar</Button>
                             </div>
                             <div className="flex gap-2 overflow-x-auto pb-2 custom-scrollbar">
@@ -1980,8 +2029,8 @@ const App = () => {
         return (
             <Layout sidebar={<SidebarContent />} onToggleTheme={toggleTheme} isDark={isDark}>
                 <div className="w-full max-w-7xl mx-auto space-y-6">
-                    <header className="flex items-center justify-between mb-8 pb-6 border-b border-slate-200 dark:border-zinc-800">
-                        <h1 className="text-2xl font-bold text-slate-900 dark:text-zinc-100 flex items-center gap-2"><Shield className="text-slate-400 dark:text-zinc-400" /> Painel Administrativo</h1>
+                    <header className="flex items-center justify-between mb-4 md:mb-8 pb-4 md:pb-6 border-b border-slate-200 dark:border-zinc-800">
+                        <h1 className="text-lg md:text-2xl font-bold text-slate-900 dark:text-zinc-100 flex items-center gap-2"><Shield className="text-slate-400 dark:text-zinc-400" /> Painel Administrativo</h1>
                     </header>
                     <div className="w-full">
                         <div className="flex gap-2 mb-6 overflow-x-auto pb-2">
@@ -2040,7 +2089,7 @@ const App = () => {
                                     <thead>
                                         <tr className="bg-slate-50 dark:bg-zinc-950 text-slate-500 dark:text-zinc-400 border-b border-slate-200 dark:border-zinc-800">
                                             <th className="p-3 text-left">Cargo</th>
-                                            {['CHECKLIST', 'LINE_STOP', 'MEETING', 'MAINTENANCE', 'AUDIT', 'ADMIN', 'MANAGEMENT', 'SCRAP'].map(mod => (
+                                            {['CHECKLIST', 'LINE_STOP', 'MEETING', 'MAINTENANCE', 'AUDIT', 'ADMIN', 'MANAGEMENT', 'SCRAP', 'IQC'].map(mod => (
                                                 <th key={mod} className="p-3">{mod}</th>
                                             ))}
                                         </tr>
@@ -2049,7 +2098,7 @@ const App = () => {
                                         {availableRoles.map(role => (
                                             <tr key={role.id} className="hover:bg-slate-50 dark:hover:bg-zinc-900/50 transition-colors">
                                                 <td className="p-3 text-left font-bold text-slate-900 dark:text-white">{role.name}</td>
-                                                {['CHECKLIST', 'LINE_STOP', 'MEETING', 'MAINTENANCE', 'AUDIT', 'ADMIN', 'MANAGEMENT', 'SCRAP'].map(mod => {
+                                                {['CHECKLIST', 'LINE_STOP', 'MEETING', 'MAINTENANCE', 'AUDIT', 'ADMIN', 'MANAGEMENT', 'SCRAP', 'IQC', 'PREPARATION'].map(mod => {
                                                     const perm = permissions.find(p => p.role === role.name && p.module === (mod as any));
                                                     const isAllowed = perm ? perm.allowed : (['CHECKLIST', 'MEETING', 'MAINTENANCE', 'LINE_STOP'].includes(mod));
                                                     return (
@@ -2119,57 +2168,27 @@ const App = () => {
         );
     }
 
-    // --- MANAGEMENT MODULE (UPDATED WITH ID SUPPORT) ---
-    if (view === 'MANAGEMENT') {
-        const renderGenericList = (title: string, list: string[], setList: React.Dispatch<React.SetStateAction<string[]>>, saveFn: (l: string[]) => Promise<void>) => (
-            <Card>
-                <h3 className="text-lg font-bold mb-4 text-slate-900 dark:text-white">{title}</h3>
-                <div className="flex gap-2 mb-6"><Input value={newItemName} onChange={e => setNewItemName(e.target.value)} placeholder={`Novo ${title}`} /><Button onClick={() => handleAddItem(list, setList, saveFn)}>Add</Button></div>
-                <div className="grid grid-cols-2 md:grid-cols-3 gap-3">{list.map(l => <div key={l} className="bg-slate-50 dark:bg-zinc-950 p-3 rounded flex justify-between items-center border border-slate-200 dark:border-zinc-800 text-sm text-slate-700 dark:text-zinc-300">{l}<button onClick={() => handleDeleteItem(l, list, setList, saveFn)} className="text-slate-400 dark:text-zinc-500 hover:text-red-500 hover:bg-red-100 dark:hover:bg-red-900/20 p-1 rounded transition-colors"><X size={14} /></button></div>)}</div>
-            </Card>
-        );
-
-        // Render específico para itens com ID (Linhas e Cargos)
-        const renderConfigList = (title: string, list: ConfigItem[], addFn: () => void, deleteFn: (id: number | string) => void) => (
-            <Card>
-                <h3 className="text-lg font-bold mb-4 text-slate-900 dark:text-white">{title}</h3>
-                <div className="flex gap-2 mb-6"><Input value={newItemName} onChange={e => setNewItemName(e.target.value)} placeholder={`Novo ${title}`} /><Button onClick={addFn}>Add</Button></div>
-                <div className="grid grid-cols-2 md:grid-cols-3 gap-3">{list.map(l => <div key={l.id} className="bg-slate-50 dark:bg-zinc-950 p-3 rounded flex justify-between items-center border border-slate-200 dark:border-zinc-800 text-sm text-slate-700 dark:text-zinc-300"><span className="truncate mr-2">{l.name}</span><button onClick={() => deleteFn(l.id)} className="text-slate-400 dark:text-zinc-500 hover:text-red-500 hover:bg-red-100 dark:hover:bg-red-900/20 p-1 rounded transition-colors"><X size={14} /></button></div>)}</div>
-            </Card>
-        );
-
+    // --- PREPARATION MODULE ---
+    if (view === 'PREPARATION') {
         return (
             <Layout sidebar={<SidebarContent />} onToggleTheme={toggleTheme} isDark={isDark}>
-                <div className="w-full max-w-7xl mx-auto space-y-6">
-                    <header className="flex items-center justify-between mb-8 pb-6 border-b border-slate-200 dark:border-zinc-800">
-                        <h1 className="text-2xl font-bold text-slate-900 dark:text-zinc-100 flex items-center gap-2"><Briefcase className="text-cyan-500" /> Gestão Centralizada</h1>
-                    </header>
-                    <div className="flex gap-2 mb-6 overflow-x-auto pb-2">
-                        <Button variant={managementTab === 'LINES' ? 'primary' : 'secondary'} onClick={() => setManagementTab('LINES')}><List size={16} /> Linhas</Button>
-                        <Button variant={managementTab === 'ROLES' ? 'primary' : 'secondary'} onClick={() => setManagementTab('ROLES')}><UserCheck size={16} /> Cargos</Button>
-                        <Button variant={managementTab === 'MODELS' ? 'primary' : 'secondary'} onClick={() => setManagementTab('MODELS')}><Box size={16} /> Modelos</Button>
-                        <Button variant={managementTab === 'STATIONS' ? 'primary' : 'secondary'} onClick={() => setManagementTab('STATIONS')}><Hammer size={16} /> Postos</Button>
-                    </div>
-                    {managementTab === 'LINES' && renderConfigList('Linhas de Produção', lines, handleAddLine, handleDeleteLine)}
-                    {managementTab === 'ROLES' && renderConfigList('Cargos e Funções', availableRoles, handleAddRole, handleDeleteRole)}
-                    {managementTab === 'MODELS' && (
-                        <div className="space-y-8">
-                            {renderGenericList('Modelos Cadastrados', models, setModels, saveModels)}
-                            <MaterialsManager
-                                materials={materials}
-                                setMaterials={setMaterials}
-                                onRefresh={async () => setMaterials(await getMaterials())}
-                            />
-                        </div>
-                    )}
-                    {managementTab === 'STATIONS' && renderGenericList('Postos de Trabalho', stations, setStations, saveStations)}
-                </div>
+                <PreparationModule currentUser={currentUser!} onBack={() => setView('MENU')} />
             </Layout>
         );
     }
 
+    // --- MANAGEMENT MODULE ---
+    if (view === 'MANAGEMENT') {
+        return (
+            <Layout sidebar={<SidebarContent />} onToggleTheme={toggleTheme} isDark={isDark}>
+                <ManagementModule onBack={() => setView('MENU')} />
+            </Layout>
+        );
+    }
+
+
     // --- LINE STOP DASHBOARD ---
-    if (view === 'LINE_STOP_DASHBOARD') return <Layout sidebar={<SidebarContent />} onToggleTheme={toggleTheme} isDark={isDark}><div className="w-full max-w-7xl mx-auto space-y-6"><header className="flex flex-col gap-4 mb-8 pb-6 border-b border-slate-200 dark:border-zinc-800"><h1 className="text-2xl font-bold text-slate-900 dark:text-zinc-100 flex items-center gap-2"><AlertTriangle className="text-red-500" /> Parada de Linha</h1><div className="flex gap-2 overflow-x-auto pb-2"><Button variant={lineStopTab === 'NEW' ? 'primary' : 'secondary'} onClick={() => setLineStopTab('NEW')}><Plus size={16} /> Novo Reporte</Button><Button variant={lineStopTab === 'PENDING' ? 'primary' : 'secondary'} onClick={() => setLineStopTab('PENDING')}><Clock size={16} /> Pendentes</Button><Button variant={lineStopTab === 'UPLOAD' ? 'primary' : 'secondary'} onClick={() => setLineStopTab('UPLOAD')}><Upload size={16} /> Upload Assinatura</Button><Button variant={lineStopTab === 'HISTORY' ? 'primary' : 'secondary'} onClick={() => setLineStopTab('HISTORY')}><History size={16} /> Histórico</Button></div></header>{lineStopTab === 'NEW' && (<div className="space-y-6 max-w-4xl mx-auto pb-20"><Card><h3 className="text-lg font-bold mb-4 border-b border-slate-200 dark:border-zinc-800 pb-2 text-slate-900 dark:text-white">Dados da Parada</h3><div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+    if (view === 'LINE_STOP_DASHBOARD') return <Layout sidebar={<SidebarContent />} onToggleTheme={toggleTheme} isDark={isDark}><div className="w-full max-w-7xl mx-auto space-y-6"><header className="flex flex-col gap-4 mb-4 md:mb-8 pb-4 md:pb-6 border-b border-slate-200 dark:border-zinc-800"><h1 className="text-lg md:text-2xl font-bold text-slate-900 dark:text-zinc-100 flex items-center gap-2"><AlertTriangle className="text-red-500" /> Parada de Linha</h1><div className="flex gap-2 overflow-x-auto pb-2"><Button variant={lineStopTab === 'NEW' ? 'primary' : 'secondary'} onClick={() => setLineStopTab('NEW')}><Plus size={16} /> Novo Reporte</Button><Button variant={lineStopTab === 'PENDING' ? 'primary' : 'secondary'} onClick={() => setLineStopTab('PENDING')}><Clock size={16} /> Pendentes</Button><Button variant={lineStopTab === 'UPLOAD' ? 'primary' : 'secondary'} onClick={() => setLineStopTab('UPLOAD')}><Upload size={16} /> Upload Assinatura</Button><Button variant={lineStopTab === 'HISTORY' ? 'primary' : 'secondary'} onClick={() => setLineStopTab('HISTORY')}><History size={16} /> Histórico</Button></div></header>{lineStopTab === 'NEW' && (<div className="space-y-6 max-w-4xl mx-auto pb-20"><Card><h3 className="text-lg font-bold mb-4 border-b border-slate-200 dark:border-zinc-800 pb-2 text-slate-900 dark:text-white">Dados da Parada</h3><div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
         <div>
             <label className="text-xs font-bold text-slate-500 dark:text-zinc-500 uppercase mb-1 block">Modelo</label>
             <input list="model-list" className="w-full bg-white dark:bg-zinc-950 border border-slate-300 dark:border-zinc-800 rounded-lg p-2.5 text-slate-900 dark:text-zinc-100 placeholder-slate-400 dark:placeholder-zinc-600 outline-none focus:ring-2 focus:ring-blue-600/50" value={lineStopData.model} onChange={e => setLineStopData({ ...lineStopData, model: e.target.value })} placeholder="Selecione ou digite..." />
@@ -2262,8 +2281,8 @@ const App = () => {
                     </div>
                 )}
 
-                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
-                    <div><h1 className="text-2xl font-bold text-slate-900 dark:text-white flex items-center gap-2">{isMaintenanceMode ? <Hammer className="text-purple-500" /> : <CheckSquare className="text-blue-500" />} {isMaintenanceMode ? 'Manutenção' : 'Checklist Digital'}</h1><div className="flex items-center gap-2 mt-2 text-sm text-slate-500 dark:text-zinc-400"><span className="bg-slate-100 dark:bg-zinc-800 px-2 py-0.5 rounded text-slate-700 dark:text-zinc-300 border border-slate-200 dark:border-zinc-700">{currentLine}</span><span>•</span><span>{getManausDate().toLocaleDateString()}</span></div></div>
+                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-4 md:mb-8">
+                    <div><h1 className="text-lg md:text-2xl font-bold text-slate-900 dark:text-white flex items-center gap-2">{isMaintenanceMode ? <Hammer className="text-purple-500" /> : <CheckSquare className="text-blue-500" />} {isMaintenanceMode ? 'Manutenção' : 'Checklist Digital'}</h1><div className="flex items-center gap-2 mt-2 text-sm text-slate-500 dark:text-zinc-400"><span className="bg-slate-100 dark:bg-zinc-800 px-2 py-0.5 rounded text-slate-700 dark:text-zinc-300 border border-slate-200 dark:border-zinc-700">{currentLine}</span><span>•</span><span>{getManausDate().toLocaleDateString()}</span></div></div>
                     <div className="flex items-center gap-3"><Button variant="outline" onClick={() => setView(isMaintenanceMode ? 'MAINTENANCE_QR' : 'MENU')}><ArrowLeft size={16} /> Voltar</Button></div>
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-4 gap-8">
@@ -2287,14 +2306,16 @@ const App = () => {
     }
 
     if (view === 'SUCCESS') return <Layout variant="auth" onToggleTheme={toggleTheme} isDark={isDark}><div className="flex flex-col items-center justify-center min-h-screen text-center"><div className="w-24 h-24 bg-green-500/10 text-green-500 rounded-full flex items-center justify-center mb-6 border border-green-500/20 shadow-[0_0_30px_rgba(34,197,94,0.2)] animate-in zoom-in duration-300"><CheckCircle2 size={48} /></div><h2 className="text-3xl font-bold text-white mb-2">Salvo com Sucesso!</h2><p className="text-zinc-400 mb-8 max-w-md">Os dados foram registrados no sistema.</p><Button onClick={() => setView('MENU')} className="min-w-[200px]">Voltar ao Início</Button></div></Layout>;
-    if (view === 'PERSONAL') return <Layout sidebar={<SidebarContent />} onToggleTheme={toggleTheme} isDark={isDark}><header className="flex items-center justify-between mb-8"><h1 className="text-2xl font-bold text-slate-900 dark:text-white">Meus Registros</h1></header><div className="space-y-4">{personalLogs.length === 0 && <p className="text-slate-500 dark:text-zinc-500 text-center py-12 bg-white dark:bg-zinc-900/50 rounded-xl border border-slate-200 dark:border-zinc-800">Nenhum registro encontrado.</p>}{personalLogs.map(log => (<div key={log.id} className="bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 rounded-xl p-5 flex flex-col md:flex-row justify-between items-center gap-4 hover:border-slate-300 dark:hover:border-zinc-700 transition-colors shadow-sm"><div className="flex items-center gap-4"><div className={`w-10 h-10 rounded-full flex items-center justify-center text-lg font-bold ${log.ngCount > 0 ? 'bg-red-100 dark:bg-red-900/20 text-red-600 dark:text-red-500 border border-red-200 dark:border-red-900/30' : 'bg-green-100 dark:bg-green-900/20 text-green-600 dark:text-green-500 border border-green-200 dark:border-green-900/30'}`}>{log.ngCount > 0 ? '!' : '✓'}</div><div><p className="font-bold text-slate-900 dark:text-zinc-200">{new Date(log.date).toLocaleString()}</p><p className="text-sm text-slate-500 dark:text-zinc-400">{log.line} <span className="mx-2">•</span> {log.ngCount > 0 ? `${log.ngCount} Falhas` : '100% OK'} {log.type === 'LINE_STOP' && '(Parada)'}</p></div></div><div className="flex gap-2 w-full md:w-auto"><Button variant="secondary" onClick={() => setPreviewLog(log)} className="flex-1 md:flex-none"><Eye size={16} /></Button><Button variant="outline" onClick={() => exportLogToExcel(log, items)} className="flex-1 md:flex-none"><Download size={16} /> Excel</Button></div></div>))}</div>{renderPreviewModal()}</Layout>;
-    if (view === 'PROFILE') return <Layout sidebar={<SidebarContent />} onToggleTheme={toggleTheme} isDark={isDark}><header className="flex items-center justify-between mb-8"><h1 className="text-2xl font-bold text-white">Meu Perfil</h1></header><Card className="max-w-xl mx-auto"><div className="flex flex-col items-center mb-8"><div className="w-24 h-24 bg-zinc-800 rounded-full flex items-center justify-center text-3xl font-bold mb-4 text-zinc-300 border-2 border-zinc-700 shadow-xl">{profileData?.name.charAt(0)}</div><p className="text-xl font-bold text-white">{profileData?.name}</p><p className="text-zinc-500 bg-zinc-950 px-3 py-1 rounded-full text-xs mt-2 border border-zinc-800">{profileData?.role}</p></div><div className="space-y-5"><Input label="Nome" value={profileData?.name} onChange={e => setProfileData({ ...profileData!, name: e.target.value })} /><Input label="Email" value={profileData?.email} onChange={e => setProfileData({ ...profileData!, email: e.target.value })} /><Input label="Alterar Senha" type="password" placeholder="Nova senha (opcional)" value={profileData?.password || ''} onChange={e => setProfileData({ ...profileData!, password: e.target.value })} /><div className="pt-4"><Button fullWidth onClick={handleSaveProfile}>Salvar Alterações</Button></div></div></Card></Layout>;
-    if (view === 'MEETING_MENU') return <Layout sidebar={<SidebarContent />} onToggleTheme={toggleTheme} isDark={isDark}><header className="mb-8"><h1 className="text-2xl font-bold mb-2 text-slate-900 dark:text-white">Atas de Reunião</h1><p className="text-slate-500 dark:text-zinc-400">Gerencie registros de reuniões operacionais.</p></header><div className="grid grid-cols-1 md:grid-cols-2 gap-6"><div onClick={() => setView('MEETING_FORM')} className="group bg-white dark:bg-zinc-900 p-6 rounded-2xl border border-slate-200 dark:border-zinc-800 hover:border-emerald-600/50 hover:bg-slate-50 dark:hover:bg-zinc-800 transition-all cursor-pointer relative overflow-hidden shadow-sm"><div className="w-12 h-12 bg-emerald-100 dark:bg-emerald-600/20 text-emerald-600 dark:text-emerald-500 rounded-xl flex items-center justify-center mb-4 group-hover:scale-110 transition-transform"><Plus size={24} /></div><h3 className="font-bold text-xl text-slate-900 dark:text-zinc-100">Nova Ata</h3><p className="text-sm text-slate-500 dark:text-zinc-500 mt-2">Registrar reunião online com foto.</p></div><div onClick={() => setView('MEETING_HISTORY')} className="group bg-white dark:bg-zinc-900 p-6 rounded-2xl border border-slate-200 dark:border-zinc-800 hover:border-blue-600/50 hover:bg-slate-50 dark:hover:bg-zinc-800 transition-all cursor-pointer relative overflow-hidden shadow-sm"><div className="w-12 h-12 bg-blue-100 dark:bg-blue-600/20 text-blue-600 dark:text-blue-500 rounded-xl flex items-center justify-center mb-4 group-hover:scale-110 transition-transform"><History size={24} /></div><h3 className="font-bold text-xl text-slate-900 dark:text-zinc-100">Histórico</h3><p className="text-sm text-slate-500 dark:text-zinc-500 mt-2">Acessar e imprimir atas anteriores.</p></div></div></Layout>;
-    if (view === 'MEETING_FORM') return <Layout sidebar={<SidebarContent />} onToggleTheme={toggleTheme} isDark={isDark}><header className="flex items-center justify-between mb-8 pb-6 border-b border-zinc-800"><h1 className="text-2xl font-bold text-slate-900 dark:text-zinc-100">Nova Ata de Reunião</h1><Button variant="outline" onClick={() => setView('MEETING_MENU')}>Cancelar</Button></header><div className="space-y-6 max-w-3xl mx-auto"><Card><Input label="Título da Reunião" placeholder="Ex: Alinhamento de Turno, Qualidade, etc." value={meetingTitle} onChange={e => setMeetingTitle(e.target.value)} icon={<FileText size={18} />} /><div className="flex gap-4 mt-4"><Input type="time" label="Início" value={meetingStartTime} onChange={e => setMeetingStartTime(e.target.value)} onClick={(e) => e.currentTarget.showPicker()} /><Input type="time" label="Fim" value={meetingEndTime} onChange={e => setMeetingEndTime(e.target.value)} onClick={(e) => e.currentTarget.showPicker()} /></div></Card><Card><h3 className="text-xs font-bold text-zinc-400 uppercase mb-3">Foto da Reunião (Obrigatório)</h3>{meetingPhoto ? (<div className="relative group"><img src={meetingPhoto} alt="Reunião" className="w-full h-64 object-cover rounded-lg border border-zinc-700" /><div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center rounded-lg"><Button variant="danger" onClick={() => setMeetingPhoto('')}><Trash2 size={16} /> Remover</Button></div></div>) : (<div className="h-64 bg-slate-100 dark:bg-zinc-950 border-2 border-dashed border-slate-300 dark:border-zinc-800 hover:border-slate-400 dark:hover:border-zinc-700 rounded-lg flex flex-col items-center justify-center text-slate-500 dark:text-zinc-500 transition-colors"><label className="cursor-pointer flex flex-col items-center p-8 w-full h-full justify-center"><Camera size={40} className="mb-4 text-slate-400 dark:text-zinc-600" /><span className="font-medium">Tirar Foto ou Upload</span><input type="file" accept="image/*" capture="environment" className="hidden" onChange={(e) => { if (e.target.files?.[0]) handleMeetingPhoto(e.target.files[0]) }} /></label></div>)}</Card><Card><h3 className="text-xs font-bold text-zinc-400 uppercase mb-3">Participantes</h3><div className="flex gap-2 mb-4"><Input placeholder="Nome do participante" value={newParticipant} onChange={e => setNewParticipant(toTitleCase(e.target.value))} list="users-list" className="bg-slate-50 dark:bg-zinc-950 text-slate-900 dark:text-zinc-100 placeholder-slate-400 dark:placeholder-zinc-600" /><datalist id="users-list">{usersList.map(u => <option key={u.matricula} value={u.name} />)}</datalist><Button onClick={handleAddParticipant}><Plus size={18} /></Button></div><div className="flex flex-wrap gap-2">{meetingParticipants.map((p, idx) => (<div key={idx} className="bg-slate-200 dark:bg-zinc-800 border border-slate-300 dark:border-zinc-700 text-slate-700 dark:text-zinc-200 px-3 py-1.5 rounded-full flex items-center gap-2 text-sm">{p} {p === currentUser?.name && <span className="text-[10px] bg-blue-100 dark:bg-blue-900/50 text-blue-700 dark:text-blue-200 px-1.5 rounded border border-blue-200 dark:border-blue-800 ml-1">Relator</span>}<button onClick={() => handleRemoveParticipant(idx)} className="hover:text-red-500 dark:hover:text-red-400"><X size={14} /></button></div>))}</div></Card><Card><h3 className="text-xs font-bold text-zinc-400 uppercase mb-3">Assuntos Tratados</h3><textarea className="w-full p-4 bg-slate-50 dark:bg-zinc-950 border border-slate-300 dark:border-zinc-800 rounded-lg text-slate-900 dark:text-zinc-200 h-40 focus:ring-2 focus:ring-blue-600/50 outline-none placeholder-slate-400 dark:placeholder-zinc-600" placeholder="Descreva os tópicos discutidos..." value={meetingTopics} onChange={e => setMeetingTopics(e.target.value)} /></Card><Button fullWidth onClick={handleSaveMeeting} disabled={isLoading} className="py-3">{isLoading ? 'Salvando...' : 'Salvar Ata'}</Button></div></Layout>;
-    if (view === 'MEETING_HISTORY') return <Layout sidebar={<SidebarContent />} onToggleTheme={toggleTheme}><header className="flex items-center justify-between mb-8 pb-6 border-b border-slate-200 dark:border-zinc-800"><h1 className="text-2xl font-bold text-slate-900 dark:text-zinc-100">Histórico de Atas</h1><Button variant="outline" onClick={() => setView('MEETING_MENU')}><ArrowLeft size={16} /> Voltar</Button></header><div className="space-y-4">{meetingHistory.map(m => (<div key={m.id} className="bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 rounded-xl p-5 flex flex-col md:flex-row justify-between items-center gap-4 hover:border-slate-300 dark:hover:border-zinc-700 transition-colors shadow-sm"><div><p className="font-bold text-slate-900 dark:text-white text-lg">{m.title || 'Sem Título'}</p><p className="font-medium text-slate-500 dark:text-zinc-400 text-sm flex items-center gap-2"><Calendar size={14} /> {new Date(m.date).toLocaleDateString()} • {m.startTime} - {m.endTime}</p><div className="flex gap-4 mt-2"><span className="text-xs text-slate-500 dark:text-zinc-500 bg-slate-100 dark:bg-zinc-950 px-2 py-1 rounded">Criado por: {m.createdBy}</span><span className="text-xs text-slate-500 dark:text-zinc-500 bg-slate-100 dark:bg-zinc-950 px-2 py-1 rounded">{m.participants.length} participantes</span></div></div><div className="flex gap-2"><Button variant="secondary" onClick={() => setPreviewMeeting(m)}><Eye size={16} /></Button><Button variant="outline" onClick={() => exportMeetingToExcel(m)}><Download size={16} /> Excel</Button></div></div>))}</div>{renderMeetingPreviewModal()}</Layout>;
-    if (view === 'MAINTENANCE_QR') return <Layout sidebar={<SidebarContent />} onToggleTheme={toggleTheme}><header className="flex items-center justify-between mb-8 pb-6 border-b border-slate-200 dark:border-zinc-800"><h1 className="text-2xl font-bold text-slate-900 dark:text-zinc-100">Ler QR Code Máquina</h1></header><div className="max-w-md mx-auto"><div className="bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 rounded-xl p-6 text-center"><div id="reader-hidden" className="hidden"></div><label className="cursor-pointer flex flex-col items-center justify-center h-48 w-full border-2 border-dashed border-slate-300 dark:border-zinc-700 hover:border-blue-500 rounded-xl transition-all mb-6 bg-slate-50 dark:bg-zinc-950"><Camera size={48} className={`mb-4 ${isProcessingPhoto ? 'text-blue-500 animate-pulse' : 'text-slate-400 dark:text-zinc-500'}`} /><span className="text-lg font-bold text-slate-700 dark:text-zinc-300">{isProcessingPhoto ? 'Processando Imagem...' : 'Tirar Foto do QR Code'}</span><span className="text-sm text-slate-500 dark:text-zinc-500 mt-2">Clique aqui para abrir a câmera</span><input type="file" accept="image/*" capture="environment" className="hidden" disabled={isProcessingPhoto} onChange={(e) => { if (e.target.files?.[0]) { handleMaintenanceQrPhoto(e.target.files[0]); e.target.value = ''; } }} /></label><div className="border-t border-slate-200 dark:border-zinc-800 pt-6 mt-6"><p className="text-xs font-bold text-slate-500 dark:text-zinc-500 mb-3 uppercase">Inserção Manual</p><div className="flex gap-2"><Input placeholder="Código (Ex: PRENSA_01)" value={qrCodeManual} onChange={e => setQrCodeManual(e.target.value)} /><Button onClick={() => handleMaintenanceCode(qrCodeManual)}>Ir</Button></div></div></div></div></Layout>;
+    if (view === 'PERSONAL') return <Layout sidebar={<SidebarContent />} onToggleTheme={toggleTheme} isDark={isDark}><header className="flex items-center justify-between mb-4 md:mb-8"><h1 className="text-lg md:text-2xl font-bold text-slate-900 dark:text-white">Meus Registros</h1></header><div className="space-y-4">{personalLogs.length === 0 && <p className="text-slate-500 dark:text-zinc-500 text-center py-12 bg-white dark:bg-zinc-900/50 rounded-xl border border-slate-200 dark:border-zinc-800">Nenhum registro encontrado.</p>}{personalLogs.map(log => (<div key={log.id} className="bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 rounded-xl p-5 flex flex-col md:flex-row justify-between items-center gap-4 hover:border-slate-300 dark:hover:border-zinc-700 transition-colors shadow-sm"><div className="flex items-center gap-4"><div className={`w-10 h-10 rounded-full flex items-center justify-center text-lg font-bold ${log.ngCount > 0 ? 'bg-red-100 dark:bg-red-900/20 text-red-600 dark:text-red-500 border border-red-200 dark:border-red-900/30' : 'bg-green-100 dark:bg-green-900/20 text-green-600 dark:text-green-500 border border-green-200 dark:border-green-900/30'}`}>{log.ngCount > 0 ? '!' : '✓'}</div><div><p className="font-bold text-slate-900 dark:text-zinc-200">{new Date(log.date).toLocaleString()}</p><p className="text-sm text-slate-500 dark:text-zinc-400">{log.line} <span className="mx-2">•</span> {log.ngCount > 0 ? `${log.ngCount} Falhas` : '100% OK'} {log.type === 'LINE_STOP' && '(Parada)'}</p></div></div><div className="flex gap-2 w-full md:w-auto"><Button variant="secondary" onClick={() => setPreviewLog(log)} className="flex-1 md:flex-none"><Eye size={16} /></Button><Button variant="outline" onClick={() => exportLogToExcel(log, items)} className="flex-1 md:flex-none"><Download size={16} /> Excel</Button></div></div>))}</div>{renderPreviewModal()}</Layout>;
+    if (view === 'PROFILE') return <Layout sidebar={<SidebarContent />} onToggleTheme={toggleTheme} isDark={isDark}><header className="flex items-center justify-between mb-4 md:mb-8"><h1 className="text-lg md:text-2xl font-bold text-white">Meu Perfil</h1></header><Card className="max-w-xl mx-auto"><div className="flex flex-col items-center mb-8"><div className="w-24 h-24 bg-zinc-800 rounded-full flex items-center justify-center text-3xl font-bold mb-4 text-zinc-300 border-2 border-zinc-700 shadow-xl">{profileData?.name.charAt(0)}</div><p className="text-xl font-bold text-white">{profileData?.name}</p><p className="text-zinc-500 bg-zinc-950 px-3 py-1 rounded-full text-xs mt-2 border border-zinc-800">{profileData?.role}</p></div><div className="space-y-5"><Input label="Nome" value={profileData?.name} onChange={e => setProfileData({ ...profileData!, name: e.target.value })} /><Input label="Email" value={profileData?.email} onChange={e => setProfileData({ ...profileData!, email: e.target.value })} /><Input label="Alterar Senha" type="password" placeholder="Nova senha (opcional)" value={profileData?.password || ''} onChange={e => setProfileData({ ...profileData!, password: e.target.value })} /><div className="pt-4"><Button fullWidth onClick={handleSaveProfile}>Salvar Alterações</Button></div></div></Card></Layout>;
+    if (view === 'MEETING_MENU') return <Layout sidebar={<SidebarContent />} onToggleTheme={toggleTheme} isDark={isDark}><header className="mb-4 md:mb-8"><h1 className="text-lg md:text-2xl font-bold mb-2 text-slate-900 dark:text-white">Atas de Reunião</h1><p className="text-slate-500 dark:text-zinc-400">Gerencie registros de reuniões operacionais.</p></header><div className="grid grid-cols-1 md:grid-cols-2 gap-6"><div onClick={() => setView('MEETING_FORM')} className="group bg-white dark:bg-zinc-900 p-6 rounded-2xl border border-slate-200 dark:border-zinc-800 hover:border-emerald-600/50 hover:bg-slate-50 dark:hover:bg-zinc-800 transition-all cursor-pointer relative overflow-hidden shadow-sm"><div className="w-12 h-12 bg-emerald-100 dark:bg-emerald-600/20 text-emerald-600 dark:text-emerald-500 rounded-xl flex items-center justify-center mb-4 group-hover:scale-110 transition-transform"><Plus size={24} /></div><h3 className="font-bold text-xl text-slate-900 dark:text-zinc-100">Nova Ata</h3><p className="text-sm text-slate-500 dark:text-zinc-500 mt-2">Registrar reunião online com foto.</p></div><div onClick={() => setView('MEETING_HISTORY')} className="group bg-white dark:bg-zinc-900 p-6 rounded-2xl border border-slate-200 dark:border-zinc-800 hover:border-blue-600/50 hover:bg-slate-50 dark:hover:bg-zinc-800 transition-all cursor-pointer relative overflow-hidden shadow-sm"><div className="w-12 h-12 bg-blue-100 dark:bg-blue-600/20 text-blue-600 dark:text-blue-500 rounded-xl flex items-center justify-center mb-4 group-hover:scale-110 transition-transform"><History size={24} /></div><h3 className="font-bold text-xl text-slate-900 dark:text-zinc-100">Histórico</h3><p className="text-sm text-slate-500 dark:text-zinc-500 mt-2">Acessar e imprimir atas anteriores.</p></div></div></Layout>;
+    if (view === 'MEETING_FORM') return <Layout sidebar={<SidebarContent />} onToggleTheme={toggleTheme} isDark={isDark}><header className="flex items-center justify-between mb-4 md:mb-8 pb-4 md:pb-6 border-b border-zinc-800"><h1 className="text-lg md:text-2xl font-bold text-slate-900 dark:text-zinc-100">Nova Ata de Reunião</h1><Button variant="outline" onClick={() => setView('MEETING_MENU')}>Cancelar</Button></header><div className="space-y-6 max-w-3xl mx-auto"><Card><Input label="Título da Reunião" placeholder="Ex: Alinhamento de Turno, Qualidade, etc." value={meetingTitle} onChange={e => setMeetingTitle(e.target.value)} icon={<FileText size={18} />} /><div className="flex gap-4 mt-4"><Input type="time" label="Início" value={meetingStartTime} onChange={e => setMeetingStartTime(e.target.value)} onClick={(e) => e.currentTarget.showPicker()} /><Input type="time" label="Fim" value={meetingEndTime} onChange={e => setMeetingEndTime(e.target.value)} onClick={(e) => e.currentTarget.showPicker()} /></div></Card><Card><h3 className="text-xs font-bold text-zinc-400 uppercase mb-3">Foto da Reunião (Obrigatório)</h3>{meetingPhoto ? (<div className="relative group"><img src={meetingPhoto} alt="Reunião" className="w-full h-64 object-cover rounded-lg border border-zinc-700" /><div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center rounded-lg"><Button variant="danger" onClick={() => setMeetingPhoto('')}><Trash2 size={16} /> Remover</Button></div></div>) : (<div className="h-64 bg-slate-100 dark:bg-zinc-950 border-2 border-dashed border-slate-300 dark:border-zinc-800 hover:border-slate-400 dark:hover:border-zinc-700 rounded-lg flex flex-col items-center justify-center text-slate-500 dark:text-zinc-500 transition-colors"><label className="cursor-pointer flex flex-col items-center p-8 w-full h-full justify-center"><Camera size={40} className="mb-4 text-slate-400 dark:text-zinc-600" /><span className="font-medium">Tirar Foto ou Upload</span><input type="file" accept="image/*" capture="environment" className="hidden" onChange={(e) => { if (e.target.files?.[0]) handleMeetingPhoto(e.target.files[0]) }} /></label></div>)}</Card><Card><h3 className="text-xs font-bold text-zinc-400 uppercase mb-3">Participantes</h3><div className="flex gap-2 mb-4"><Input placeholder="Nome do participante" value={newParticipant} onChange={e => setNewParticipant(toTitleCase(e.target.value))} list="users-list" className="bg-slate-50 dark:bg-zinc-950 text-slate-900 dark:text-zinc-100 placeholder-slate-400 dark:placeholder-zinc-600" /><datalist id="users-list">{usersList.map(u => <option key={u.matricula} value={u.name} />)}</datalist><Button onClick={handleAddParticipant}><Plus size={18} /></Button></div><div className="flex flex-wrap gap-2">{meetingParticipants.map((p, idx) => (<div key={idx} className="bg-slate-200 dark:bg-zinc-800 border border-slate-300 dark:border-zinc-700 text-slate-700 dark:text-zinc-200 px-3 py-1.5 rounded-full flex items-center gap-2 text-sm">{p} {p === currentUser?.name && <span className="text-[10px] bg-blue-100 dark:bg-blue-900/50 text-blue-700 dark:text-blue-200 px-1.5 rounded border border-blue-200 dark:border-blue-800 ml-1">Relator</span>}<button onClick={() => handleRemoveParticipant(idx)} className="hover:text-red-500 dark:hover:text-red-400"><X size={14} /></button></div>))}</div></Card><Card><h3 className="text-xs font-bold text-zinc-400 uppercase mb-3">Assuntos Tratados</h3><textarea className="w-full p-4 bg-slate-50 dark:bg-zinc-950 border border-slate-300 dark:border-zinc-800 rounded-lg text-slate-900 dark:text-zinc-200 h-40 focus:ring-2 focus:ring-blue-600/50 outline-none placeholder-slate-400 dark:placeholder-zinc-600" placeholder="Descreva os tópicos discutidos..." value={meetingTopics} onChange={e => setMeetingTopics(e.target.value)} /></Card><Button fullWidth onClick={handleSaveMeeting} disabled={isLoading} className="py-3">{isLoading ? 'Salvando...' : 'Salvar Ata'}</Button></div></Layout>;
+    if (view === 'MEETING_HISTORY') return <Layout sidebar={<SidebarContent />} onToggleTheme={toggleTheme}><header className="flex items-center justify-between mb-4 md:mb-8 pb-4 md:pb-6 border-b border-slate-200 dark:border-zinc-800"><h1 className="text-lg md:text-2xl font-bold text-slate-900 dark:text-zinc-100">Histórico de Atas</h1><Button variant="outline" onClick={() => setView('MEETING_MENU')}><ArrowLeft size={16} /> Voltar</Button></header><div className="space-y-4">{meetingHistory.map(m => (<div key={m.id} className="bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 rounded-xl p-5 flex flex-col md:flex-row justify-between items-center gap-4 hover:border-slate-300 dark:hover:border-zinc-700 transition-colors shadow-sm"><div><p className="font-bold text-slate-900 dark:text-white text-lg">{m.title || 'Sem Título'}</p><p className="font-medium text-slate-500 dark:text-zinc-400 text-sm flex items-center gap-2"><Calendar size={14} /> {new Date(m.date).toLocaleDateString()} • {m.startTime} - {m.endTime}</p><div className="flex gap-4 mt-2"><span className="text-xs text-slate-500 dark:text-zinc-500 bg-slate-100 dark:bg-zinc-950 px-2 py-1 rounded">Criado por: {m.createdBy}</span><span className="text-xs text-slate-500 dark:text-zinc-500 bg-slate-100 dark:bg-zinc-950 px-2 py-1 rounded">{m.participants.length} participantes</span></div></div><div className="flex gap-2"><Button variant="secondary" onClick={() => setPreviewMeeting(m)}><Eye size={16} /></Button><Button variant="outline" onClick={() => exportMeetingToExcel(m)}><Download size={16} /> Excel</Button></div></div>))}</div>{renderMeetingPreviewModal()}</Layout>;
+    if (view === 'MAINTENANCE_QR') return <Layout sidebar={<SidebarContent />} onToggleTheme={toggleTheme}><header className="flex items-center justify-between mb-4 md:mb-8 pb-4 md:pb-6 border-b border-slate-200 dark:border-zinc-800"><h1 className="text-lg md:text-2xl font-bold text-slate-900 dark:text-zinc-100">Ler QR Code Máquina</h1></header><div className="max-w-md mx-auto"><div className="bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 rounded-xl p-6 text-center"><div id="reader-hidden" className="hidden"></div><label className="cursor-pointer flex flex-col items-center justify-center h-48 w-full border-2 border-dashed border-slate-300 dark:border-zinc-700 hover:border-blue-500 rounded-xl transition-all mb-6 bg-slate-50 dark:bg-zinc-950"><Camera size={48} className={`mb-4 ${isProcessingPhoto ? 'text-blue-500 animate-pulse' : 'text-slate-400 dark:text-zinc-500'}`} /><span className="text-lg font-bold text-slate-700 dark:text-zinc-300">{isProcessingPhoto ? 'Processando Imagem...' : 'Tirar Foto do QR Code'}</span><span className="text-sm text-slate-500 dark:text-zinc-500 mt-2">Clique aqui para abrir a câmera</span><input type="file" accept="image/*" capture="environment" className="hidden" disabled={isProcessingPhoto} onChange={(e) => { if (e.target.files?.[0]) { handleMaintenanceQrPhoto(e.target.files[0]); e.target.value = ''; } }} /></label><div className="border-t border-slate-200 dark:border-zinc-800 pt-6 mt-6"><p className="text-xs font-bold text-slate-500 dark:text-zinc-500 mb-3 uppercase">Inserção Manual</p><div className="flex gap-2"><Input placeholder="Código (Ex: PRENSA_01)" value={qrCodeManual} onChange={e => setQrCodeManual(e.target.value)} /><Button onClick={() => handleMaintenanceCode(qrCodeManual)}>Ir</Button></div></div></div></div></Layout>;
 
     if (view === 'SCRAP') return <Layout sidebar={<SidebarContent />} onToggleTheme={toggleTheme}><ScrapModule currentUser={currentUser!} onBack={() => { setView('MENU'); setScrapTab(undefined); }} initialTab={scrapTab} /></Layout>;
+
+    if (view === 'IQC') return <Layout sidebar={<SidebarContent />} onToggleTheme={toggleTheme}><IQCModule currentUser={currentUser!} onBack={() => setView('MENU')} /></Layout>;
 
     return null;
 };

@@ -1,20 +1,16 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { Menu, X, Sun, Moon } from 'lucide-react';
 
 interface LayoutProps {
   children?: React.ReactNode;
   variant?: 'auth' | 'dashboard';
   sidebar?: React.ReactNode;
-  // New props for controlled theme
   onToggleTheme?: () => void;
   isDark?: boolean;
 }
 
 export const Layout: React.FC<LayoutProps> = ({ children, variant = 'dashboard', sidebar, onToggleTheme, isDark = true }) => {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
-  // Internal fallback if not controlled (optional, but for safety)
-  // But strictly we should use the props passed from App
-
   const handleToggle = onToggleTheme || (() => { });
 
   if (variant === 'auth') {
@@ -33,10 +29,10 @@ export const Layout: React.FC<LayoutProps> = ({ children, variant = 'dashboard',
   }
 
   return (
-    <div className="flex min-h-screen bg-slate-50 dark:bg-zinc-950 text-slate-900 dark:text-zinc-100 font-sans transition-colors duration-200">
+    <div className="flex min-h-screen bg-slate-50 dark:bg-zinc-950 text-slate-900 dark:text-zinc-100 font-sans transition-colors duration-200 overflow-x-hidden">
 
       {/* Mobile/Tablet Header */}
-      <div className="lg:hidden fixed top-0 left-0 right-0 h-16 bg-white dark:bg-zinc-900 border-b border-slate-200 dark:border-zinc-800 z-40 flex items-center justify-between px-4 shadow-sm transition-colors duration-200">
+      <div className="lg:hidden fixed top-0 left-0 right-0 h-14 bg-white dark:bg-zinc-900 border-b border-slate-200 dark:border-zinc-800 z-40 flex items-center justify-between px-4 shadow-sm transition-colors duration-200">
         <div className="font-bold text-lg tracking-tight flex items-center gap-2">
           <div className="w-8 h-8 rounded-lg bg-blue-600 flex items-center justify-center text-white">
             <img src="/logo.png" className="w-full h-full object-contain" alt="LC" />
@@ -70,17 +66,15 @@ export const Layout: React.FC<LayoutProps> = ({ children, variant = 'dashboard',
           } lg:translate-x-0`}
       >
         <div className="flex flex-col h-full w-full relative">
-          {/* Toggle Button Removed from absolute position - should be integrated in Sidebar content */}
-
           <div className="flex flex-col h-full" onClick={() => window.innerWidth < 1024 && setIsSidebarOpen(false)}>
             {sidebar}
           </div>
         </div>
       </aside>
 
-      {/* Main Content */}
-      <main className="flex-1 min-h-screen transition-all duration-300 lg:ml-72 pt-16 lg:pt-0">
-        <div className="max-w-7xl mx-auto p-4 lg:p-8">
+      {/* Main Content - CORREÇÃO CRÍTICA AQUI */}
+      <main className="flex-1 min-h-screen w-full max-w-[100vw] overflow-x-hidden transition-all duration-300 lg:ml-72 pt-14 lg:pt-0">
+        <div className="max-w-7xl mx-auto p-2 md:p-4 lg:p-8 w-full">
           {children}
         </div>
       </main>

@@ -1,9 +1,10 @@
 
 import ExcelJS from 'exceljs';
 import { saveAs } from 'file-saver';
-import { User, ChecklistItem, ChecklistLog, MeetingLog, LineStopData, ChecklistData } from '../types';
+import { User, ChecklistItem, ChecklistLog, MeetingLog, LineStopData, ChecklistData, ScrapData, PreparationLog } from '../types';
 import { getLogs, getLogsByWeekSyncStrict } from './storageService';
 import { getAllUsers } from './authService';
+import { getMaterials } from './scrapService';
 
 const getWeekNumber = (d: Date) => {
     d = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
@@ -595,116 +596,667 @@ export const exportLineStopToExcel = async (log: ChecklistLog) => {
 }
 
 export const exportScrapToExcel = async (scraps: any[]) => {
-    // 1. Sort Scraps: Oldest to Newest
-    scraps.sort((a, b) => {
-        const da = new Date(a.date).getTime();
-        const db = new Date(b.date).getTime();
-        return da - db;
-    });
-
     const workbook = new ExcelJS.Workbook();
+    let templateBuffer: ArrayBuffer | null = null;
+
     try {
         const response = await fetch('/template_scrap.xlsx');
-        if (!response.ok) throw new Error(`Template fetch status: ${response.status}`);
-        const buffer = await response.arrayBuffer();
-        await workbook.xlsx.load(buffer);
+        if (response.ok) {
+            templateBuffer = await response.arrayBuffer();
+        }
     } catch (e) {
-        console.warn("Template de Scrap não encontrado. Criando nova planilha em memória.", e);
-        workbook.addWorksheet('Scrap');
+        console.warn("Template de Scrap não encontrado.", e);
     }
 
-    let worksheet = workbook.worksheets[0];
-    if (!worksheet) worksheet = workbook.addWorksheet('Scrap');
+    if (templateBuffer) {
+        await workbook.xlsx.load(templateBuffer);
+    }
 
-    const startRow = 4;
+    // Group by Plant
+    const groups: { [key: string]: any[] } = {};
+    scraps.forEach(s => {
+        const p = s.plant || 'Geral';
+        if (!groups[p]) groups[p] = [];
+        groups[p].push(s);
+    });
 
-    // Style Definitions
-    const borderStyle: Partial<ExcelJS.Borders> = {
-        top: { style: 'thin' }, left: { style: 'thin' }, bottom: { style: 'thin' }, right: { style: 'thin' }
-    };
-    const centerStyle: Partial<ExcelJS.Alignment> = { vertical: 'middle', horizontal: 'center', wrapText: true };
-    const leftStyle: Partial<ExcelJS.Alignment> = { vertical: 'middle', horizontal: 'left', wrapText: true };
+    const plants = Object.keys(groups);
+    if (plants.length === 0) return;
 
-    const greenMedium = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFC6E0B4' } } as ExcelJS.Fill; // Verde Médio
-    const greenLight = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE2EFDA' } } as ExcelJS.Fill; // Verde Claro
+    // Helper to fill sheet
+    const fillSheet = (sheet: ExcelJS.Worksheet, data: any[]) => {
+        // Sort
+        data.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
 
-    // Column Width Tracking
-    const columnWidths: { [key: string]: number } = {
-        'B': 12, 'C': 8, 'D': 8, 'E': 10, 'F': 20, 'G': 15, 'H': 15, 'I': 8,
-        'J': 15, 'K': 10, 'L': 12, 'M': 40, 'N': 12, 'O': 12, 'P': 15, 'Q': 15,
-        'R': 12, 'S': 30, 'T': 20, 'U': 30
-    };
+        const startRow = 4;
+        const borderStyle: Partial<ExcelJS.Borders> = {
+            top: { style: 'thin' }, left: { style: 'thin' }, bottom: { style: 'thin' }, right: { style: 'thin' }
+        };
+        const centerStyle: Partial<ExcelJS.Alignment> = { vertical: 'middle', horizontal: 'center', wrapText: true };
+        const leftStyle: Partial<ExcelJS.Alignment> = { vertical: 'middle', horizontal: 'left', wrapText: true };
+        const greenMedium = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFC6E0B4' } } as ExcelJS.Fill;
+        const greenLight = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE2EFDA' } } as ExcelJS.Fill;
 
-    const updateWidth = (col: string, val: any) => {
-        if (!val) return;
-        const len = String(val).length;
-        if (len > (columnWidths[col] || 10)) {
-            columnWidths[col] = Math.min(len + 2, 60); // Cap width at 60
-        }
-    };
-
-    scraps.forEach((scrap, index) => {
-        const currentRow = startRow + index;
-        const row = worksheet.getRow(currentRow);
-
-        // 2. Fixed Row Height
-        row.height = 25;
-
-        // Date Formatting dd/mm/yyyy
-        let dateVal = scrap.date;
-        try {
-            if (dateVal) {
-                const d = new Date(dateVal);
-                // Adjust for timezone offset if necessary, but assuming input is YYYY-MM-DD string or ISO
-                const userTimezoneOffset = d.getTimezoneOffset() * 60000;
-                const offsetDate = new Date(d.getTime() + userTimezoneOffset);
-                dateVal = offsetDate.toLocaleDateString('pt-BR');
-            }
-        } catch (e) { }
-
-        // Zebra Striping
-        const fillStyle = index % 2 === 0 ? greenMedium : greenLight;
-
-        // Mapeamento e escrita
-        const setCell = (col: string, val: any, format?: string, alignIsLeft = false) => {
-            const cell = worksheet.getCell(`${col}${currentRow}`);
-            cell.value = val;
-            cell.border = borderStyle;
-            cell.fill = fillStyle;
-            cell.alignment = alignIsLeft ? leftStyle : centerStyle;
-            if (format) cell.numFmt = format;
-            updateWidth(col, val); // Track width
+        const columnWidths: { [key: string]: number } = {
+            'B': 12, 'C': 8, 'D': 8, 'E': 10, 'F': 20, 'G': 15, 'H': 15, 'I': 8,
+            'J': 15, 'K': 10, 'L': 12, 'M': 40, 'N': 12, 'O': 12, 'P': 15, 'Q': 15,
+            'R': 12, 'S': 30, 'T': 20, 'U': 30
         };
 
-        setCell('B', dateVal);
-        setCell('C', scrap.week);
-        setCell('D', scrap.shift);
-        setCell('E', scrap.line);
-        setCell('F', scrap.leaderName);
-        setCell('G', scrap.pqc || '');
-        setCell('H', scrap.model);
-        setCell('I', scrap.qty);
-        setCell('J', scrap.item);
-        setCell('K', scrap.status || 'NG');
-        setCell('L', scrap.code);
-        setCell('M', scrap.description, undefined, true); // Left align
-        setCell('N', scrap.unitValue, '"R$"#,##0.00');
-        setCell('O', scrap.totalValue, '"R$"#,##0.00');
-        setCell('P', scrap.usedModel || scrap.model);
-        setCell('Q', scrap.responsible);
-        setCell('R', scrap.station);
-        setCell('S', scrap.reason, undefined, true);
-        setCell('T', scrap.rootCause);
-        setCell('U', scrap.countermeasure, undefined, true);
-    });
+        const updateWidth = (col: string, val: any) => {
+            if (!val) return;
+            const len = String(val).length;
+            if (len > (columnWidths[col] || 10)) {
+                columnWidths[col] = Math.min(len + 2, 60);
+            }
+        };
 
-    // 3. Apply Auto-Fit Widths
-    Object.keys(columnWidths).forEach(col => {
-        worksheet.getColumn(col).width = columnWidths[col];
-    });
+        data.forEach((scrap, index) => {
+            const currentRow = startRow + index;
+            const row = sheet.getRow(currentRow);
+            row.height = 25;
+
+            let dateVal = scrap.date;
+            try {
+                if (dateVal) {
+                    const d = new Date(dateVal);
+                    const userTimezoneOffset = d.getTimezoneOffset() * 60000;
+                    const offsetDate = new Date(d.getTime() + userTimezoneOffset);
+                    dateVal = offsetDate.toLocaleDateString('pt-BR');
+                }
+            } catch (e) { }
+
+            const fillStyle = index % 2 === 0 ? greenMedium : greenLight;
+            const setCell = (col: string, val: any, format?: string, alignIsLeft = false) => {
+                const cell = sheet.getCell(`${col}${currentRow}`);
+                cell.value = val;
+                cell.border = borderStyle;
+                cell.fill = fillStyle;
+                cell.alignment = alignIsLeft ? leftStyle : centerStyle;
+                if (format) cell.numFmt = format;
+                updateWidth(col, val);
+            };
+
+            setCell('B', dateVal);
+            setCell('C', scrap.week);
+            setCell('D', scrap.shift);
+            setCell('E', scrap.line);
+            setCell('F', scrap.leaderName);
+            setCell('G', scrap.pqc || '');
+            setCell('H', scrap.model);
+            setCell('I', scrap.qty);
+            setCell('J', scrap.item);
+            setCell('K', scrap.status || 'NG');
+            setCell('L', scrap.code);
+            setCell('M', scrap.description, undefined, true);
+            setCell('N', scrap.unitValue, '"R$"#,##0.00');
+            setCell('O', scrap.totalValue, '"R$"#,##0.00');
+            setCell('P', scrap.usedModel || scrap.model);
+            setCell('Q', scrap.responsible);
+            setCell('R', scrap.station);
+            setCell('S', scrap.reason, undefined, true);
+            setCell('T', scrap.rootCause);
+            setCell('U', scrap.countermeasure, undefined, true);
+        });
+
+        Object.keys(columnWidths).forEach(col => {
+            sheet.getColumn(col).width = columnWidths[col];
+        });
+    };
+
+    // If template exists, use it for the first plant, then copy for others
+    // If no template, remove default sheet and add new ones
+    if (!templateBuffer) {
+        workbook.removeWorksheet(workbook.worksheets[0].id);
+    }
+
+    // We assume the first sheet is the template structure if loaded
+    const masterSheet = workbook.worksheets[0];
+    const initialName = masterSheet ? masterSheet.name : 'Scrap';
+
+    // Process each plant
+    for (let i = 0; i < plants.length; i++) {
+        const plant = plants[i];
+        let sheet: ExcelJS.Worksheet;
+
+        if (i === 0 && masterSheet) {
+            sheet = masterSheet;
+            sheet.name = plant;
+        } else {
+            sheet = workbook.addWorksheet(plant);
+            if (masterSheet) {
+                // Copy header rows (1-3)
+                for (let r = 1; r <= 3; r++) {
+                    const rowSrc = masterSheet.getRow(r);
+                    const rowDest = sheet.getRow(r);
+                    rowDest.values = rowSrc.values;
+                    // Copy basic styles manually as Deep Copy isn't native/easy
+                    rowDest.height = rowSrc.height;
+                    rowSrc.eachCell({ includeEmpty: true }, (cell, colNumber) => {
+                        const target = rowDest.getCell(colNumber);
+                        target.style = JSON.parse(JSON.stringify(cell.style));
+                        target.value = cell.value;
+                    });
+                }
+                // Copy Merges
+                // (Simplification: assuming static merges in template if any)
+            }
+        }
+        fillSheet(sheet, groups[plant]);
+    }
 
     const buffer = await workbook.xlsx.writeBuffer();
     const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
     const dateStr = new Date().toISOString().split('T')[0];
-    saveAs(blob, `Relatorio_Scrap_${dateStr}.xlsx`);
+    saveAs(blob, `Relatorio_Scrap_Agrupado_${dateStr}.xlsx`);
 };
+
+export const exportExecutiveReport = async (scraps: ScrapData[], fileNamePrefix: string = 'Relatorio_Executivo_Completo') => {
+    const workbook = new ExcelJS.Workbook();
+
+    // --------------------------------------------------------------------------------
+    // 1. DATA PROCESSING
+    // --------------------------------------------------------------------------------
+    const PLANTS = ['P81L', 'P81M', 'P81N'];
+    const CATEGORIES_PRIORITY = ['CAMERA', 'FRONT', 'REAR', 'OCTA', 'BATERIA RMA', 'BATERIA SCRAP'];
+
+    // Fetch materials for Plant lookup if missing in Scrap
+    const materials = await getMaterials();
+    const materialMap: Record<string, string> = {};
+    materials.forEach(m => {
+        if (m.code) materialMap[m.code] = m.plant;
+    });
+
+    // Structure: Plant -> Category -> { qty, val }
+    const plantData: Record<string, Record<string, { qty: number, val: number }>> = {};
+    const globalData: Record<string, { qty: number, val: number }> = {};
+    const modelStats: Record<string, { qty: number, val: number }> = {};
+
+    PLANTS.forEach(p => plantData[p] = {});
+
+    scraps.forEach(s => {
+        // Categorization Rules
+        const itemUpper = (s.item || '').toUpperCase();
+        let category = 'MIUDEZAS';
+
+        if (itemUpper.includes('CAMERA')) {
+            category = 'CAMERA';
+        } else {
+            const found = CATEGORIES_PRIORITY.find(c => itemUpper.includes(c));
+            if (found) category = found;
+        }
+
+        // Determine Plant: Use scrap record first, then fallback to material lookup matches code
+        let plant = s.plant;
+        if (!plant && s.code) {
+            plant = materialMap[s.code];
+        }
+        if (!plant) plant = 'ND';
+        plant = plant.toUpperCase().trim();
+
+        const safePlant = (PLANTS.includes(plant) || plant === 'ND') ? plant : 'OUTROS';
+        if (!plantData[safePlant]) plantData[safePlant] = {};
+
+        if (!plantData[safePlant][category]) plantData[safePlant][category] = { qty: 0, val: 0 };
+        if (!globalData[category]) globalData[category] = { qty: 0, val: 0 };
+
+        // Model Stats
+        const model = s.model || 'Unknown';
+        if (!modelStats[model]) modelStats[model] = { qty: 0, val: 0 };
+
+        const qty = Number(s.qty || 0);
+        const val = Number(s.totalValue || 0);
+
+        plantData[safePlant][category].qty += qty;
+        plantData[safePlant][category].val += val;
+
+        globalData[category].qty += qty;
+        globalData[category].val += val;
+
+        modelStats[model].qty += qty;
+        modelStats[model].val += val;
+    });
+
+    // --------------------------------------------------------------------------------
+    // 2. STYLES
+    // --------------------------------------------------------------------------------
+    const headerStyle: Partial<ExcelJS.Style> = {
+        font: { bold: true, color: { argb: 'FFFFFFFF' } },
+        fill: { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1E3A8A' } }, // Dark Blue
+        alignment: { horizontal: 'center', vertical: 'middle' },
+        border: { top: { style: 'thin' }, left: { style: 'thin' }, bottom: { style: 'thin' }, right: { style: 'thin' } }
+    };
+
+    const subtotalStyle: Partial<ExcelJS.Style> = {
+        font: { bold: true },
+        fill: { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE2E8F0' } }, // Light Gray
+        alignment: { horizontal: 'center', vertical: 'middle' },
+        border: { top: { style: 'thin' }, left: { style: 'thin' }, bottom: { style: 'thin' }, right: { style: 'thin' } }
+    };
+
+    // Helper to format cells ensuring strictly one formatting application per cell
+    const formatCell = (cell: ExcelJS.Cell, value: any, numFmt: string, style?: Partial<ExcelJS.Style>) => {
+        // Set value
+        cell.value = value;
+        // Set Number format immediately
+        if (numFmt) {
+            cell.numFmt = numFmt;
+        }
+
+        // Apply Styles
+        if (style) {
+            cell.font = style.font || {};
+            cell.fill = style.fill || { type: 'pattern', pattern: 'none' };
+            cell.alignment = style.alignment || { horizontal: 'center', vertical: 'middle' };
+            cell.border = style.border || {};
+        } else {
+            // Default Style if none provided
+            cell.alignment = { horizontal: 'center', vertical: 'middle' };
+            cell.border = { top: { style: 'thin' }, left: { style: 'thin' }, bottom: { style: 'thin' }, right: { style: 'thin' } };
+        }
+    };
+
+    // --------------------------------------------------------------------------------
+    // 3. SHEET 1: Resumo por Planta
+    // --------------------------------------------------------------------------------
+    const sheet1 = workbook.addWorksheet("Resumo por Planta");
+
+    // Set Columns
+    sheet1.columns = [
+        { header: 'Categoria', key: 'cat', width: 30 },
+        { header: 'Qtd', key: 'qty', width: 15 },
+        { header: 'Valor Total (R$)', key: 'val', width: 25 },
+        { header: '% (Share)', key: 'pct', width: 15 },
+    ];
+
+    let currentRow = 1;
+
+    const plantsToSort = Object.keys(plantData).sort();
+
+    plantsToSort.forEach(plant => {
+        const cats = plantData[plant];
+        const catKeys = Object.keys(cats);
+        if (catKeys.length === 0) return;
+
+        // Calculate Plant Total
+        const plantTotalVal = Object.values(cats).reduce((acc, curr) => acc + curr.val, 0);
+        const plantTotalQty = Object.values(cats).reduce((acc, curr) => acc + curr.qty, 0);
+
+        // Plant Header
+        sheet1.mergeCells(`A${currentRow}:D${currentRow}`);
+        const titleCell = sheet1.getCell(`A${currentRow}`);
+        titleCell.value = `PLANTA: ${plant}`;
+        titleCell.style = headerStyle;
+        titleCell.alignment = { horizontal: 'left', vertical: 'middle', indent: 1 };
+        currentRow++;
+
+        // Column Headers
+        const headers = ['Categoria', 'Qtd', 'Valor Total (R$)', '% (Share da Planta)'];
+        for (let i = 0; i < 4; i++) {
+            const cell = sheet1.getCell(currentRow, i + 1);
+            cell.value = headers[i];
+            cell.style = headerStyle;
+        }
+        currentRow++;
+
+        // Sort Categories by Value Desc
+        catKeys.sort((a, b) => cats[b].val - cats[a].val);
+
+        catKeys.forEach(cat => {
+            const item = cats[cat];
+            const pct = plantTotalVal > 0 ? item.val / plantTotalVal : 0;
+
+            const row = sheet1.getRow(currentRow);
+
+            // 1. Categoria
+            formatCell(row.getCell(1), cat, '@');
+
+            // 2. Qtd (Strict Integer)
+            formatCell(row.getCell(2), Math.trunc(Number(item.qty)), '0');
+
+            // 3. Val (Strict Currency)
+            formatCell(row.getCell(3), Number(item.val), '"R$ "#,##0.00');
+
+            // 4. Share (Strict %)
+            formatCell(row.getCell(4), Number(pct), '0.00%');
+
+            currentRow++;
+        });
+
+        // Subtotal Row
+        const subRow = sheet1.getRow(currentRow);
+
+        formatCell(subRow.getCell(1), `Subtotal ${plant}`, '', subtotalStyle);
+        formatCell(subRow.getCell(2), Math.trunc(Number(plantTotalQty)), '0', subtotalStyle);
+        formatCell(subRow.getCell(3), Number(plantTotalVal), '"R$ "#,##0.00', subtotalStyle);
+        formatCell(subRow.getCell(4), 1, '0.00%', subtotalStyle);
+
+        currentRow += 2; // Spacer
+    });
+
+
+    // --------------------------------------------------------------------------------
+    // 4. SHEET 2: Resumo Geral
+    // --------------------------------------------------------------------------------
+    const sheet2 = workbook.addWorksheet("Resumo Geral");
+    sheet2.columns = [
+        { header: 'Categoria', key: 'cat', width: 30 },
+        { header: 'Qtd Total', key: 'qty', width: 15 },
+        { header: 'Valor Total (R$)', key: 'val', width: 25 },
+        { header: '% (Share Global)', key: 'pct', width: 15 },
+    ];
+
+    currentRow = 1;
+
+    // --- TABLE 1: CATEGORIES ---
+
+    // Global Header
+    const headers2 = ['Categoria', 'Qtd Total', 'Valor Total (R$)', '% (Share Global)'];
+    for (let i = 0; i < 4; i++) {
+        const cell = sheet2.getCell(currentRow, i + 1);
+        cell.value = headers2[i];
+        cell.style = headerStyle;
+    }
+    currentRow++;
+
+    const globalCats = Object.keys(globalData);
+    const globalTotalVal = Object.values(globalData).reduce((acc, curr) => acc + curr.val, 0);
+    const globalTotalQty = Object.values(globalData).reduce((acc, curr) => acc + curr.qty, 0);
+
+    // Sort by Value Desc
+    globalCats.sort((a, b) => globalData[b].val - globalData[a].val);
+
+    globalCats.forEach(cat => {
+        const item = globalData[cat];
+        const pct = globalTotalVal > 0 ? item.val / globalTotalVal : 0;
+
+        const row = sheet2.getRow(currentRow);
+
+        formatCell(row.getCell(1), cat, '@');
+        formatCell(row.getCell(2), Math.trunc(Number(item.qty)), '0');
+        formatCell(row.getCell(3), Number(item.val), '"R$ "#,##0.00');
+        formatCell(row.getCell(4), Number(pct), '0.00%');
+
+        currentRow++;
+    });
+
+    // Grand Total Row
+    const grandRow = sheet2.getRow(currentRow);
+    // TOTAL GERAL with custom styling
+    const totalStyle: Partial<ExcelJS.Style> = {
+        font: { bold: true, color: { argb: 'FFFFFFFF' } },
+        fill: { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1E3A8A' } },
+        alignment: { horizontal: 'center', vertical: 'middle' },
+        border: { top: { style: 'thin' }, left: { style: 'thin' }, bottom: { style: 'thin' }, right: { style: 'thin' } }
+    };
+
+    formatCell(grandRow.getCell(1), "TOTAL GERAL", '', totalStyle);
+    formatCell(grandRow.getCell(2), Math.trunc(Number(globalTotalQty)), '0', totalStyle);
+    formatCell(grandRow.getCell(3), Number(globalTotalVal), '"R$ "#,##0.00', totalStyle);
+    formatCell(grandRow.getCell(4), 1, '0.00%', totalStyle);
+
+    currentRow += 3; // Space before next table
+
+    // --- TABLE 2: SHARE POR MODELO ---
+
+    // Header
+    const headersModel = ['Modelo', 'Qtd Total', 'Valor Total (R$)', '% do Valor Total'];
+    for (let i = 0; i < 4; i++) {
+        const cell = sheet2.getCell(currentRow, i + 1);
+        cell.value = headersModel[i];
+        cell.style = headerStyle;
+    }
+    currentRow++;
+
+    // Process Models
+    const modelKeys = Object.keys(modelStats);
+    // Sort by Value Desc
+    modelKeys.sort((a, b) => modelStats[b].val - modelStats[a].val);
+
+    modelKeys.forEach(model => {
+        const item = modelStats[model];
+        const pct = globalTotalVal > 0 ? item.val / globalTotalVal : 0;
+
+        const row = sheet2.getRow(currentRow);
+
+        formatCell(row.getCell(1), model, '@');
+        formatCell(row.getCell(2), Math.trunc(Number(item.qty)), '0');
+        formatCell(row.getCell(3), Number(item.val), '"R$ "#,##0.00');
+        formatCell(row.getCell(4), Number(pct), '0.00%');
+
+        currentRow++;
+    });
+
+    // --- SHEET 3: DADOS BRUTOS ---
+    const sheet3 = workbook.addWorksheet("Dados Brutos");
+    sheet3.columns = [
+        { header: 'Data', key: 'date', width: 12 },
+        { header: 'Nota Fiscal', key: 'nf', width: 15 },
+        { header: 'Enviado Por', key: 'sentBy', width: 20 },
+        { header: 'Planta', key: 'plant', width: 10 },
+        { header: 'Líder', key: 'leader', width: 20 },
+        { header: 'Turno', key: 'shift', width: 8 },
+        { header: 'Linha', key: 'line', width: 10 },
+        { header: 'Modelo', key: 'model', width: 15 },
+        { header: 'Código', key: 'code', width: 12 },
+        { header: 'Descrição', key: 'desc', width: 30 },
+        { header: 'Item', key: 'item', width: 20 },
+        { header: 'Qtd', key: 'qty', width: 10 },
+        { header: 'Valor Un.', key: 'unitVal', width: 15 },
+        { header: 'Valor Total', key: 'totalVal', width: 15 },
+        { header: 'Status', key: 'status', width: 15 },
+        { header: 'Responsável', key: 'resp', width: 20 },
+        { header: 'Motivo', key: 'reason', width: 30 },
+        { header: 'Contra Medida', key: 'cm', width: 30 },
+    ];
+
+    // Header Style for Raw Data
+    const rawHeaderRow = sheet3.getRow(1);
+    rawHeaderRow.eachCell((cell) => {
+        cell.style = headerStyle;
+    });
+
+    scraps.forEach((s, idx) => {
+        // Format Date
+        let dateStr = s.date;
+        try {
+            if (dateStr) {
+                const d = new Date(dateStr);
+                const userTimezoneOffset = d.getTimezoneOffset() * 60000;
+                const offsetDate = new Date(d.getTime() + userTimezoneOffset);
+                dateStr = offsetDate.toLocaleDateString('pt-BR');
+            }
+        } catch (e) { }
+
+        // ADD ROW with placeholder values we will overwrite immediately
+        const rawRow = sheet3.addRow([
+            dateStr,
+            s.nfNumber || '-',
+            s.sentBy || (s.userId ? s.userId : '-'),
+            s.plant || '-',
+            s.leaderName,
+            s.shift,
+            s.line,
+            s.model,
+            s.code,
+            s.description,
+            s.item,
+            // Values placeholders
+            0, 0, 0,
+            s.status,
+            s.responsible,
+            s.reason,
+            s.countermeasure
+        ]);
+
+        // STRICT CELL FORMATTING FOR DATA VALUES
+
+        // Qty (Col 12)
+        formatCell(rawRow.getCell(12), Math.trunc(Number(s.qty || 0)), '0');
+
+        // Unit Val (Col 13)
+        formatCell(rawRow.getCell(13), Number(s.unitValue || 0), '"R$ "#,##0.00');
+
+        // Total Val (Col 14)
+        formatCell(rawRow.getCell(14), Number(s.totalValue || 0), '"R$ "#,##0.00');
+    });
+
+    // Generate Buffer
+    const buffer = await workbook.xlsx.writeBuffer();
+    const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+    const dateStr = new Date().toISOString().split('T')[0];
+    saveAs(blob, `${fileNamePrefix}_${dateStr}.xlsx`);
+};
+
+export const exportInvoiceReport = async (scraps: ScrapData[], nfNumber: string) => {
+    await exportExecutiveReport(scraps, `Relatorio_NF_${nfNumber}`);
+};
+
+// ... existing exports ...
+
+export const downloadPreparationExcel = async (logs: PreparationLog[], filters: { date: string, shift: string }) => {
+    const workbook = new ExcelJS.Workbook();
+    try {
+        const response = await fetch('/template_preparacao.xlsx');
+        if (response.ok) {
+            const buffer = await response.arrayBuffer();
+            await workbook.xlsx.load(buffer);
+        } else {
+            console.warn("Template de preparação não encontrado, criando novo.");
+            throw new Error("Template Missing");
+        }
+    } catch (e) {
+        // Create basic structure if template fails
+        const sheet = workbook.addWorksheet('Preparacao');
+        // Basic fallback headers would go here if needed, but assuming template exists.
+        alert("Erro: Template 'template_preparacao.xlsx' não encontrado na pasta public.");
+        return;
+    }
+
+    const sheet = workbook.worksheets[0];
+
+    // Filter Logs
+    const shift1 = logs.filter(l => (l.shift.includes('1') || l.shift.toUpperCase().includes('TURNO 1')));
+    const shift2 = logs.filter(l => (l.shift.includes('2') || l.shift.toUpperCase().includes('TURNO 2')));
+
+    let currentRow = 8;
+
+    // Style Helpers
+    const borderStyle: Partial<ExcelJS.Borders> = { top: { style: 'thin' }, left: { style: 'thin' }, bottom: { style: 'thin' }, right: { style: 'thin' } };
+    const centerStyle: Partial<ExcelJS.Alignment> = { vertical: 'middle', horizontal: 'center', wrapText: true };
+
+    const writeLog = (rowIdx: number, l: PreparationLog) => {
+        const row = sheet.getRow(rowIdx);
+
+        try { sheet.unMergeCells(`B${rowIdx}:D${rowIdx}`); } catch (e) { }
+        sheet.mergeCells(`B${rowIdx}:D${rowIdx}`);
+
+        // Helper to safely get number or 0
+        const getVal = (v: any) => (v === null || v === undefined || v === '') ? 0 : v;
+
+        row.getCell('B').value = l.line;
+        row.getCell('E').value = l.model;
+        row.getCell('F').value = l.sku;
+        row.getCell('G').value = getVal(l.plate);
+        row.getCell('H').value = getVal(l.rear);
+        row.getCell('I').value = getVal(l.btFt);
+        row.getCell('J').value = getVal(l.pba);
+        row.getCell('K').value = getVal(l.currentRfCal);
+        row.getCell('L').value = getVal(l.input);
+        row.getCell('M').value = getVal(l.preKey);
+        row.getCell('N').value = getVal(l.lcia);
+        row.getCell('O').value = getVal(l.audio);
+        row.getCell('P').value = getVal(l.radiation);
+        row.getCell('Q').value = getVal(l.imei);
+        row.getCell('R').value = getVal(l.vct);
+        row.getCell('S').value = getVal(l.revision);
+        row.getCell('T').value = getVal(l.desmonte);
+        row.getCell('U').value = getVal(l.oven);
+        row.getCell('V').value = getVal(l.repair);
+
+        row.eachCell((cell, colNumber) => {
+            if (colNumber >= 2 && colNumber <= 22) { // B to V
+                cell.border = borderStyle;
+                cell.alignment = centerStyle;
+                cell.font = { name: 'Arial', size: 9 };
+            }
+        });
+    };
+
+    const copyRowStyleAndValue = (srcRowIdx: number, targetRowIdx: number) => {
+        const srcRow = sheet.getRow(srcRowIdx);
+        const targetRow = sheet.getRow(targetRowIdx);
+
+        targetRow.height = srcRow.height;
+
+        // Iterate B to V (Col 2 to 22)
+        for (let col = 2; col <= 22; col++) {
+            const srcCell = srcRow.getCell(col);
+            const targetCell = targetRow.getCell(col);
+
+            targetCell.value = srcCell.value;
+            targetCell.style = srcCell.style;
+
+            // Merges
+            const model = srcCell.model as any; // Access internal model to check merge
+            if (srcCell.isMerged && srcCell.address === srcCell.master.address) {
+                // If it behaves like a master, try to merge target similarly? 
+                // ExcelJS doesn't easily expose merge dimensions from cell. 
+                // We will manually replicate known merges for headers:
+                // Row 6: B6:D6 (1st Shift) -> We will set value manually later for "2nd Shift" text
+            }
+        }
+    };
+
+    // Logic: 1st Shift OR 2nd Shift Main Header
+    // If Filter is specifically '2', we just use the main header as 2nd Turno
+    if (filters.shift === '2' || (shift1.length === 0 && shift2.length > 0 && filters.shift !== '1')) {
+        // SCENARIO: Only 2nd Shift (or requested 2, or Is All but only 2 exists)
+        const row6 = sheet.getRow(6);
+        const cellB6 = row6.getCell(2);
+        cellB6.value = "2º TURNO";
+
+        shift2.forEach((l, idx) => {
+            writeLog(currentRow + idx, l);
+        });
+        currentRow += shift2.length;
+    } else {
+        // SCENARIO: 1st Shift (or ALL with 1st Shift data)
+        const row6 = sheet.getRow(6);
+        const cellB6 = row6.getCell(2);
+        cellB6.value = "1º TURNO";
+
+        if (shift1.length > 0) {
+            shift1.forEach((l, idx) => {
+                writeLog(currentRow + idx, l);
+            });
+            currentRow += shift1.length;
+        }
+
+        // SCENARIO: Append 2nd Shift (If ALL and we have data for both or just appending)
+        if (filters.shift === 'ALL' && shift2.length > 0) {
+            currentRow += 2; // Gap
+
+            const headerRowIdx = currentRow;
+            const subHeaderRowIdx = currentRow + 1;
+
+            // Copy Headers (Rows 6 and 7)
+            copyRowStyleAndValue(6, headerRowIdx);
+            sheet.getRow(headerRowIdx).getCell(2).value = "2º TURNO";
+            try { sheet.mergeCells(headerRowIdx, 2, headerRowIdx, 4); } catch (e) { }
+
+            copyRowStyleAndValue(7, subHeaderRowIdx);
+
+            currentRow += 2; // Move past new headers
+
+            shift2.forEach((l, idx) => {
+                writeLog(currentRow + idx, l);
+            });
+        }
+    }
+
+
+    const buffer = await workbook.xlsx.writeBuffer();
+    const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+    saveAs(blob, `Relatorio_Preparacao_${filters.date}.xlsx`);
+}

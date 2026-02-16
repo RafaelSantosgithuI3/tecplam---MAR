@@ -1,5 +1,5 @@
 // @ts-nocheck
-import { ChecklistItem, ChecklistLog, User, MeetingLog, Permission, ConfigItem, LineStopData } from '../types';
+import { ChecklistItem, ChecklistLog, User, MeetingLog, Permission, ConfigItem, LineStopData, ConfigModel } from '../types';
 import { CHECKLIST_ITEMS } from '../constants';
 import { apiFetch, isServerConfigured } from './networkConfig';
 
@@ -126,6 +126,23 @@ export const getModels = async (): Promise<string[]> => {
 
 export const saveModels = async (models: string[]) => {
     try { await apiFetch('/config/models', { method: 'POST', body: JSON.stringify({ items: models }) }); } catch (e) { console.error(e); }
+};
+
+export const getModelsFull = async (): Promise<ConfigModel[]> => {
+    try {
+        const models = await apiFetch('/config/models');
+        if (Array.isArray(models)) return models;
+        return [];
+    } catch (e) { return []; }
+};
+
+export const saveModelsFull = async (models: ConfigModel[]) => {
+    try {
+        await apiFetch('/config/models', {
+            method: 'POST',
+            body: JSON.stringify({ items: models })
+        });
+    } catch (e) { console.error(e); }
 };
 
 export const getStations = async (): Promise<string[]> => {

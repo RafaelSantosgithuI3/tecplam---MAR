@@ -18,7 +18,7 @@ import {
     SCRAP_ITEMS, SCRAP_STATUS, CAUSA_RAIZ_OPTIONS
 } from '../services/scrapService';
 import * as authService from '../services/authService';
-import { exportScrapToExcel } from '../services/excelService';
+import { exportScrapToExcel, exportExecutiveReport } from '../services/excelService';
 
 const formatCurrency = (val: number | undefined) => {
     return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(val || 0);
@@ -122,9 +122,12 @@ export const ScrapModule: React.FC<ScrapModuleProps> = ({ currentUser, onBack, i
                         <Plus size={16} /> Lançar
                     </Button>
 
-                    <Button variant={activeTab === 'PENDING' ? 'primary' : 'ghost'} onClick={() => setActiveTab('PENDING')} size="sm">
-                        <AlertTriangle size={16} /> Pendências
-                    </Button>
+                    {/* Aba Pendências: Restrita */}
+                    {(isAdmin || ['líder', 'coordenador', 'supervisor', 'ti', 'admin'].some(r => currentUser.role.toLowerCase().includes(r))) && (
+                        <Button variant={activeTab === 'PENDING' ? 'primary' : 'ghost'} onClick={() => setActiveTab('PENDING')} size="sm">
+                            <AlertTriangle size={16} /> Pendências
+                        </Button>
+                    )}
 
                     <Button variant={activeTab === 'HISTORY' ? 'primary' : 'ghost'} onClick={() => setActiveTab('HISTORY')} size="sm">
                         <History size={16} /> Histórico (Pessoal)
@@ -140,11 +143,10 @@ export const ScrapModule: React.FC<ScrapModuleProps> = ({ currentUser, onBack, i
                         </Button>
                     )}
 
-                    {(isAdmin || currentUser.role.includes('Supervisor') || currentUser.role.includes('Coordenador') || currentUser.role.includes('Diretor')) && (
-                        <Button variant={activeTab === 'MANAGEMENT_ADVANCED' ? 'primary' : 'ghost'} onClick={() => setActiveTab('MANAGEMENT_ADVANCED')} size="sm">
-                            <Shield size={16} /> Gestão Avançada
-                        </Button>
-                    )}
+                    {/* Aba Gestão Avançada: Liberada para todos no módulo */}
+                    <Button variant={activeTab === 'MANAGEMENT_ADVANCED' ? 'primary' : 'ghost'} onClick={() => setActiveTab('MANAGEMENT_ADVANCED')} size="sm">
+                        <Shield size={16} /> Gestão Avançada
+                    </Button>
                 </div>
             </div>
 
@@ -493,8 +495,8 @@ const ScrapPending = ({ scraps, currentUser, onUpdate, users }: any) => {
                     <p>Nenhuma pendência encontrada!</p>
                 </div>
             ) : (
-                <div className="bg-white dark:bg-zinc-900 rounded-xl border border-slate-200 dark:border-zinc-800 text-sm overflow-hidden shadow-sm">
-                    <table className="w-full text-left">
+                <div className="w-full overflow-x-auto pb-4 mb-4 touch-pan-x border border-gray-200 dark:border-zinc-800 rounded-xl">
+                    <table className="w-full text-left min-w-[800px]">
                         <thead className="bg-slate-50 dark:bg-zinc-950 text-slate-500 dark:text-zinc-400 font-medium border-b border-slate-200 dark:border-zinc-800">
                             <tr>
                                 <th className="p-4">Data</th>
@@ -684,21 +686,21 @@ const ScrapHistory = ({ scraps, currentUser, users }: any) => {
             </div>
 
             <Card>
-                <div className="flex gap-4 items-end flex-wrap">
-                    <div className="min-w-[150px]">
-                        <label className="text-xs font-bold text-slate-500 dark:text-zinc-500 uppercase mb-1 block">Período</label>
-                        <select className="w-full bg-slate-50 dark:bg-zinc-950 border border-slate-300 dark:border-zinc-800 rounded p-2 text-slate-900 dark:text-white" value={filters.period} onChange={e => setFilters({ ...filters, period: e.target.value })}>
+                <div className="flex gap-4 items-center flex-wrap">
+                    <div className="flex flex-wrap items-center gap-2 w-full md:w-auto">
+                        <label className="text-xs font-bold text-slate-500 dark:text-zinc-500 uppercase whitespace-nowrap sr-only md:not-sr-only">Período:</label>
+                        <select className="bg-slate-50 dark:bg-zinc-950 border border-slate-300 dark:border-zinc-800 rounded p-2 text-slate-900 dark:text-white text-sm outline-none w-full md:w-auto" value={filters.period} onChange={e => setFilters({ ...filters, period: e.target.value })}>
                             <option value="ALL">Todo o Histórico</option>
-                            <option value="DAY">Dia Específico</option>
-                            <option value="WEEK">Semana Específica</option>
-                            <option value="MONTH">Mês Específico</option>
-                            <option value="YEAR">Ano Específico</option>
+                            <option value="DAY">Dia</option>
+                            <option value="WEEK">Semana</option>
+                            <option value="MONTH">Mês</option>
+                            <option value="YEAR">Ano</option>
                         </select>
+                        {filters.period === 'DAY' && <Input type="date" value={filters.specificDate} onChange={e => setFilters({ ...filters, specificDate: e.target.value })} className="w-full md:w-auto" />}
+                        {filters.period === 'WEEK' && <Input type="week" value={filters.specificWeek} onChange={e => setFilters({ ...filters, specificWeek: e.target.value })} className="w-full md:w-auto" />}
+                        {filters.period === 'MONTH' && <Input type="month" value={filters.specificMonth} onChange={e => setFilters({ ...filters, specificMonth: e.target.value })} className="w-full md:w-auto" />}
+                        {filters.period === 'YEAR' && <Input type="number" placeholder="2026" value={filters.specificYear} onChange={e => setFilters({ ...filters, specificYear: e.target.value })} className="w-full md:w-24" />}
                     </div>
-                    {filters.period === 'DAY' && <Input type="date" value={filters.specificDate} onChange={e => setFilters({ ...filters, specificDate: e.target.value })} />}
-                    {filters.period === 'WEEK' && <Input type="week" value={filters.specificWeek} onChange={e => setFilters({ ...filters, specificWeek: e.target.value })} />}
-                    {filters.period === 'MONTH' && <Input type="month" value={filters.specificMonth} onChange={e => setFilters({ ...filters, specificMonth: e.target.value })} />}
-                    {filters.period === 'YEAR' && <Input type="number" placeholder="Ano (Ex: 2024)" value={filters.specificYear} onChange={e => setFilters({ ...filters, specificYear: e.target.value })} />}
                 </div>
             </Card>
 
@@ -735,7 +737,7 @@ const ScrapHistory = ({ scraps, currentUser, users }: any) => {
     );
 };
 
-const ScrapOperational = ({ scraps, users, lines, models }: any) => {
+export const ScrapOperational = ({ scraps, users, lines, models }: any) => {
     const [filters, setFilters] = useState({
         leader: '',
         line: '',
@@ -818,18 +820,18 @@ const ScrapOperational = ({ scraps, users, lines, models }: any) => {
                         <option value="1">1º Turno</option>
                         <option value="2">2º Turno</option>
                     </select>
-                    <div className="flex flex-col gap-2">
-                        <select className="bg-white dark:bg-zinc-950 border border-slate-300 dark:border-zinc-800 p-2 rounded text-sm text-slate-900 dark:text-zinc-300 outline-none focus:ring-2 focus:ring-blue-600/50" onChange={e => setFilters({ ...filters, period: e.target.value })} value={filters.period}>
+                    <div className="flex flex-wrap items-center gap-2 w-full md:w-auto">
+                        <select className="bg-white dark:bg-zinc-950 border border-slate-300 dark:border-zinc-800 p-2 rounded text-sm text-slate-900 dark:text-zinc-300 outline-none focus:ring-2 focus:ring-blue-600/50 w-full md:w-auto" onChange={e => setFilters({ ...filters, period: e.target.value })} value={filters.period}>
                             <option value="ALL">Todo Período</option>
-                            <option value="DAY">Dia Específico</option>
-                            <option value="WEEK">Semana Específica</option>
-                            <option value="MONTH">Mês Específico</option>
-                            <option value="YEAR">Ano Específico</option>
+                            <option value="DAY">Dia</option>
+                            <option value="WEEK">Semana</option>
+                            <option value="MONTH">Mês</option>
+                            <option value="YEAR">Ano</option>
                         </select>
-                        {filters.period === 'DAY' && <Input type="date" value={filters.specificDate} onChange={e => setFilters({ ...filters, specificDate: e.target.value })} />}
-                        {filters.period === 'WEEK' && <Input type="week" value={filters.specificWeek} onChange={e => setFilters({ ...filters, specificWeek: e.target.value })} />}
-                        {filters.period === 'MONTH' && <Input type="month" value={filters.specificMonth} onChange={e => setFilters({ ...filters, specificMonth: e.target.value })} />}
-                        {filters.period === 'YEAR' && <Input type="number" placeholder="Ano (Ex: 2024)" value={filters.specificYear} onChange={e => setFilters({ ...filters, specificYear: e.target.value })} />}
+                        {filters.period === 'DAY' && <Input type="date" value={filters.specificDate} onChange={e => setFilters({ ...filters, specificDate: e.target.value })} className="w-full md:w-auto" />}
+                        {filters.period === 'WEEK' && <Input type="week" value={filters.specificWeek} onChange={e => setFilters({ ...filters, specificWeek: e.target.value })} className="w-full md:w-auto" />}
+                        {filters.period === 'MONTH' && <Input type="month" value={filters.specificMonth} onChange={e => setFilters({ ...filters, specificMonth: e.target.value })} className="w-full md:w-auto" />}
+                        {filters.period === 'YEAR' && <Input type="number" placeholder="2026" value={filters.specificYear} onChange={e => setFilters({ ...filters, specificYear: e.target.value })} className="w-full md:w-24" />}
                     </div>
                 </div>
             </Card>
@@ -845,8 +847,8 @@ const ScrapOperational = ({ scraps, users, lines, models }: any) => {
                 </Card>
             </div>
 
-            <div className="bg-white dark:bg-zinc-900 rounded-xl overflow-hidden border border-slate-200 dark:border-zinc-800 shadow-sm">
-                <table className="w-full text-sm">
+            <div className="w-full overflow-x-auto bg-white dark:bg-zinc-900 rounded-xl border border-slate-200 dark:border-zinc-800 shadow-sm">
+                <table className="w-full text-sm min-w-[900px]">
                     <thead className="bg-slate-50 dark:bg-zinc-950 text-slate-500 dark:text-zinc-400 border-b border-slate-200 dark:border-zinc-800">
                         <tr>
                             <th className="p-3 text-left">Data</th>
@@ -883,7 +885,7 @@ const ScrapOperational = ({ scraps, users, lines, models }: any) => {
     )
 }
 
-const ScrapManagementAdvanced = ({ scraps }: any) => {
+export const ScrapManagementAdvanced = ({ scraps }: any) => {
     const [filters, setFilters] = useState({
         period: 'MONTH', // DAY, WEEK, MONTH, YEAR, ALL
         specificDate: '',
@@ -976,6 +978,17 @@ const ScrapManagementAdvanced = ({ scraps }: any) => {
                 </div>
             </Card>
 
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <Card className="bg-blue-900/20 border-blue-900/50 p-6">
+                    <h3 className="text-blue-400 font-bold uppercase text-xs">Total Filtrado (Gestão)</h3>
+                    <p className="text-3xl font-bold mt-2">{formatCurrency(filtered.reduce((a, b) => a + (b.totalValue || 0), 0))}</p>
+                </Card>
+                <Card className="bg-white dark:bg-zinc-900 border-slate-200 dark:border-zinc-800 p-6 flex flex-col justify-center items-center cursor-pointer hover:bg-slate-50 dark:hover:bg-zinc-800 shadow-sm" onClick={() => exportExecutiveReport(filtered)}>
+                    <Download size={32} className="text-green-600 dark:text-green-500 mb-2" />
+                    <span className="text-sm font-bold text-green-600 dark:text-green-400">Baixar Relatório Executivo (Excel)</span>
+                </Card>
+            </div>
+
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                 {/* Reordered: Shift -> Line -> Model -> Leaders -> Pending */}
                 <Card>
@@ -1049,7 +1062,7 @@ interface ScrapDetailModalProps {
     onClose: () => void;
 }
 
-const ScrapDetailModal: React.FC<ScrapDetailModalProps> = ({ isOpen, scrap, users, onClose }) => {
+export const ScrapDetailModal: React.FC<ScrapDetailModalProps> = ({ isOpen, scrap, users, onClose }) => {
     if (!isOpen || !scrap) return null;
 
     // Logic to find the name of the user who registered the scrap (not the responsible for the fault)
@@ -1169,7 +1182,7 @@ const ScrapDetailModal: React.FC<ScrapDetailModalProps> = ({ isOpen, scrap, user
 };
 
 // Helper component for uniform items
-const DetailItem = ({ label, value, className = "" }: any) => (
+export const DetailItem = ({ label, value, className = "" }: any) => (
     <div className="bg-white dark:bg-zinc-900 p-2.5 rounded border border-slate-100 dark:border-zinc-800 shadow-sm transition-all hover:border-blue-200 dark:hover:border-blue-800/50">
         <label className="block text-[10px] font-bold text-slate-400 dark:text-zinc-500 uppercase mb-1 tracking-wider">{label}</label>
         <div className={`text-sm text-slate-700 dark:text-zinc-300 font-medium truncate ${className}`}>{value}</div>
@@ -1255,24 +1268,24 @@ const ScrapEditDelete = ({ scraps, users, lines, models, onUpdate, categories, s
                         <option value="">Todos Modelos</option>
                         {models.map((m: string) => <option key={m} value={m}>{m}</option>)}
                     </select>
-                    <div className="flex flex-col gap-2">
-                        <select className="bg-white dark:bg-zinc-950 border border-slate-300 dark:border-zinc-800 p-2 rounded text-sm outline-none" onChange={e => setFilters({ ...filters, period: e.target.value })} value={filters.period}>
+                    <div className="flex flex-wrap items-center gap-2 w-full md:w-auto">
+                        <select className="bg-white dark:bg-zinc-950 border border-slate-300 dark:border-zinc-800 p-2 rounded text-sm outline-none w-full md:w-auto" onChange={e => setFilters({ ...filters, period: e.target.value })} value={filters.period}>
                             <option value="ALL">Todo Período</option>
-                            <option value="DAY">Dia Específico</option>
-                            <option value="WEEK">Semana Específica</option>
-                            <option value="MONTH">Mês Específico</option>
-                            <option value="YEAR">Ano Específico</option>
+                            <option value="DAY">Dia</option>
+                            <option value="WEEK">Semana</option>
+                            <option value="MONTH">Mês</option>
+                            <option value="YEAR">Ano</option>
                         </select>
-                        {filters.period === 'DAY' && <Input type="date" value={filters.specificDate} onChange={e => setFilters({ ...filters, specificDate: e.target.value })} />}
-                        {filters.period === 'WEEK' && <Input type="week" value={filters.specificWeek} onChange={e => setFilters({ ...filters, specificWeek: e.target.value })} />}
-                        {filters.period === 'MONTH' && <Input type="month" value={filters.specificMonth} onChange={e => setFilters({ ...filters, specificMonth: e.target.value })} />}
-                        {filters.period === 'YEAR' && <Input type="number" placeholder="Ano" value={filters.specificYear} onChange={e => setFilters({ ...filters, specificYear: e.target.value })} />}
+                        {filters.period === 'DAY' && <Input type="date" value={filters.specificDate} onChange={e => setFilters({ ...filters, specificDate: e.target.value })} className="w-full md:w-auto" />}
+                        {filters.period === 'WEEK' && <Input type="week" value={filters.specificWeek} onChange={e => setFilters({ ...filters, specificWeek: e.target.value })} className="w-full md:w-auto" />}
+                        {filters.period === 'MONTH' && <Input type="month" value={filters.specificMonth} onChange={e => setFilters({ ...filters, specificMonth: e.target.value })} className="w-full md:w-auto" />}
+                        {filters.period === 'YEAR' && <Input type="number" placeholder="2026" value={filters.specificYear} onChange={e => setFilters({ ...filters, specificYear: e.target.value })} className="w-full md:w-24" />}
                     </div>
                 </div>
             </Card>
 
-            <div className="bg-white dark:bg-zinc-900 rounded-xl overflow-hidden border border-slate-200 dark:border-zinc-800 shadow-sm">
-                <table className="w-full text-sm">
+            <div className="w-full overflow-x-auto bg-white dark:bg-zinc-900 rounded-xl border border-slate-200 dark:border-zinc-800 shadow-sm">
+                <table className="w-full text-sm min-w-[900px]">
                     <thead className="bg-red-50 dark:bg-red-900/10 text-slate-500 dark:text-zinc-400 border-b border-red-100 dark:border-red-900/20">
                         <tr>
                             <th className="p-3 text-left">Data</th>

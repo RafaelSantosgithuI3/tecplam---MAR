@@ -206,12 +206,12 @@ export const AuditModule = ({ currentUser, onBack, users, lines }: any) => {
                 <div className="space-y-4">
                     {/* Matrix Views */}
                     {(tab === 'LINES' || tab === 'MAINTENANCE_MATRIX') && (
-                        <div className="overflow-x-auto"><table className="w-full text-sm text-center">
-                            <thead><tr className="bg-slate-100 dark:bg-zinc-950 border-b border-slate-200 dark:border-zinc-800 text-slate-600 dark:text-zinc-400"><th className="p-2 text-left">Linha</th>{['S', 'T', 'Q', 'Q', 'S', 'S'].map(d => <th key={d} className="p-2">{d}</th>)}</tr></thead>
+                        <div className="w-full overflow-x-auto bg-white dark:bg-zinc-900 rounded-xl border border-slate-200 dark:border-zinc-800 shadow-sm"><table className="w-full text-sm text-center min-w-[600px]">
+                            <thead><tr className="bg-slate-100 dark:bg-zinc-950 border-b border-slate-200 dark:border-zinc-800 text-slate-600 dark:text-zinc-400"><th className="p-2 text-left bg-slate-100 dark:bg-zinc-950 sticky left-0 z-10">Linha</th>{['S', 'T', 'Q', 'Q', 'S', 'S'].map(d => <th key={d} className="p-2">{d}</th>)}</tr></thead>
                             <tbody>
                                 {(tab === 'LINES' ? linesMatrix : maintMatrix).map(r => (
                                     <tr key={r.line} className="border-b border-slate-100 dark:border-zinc-800 hover:bg-slate-50 dark:hover:bg-zinc-900/50">
-                                        <td className="p-2 text-left font-bold text-slate-900 dark:text-white">{r.line}</td>
+                                        <td className="p-2 text-left font-bold text-slate-900 dark:text-white sticky left-0 bg-white dark:bg-zinc-900 z-10">{r.line}</td>
                                         {r.statuses.map((s, i) => (
                                             <td key={i} className="p-2">
                                                 <div className={`w-8 h-8 rounded-full flex items-center justify-center mx-auto text-xs font-bold ${s.status === 'OK' ? 'bg-green-100 dark:bg-green-900/50 text-green-700 dark:text-green-500' : s.status === 'NG' ? 'bg-red-100 dark:bg-red-900/50 text-red-700 dark:text-red-500' : 'bg-slate-200 dark:bg-zinc-800 text-slate-400 dark:text-zinc-600'}`}>
@@ -227,12 +227,12 @@ export const AuditModule = ({ currentUser, onBack, users, lines }: any) => {
 
                     {/* Leader Matrix */}
                     {tab === 'LEADERS' && (
-                        <div className="overflow-x-auto"><table className="w-full text-sm text-center">
-                            <thead><tr className="bg-slate-100 dark:bg-zinc-950 border-b border-slate-200 dark:border-zinc-800 text-slate-600 dark:text-zinc-400"><th className="p-2 text-left">Líder</th>{['S', 'T', 'Q', 'Q', 'S', 'S'].map(d => <th key={d} className="p-2">{d}</th>)}</tr></thead>
+                        <div className="w-full overflow-x-auto bg-white dark:bg-zinc-900 rounded-xl border border-slate-200 dark:border-zinc-800 shadow-sm"><table className="w-full text-sm text-center min-w-[600px]">
+                            <thead><tr className="bg-slate-100 dark:bg-zinc-950 border-b border-slate-200 dark:border-zinc-800 text-slate-600 dark:text-zinc-400"><th className="p-2 text-left bg-slate-100 dark:bg-zinc-950 sticky left-0 z-10">Líder</th>{['S', 'T', 'Q', 'Q', 'S', 'S'].map(d => <th key={d} className="p-2">{d}</th>)}</tr></thead>
                             <tbody>
                                 {leadersMatrix.map(r => (
                                     <tr key={r.user.matricula} className="border-b border-slate-100 dark:border-zinc-800 hover:bg-slate-50 dark:hover:bg-zinc-900/50">
-                                        <td className="p-2 text-left font-bold text-slate-900 dark:text-white">{r.user.name}</td>
+                                        <td className="p-2 text-left font-bold text-slate-900 dark:text-white sticky left-0 bg-white dark:bg-zinc-900 z-10">{r.user.name}</td>
                                         {r.statuses.map((s, i) => (
                                             <td key={i} className="p-2">
                                                 <div className={`w-8 h-8 rounded-full flex items-center justify-center mx-auto text-xs font-bold ${s.status === 'OK' ? 'bg-green-100 dark:bg-green-900/50 text-green-700 dark:text-green-500' : s.status === 'NG' ? 'bg-red-100 dark:bg-red-900/50 text-red-700 dark:text-red-500' : 'bg-slate-200 dark:bg-zinc-800 text-slate-400 dark:text-zinc-600'}`}>

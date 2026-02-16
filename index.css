@@ -3,23 +3,37 @@
 @tailwind utilities;
 
 /* Correção do Fundo (Barra Branca) */
-html, body {
+html,
+body {
   @apply h-full w-full bg-slate-50 dark:bg-zinc-950 text-slate-900 dark:text-zinc-100;
   margin: 0;
   padding: 0;
-  overflow-x: hidden; /* Evita rolagem lateral indesejada */
+  overflow-x: hidden;
+  /* Impede scroll na janela principal */
+  position: relative;
+  width: 100%;
+  max-width: 100vw;
+}
+
+#root {
+  width: 100%;
+  max-width: 100%;
+  overflow-x: hidden;
 }
 
 /* Scrollbar Personalizada (Manter existente) */
 .custom-scrollbar::-webkit-scrollbar {
   width: 6px;
 }
+
 .custom-scrollbar::-webkit-scrollbar-track {
   background: transparent;
 }
+
 .custom-scrollbar::-webkit-scrollbar-thumb {
   @apply bg-zinc-300 dark:bg-zinc-700 rounded-full;
 }
+
 .custom-scrollbar::-webkit-scrollbar-thumb:hover {
   @apply bg-zinc-400 dark:bg-zinc-600;
 }

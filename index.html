@@ -3,14 +3,23 @@
 
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes">
   <title>TECPLAM - MAR</title>
   <!-- Removed Tailwind CDN and script config as we are using Vite build -->
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
   <style>
+    html,
     body {
-      font-family: 'Inter', sans-serif;
-      /* Removido background-color fixo para permitir troca dinâmica */
+      overflow-x: hidden;
+      width: 100%;
+      height: 100%;
+      position: relative;
+    }
+
+    #root {
+      width: 100%;
+      max-width: 100%;
+      overflow-x: hidden;
     }
 
     .custom-scrollbar::-webkit-scrollbar {

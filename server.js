@@ -18,6 +18,9 @@ let SCRAP_CACHE = null; // In-Memory Cache for Scraps
 const loadScrapCache = async () => {
     console.log("🔄 Carregando Scraps para a RAM...");
     try {
+        // Enable WAL Mode for Performance
+        await prisma.$queryRawUnsafe('PRAGMA journal_mode = WAL;');
+
         SCRAP_CACHE = await prisma.scrapLog.findMany({
             orderBy: [{ date: 'desc' }, { time: 'desc' }]
         });
@@ -532,7 +535,11 @@ app.post('/api/config/models', async (req, res) => {
     try {
         await prisma.$transaction(async tx => {
             await tx.configModel.deleteMany();
-            for (const i of req.body.items) await tx.configModel.create({ data: { name: i } });
+            for (const i of req.body.items) {
+                const name = typeof i === 'string' ? i : i.name;
+                const sku = typeof i === 'object' ? i.sku : undefined;
+                await tx.configModel.create({ data: { name, sku } });
+            }
         });
         res.json({ message: "Salvo" });
     } catch (e) { res.status(500).json({ error: e.message }); }
@@ -622,6 +629,74 @@ app.post('/api/meetings', async (req, res) => {
     } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// --- PREPARATION LOG ---
+
+app.get('/api/preparation-logs', async (req, res) => {
+    try {
+        const logs = await prisma.preparationLog.findMany({
+            orderBy: { createdAt: 'desc' },
+            take: 500
+        });
+        res.json(logs);
+    } catch (e) {
+        console.error("Get Preparation Logs Error:", e);
+        res.status(500).json({ error: e.message });
+    }
+});
+
+app.post('/api/preparation-logs', async (req, res) => {
+    try {
+        const { id, current, rfCal, ...data } = req.body;
+
+        const parseIntOrNull = (val) => (val === "" || val === null || val === undefined) ? null : parseInt(val);
+        const parseFloatOrNull = (val) => (val === "" || val === null || val === undefined) ? null : parseFloat(val);
+
+        // Map and parse
+        const cleanData = {};
+        const intFields = ['plate', 'rear', 'btFt', 'pba', 'input', 'preKey', 'lcia', 'audio', 'radiation', 'imei', 'vct', 'revision', 'desmonte', 'oven', 'repair'];
+
+        // Loop over remaining fields
+        for (const key in data) {
+            if (intFields.includes(key)) {
+                cleanData[key] = parseIntOrNull(data[key]);
+            } else if (key === 'currentRfCal') {
+                cleanData[key] = parseFloatOrNull(data[key]);
+            } else if (key === 'observation' || key === 'model' || key === 'line' || key === 'date' || key === 'shift' || key === 'responsible' || key === 'sku') {
+                // Keep as is (string) but sanitize empty if nullable? Sku/observation are nullable.
+                if (key === 'sku' || key === 'observation') {
+                    cleanData[key] = (data[key] === "") ? null : data[key];
+                } else {
+                    cleanData[key] = data[key];
+                }
+            }
+        }
+
+        // Handle legacy current/rfCal mapping if needed (or just use correct field)
+        if (cleanData.currentRfCal === undefined || cleanData.currentRfCal === null) {
+            // Look for 'current' or 'rfCal' in original body just in case
+            if (current) cleanData.currentRfCal = parseFloatOrNull(current);
+            else if (rfCal) cleanData.currentRfCal = parseFloatOrNull(rfCal);
+        }
+
+        await prisma.preparationLog.create({
+            data: {
+                ...cleanData,
+                date: data.date,
+                shift: data.shift,
+                line: data.line,
+                model: data.model,
+                sku: data.sku || null, // Ensure sku is passed
+                responsible: data.responsible,
+                createdAt: new Date()
+            }
+        });
+        res.json({ message: "Salvo" });
+    } catch (e) {
+        console.error("Save Preparation Log Error:", e);
+        res.status(500).json({ error: e.message });
+    }
+});
+
 // --- SCRAP ---
 
 app.get('/api/scraps', async (req, res) => {
@@ -638,6 +713,20 @@ app.get('/api/scraps', async (req, res) => {
 app.post('/api/scraps', async (req, res) => {
     try {
         const { id, ...rest } = req.body; // Remove ID to let DB autoincrement
+
+        // Logic: Find Plant from Material
+        // Logic: Find Plant from Material (Always prioritize DB)
+        let plantToSave = 'ND';
+        if (rest.code) {
+            const material = await prisma.material.findUnique({ where: { code: String(rest.code) } });
+            if (material && material.plant) {
+                plantToSave = material.plant;
+            } else if (rest.plant) {
+                plantToSave = rest.plant; // Fallback to provided plant if validation fails or code not found
+            }
+        } else if (rest.plant) {
+            plantToSave = rest.plant;
+        }
 
         const newScrap = await prisma.scrapLog.create({
             data: {
@@ -662,7 +751,9 @@ app.post('/api/scraps', async (req, res) => {
                 reason: rest.reason,
                 rootCause: rest.rootCause,
                 countermeasure: rest.countermeasure || null,
-                line: rest.line
+                line: rest.line,
+                plant: plantToSave,
+                situation: 'PENDING'
             }
         });
 
@@ -708,6 +799,10 @@ app.put('/api/scraps/:id', async (req, res) => {
     if (updates.rootCause !== undefined) dataToUpdate.rootCause = updates.rootCause;
     if (updates.countermeasure !== undefined) dataToUpdate.countermeasure = updates.countermeasure;
     if (updates.line !== undefined) dataToUpdate.line = updates.line;
+    if (updates.plant !== undefined) dataToUpdate.plant = updates.plant;
+    if (updates.nfNumber !== undefined) dataToUpdate.nfNumber = updates.nfNumber;
+    if (updates.sentBy !== undefined) dataToUpdate.sentBy = updates.sentBy;
+    if (updates.sentAt !== undefined) dataToUpdate.sentAt = new Date(updates.sentAt);
 
     // Handle snake_case inputs if coming from raw JSON manually
     if (updates.leader_name !== undefined) dataToUpdate.leaderName = updates.leader_name;
@@ -772,7 +867,52 @@ app.delete('/api/scraps/:id', async (req, res) => {
     }
 });
 
-// --- MATERIALS ---
+// --- SCRAP BATCH PROCESS ---
+app.post('/api/scraps/batch-process', async (req, res) => {
+    const { scrapIds, nfNumber, userId, sentAt } = req.body;
+
+    if (!Array.isArray(scrapIds) || scrapIds.length === 0) {
+        return res.status(400).json({ error: "Nenhum ID fornecido." });
+    }
+
+    // Validate NF (Numeric, at least 1 digit)
+    if (!nfNumber || !/^\d+$/.test(nfNumber)) {
+        return res.status(400).json({ error: "Número da NF inválido. Apenas números são permitidos." });
+    }
+
+    try {
+        const updateData = {
+            nfNumber: nfNumber,
+            sentBy: userId,
+            sentAt: sentAt ? new Date(sentAt) : new Date(),
+            situation: 'SENT'
+        };
+
+        const result = await prisma.scrapLog.updateMany({
+            where: {
+                id: { in: scrapIds }
+            },
+            data: updateData
+        });
+
+        // Update Cache
+        if (SCRAP_CACHE) {
+            SCRAP_CACHE = SCRAP_CACHE.map(s => {
+                if (scrapIds.includes(s.id)) {
+                    return { ...s, ...updateData, sentAt: updateData.sentAt };
+                }
+                return s;
+            });
+        }
+
+        res.json({ message: `${result.count} registros atualizados com a NF ${nfNumber}` });
+    } catch (e) {
+        console.error("Batch Process Error:", e);
+        res.status(500).json({ error: e.message });
+    }
+});
+
+// --- SCRAP MATERIALS ---
 
 app.get('/api/materials', async (req, res) => {
     try {

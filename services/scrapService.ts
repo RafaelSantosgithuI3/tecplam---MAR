@@ -79,7 +79,7 @@ export const saveMaterials = async (materials: import('../types').Material[]) =>
 };
 
 export const SCRAP_ITEMS = [
-    'BATERIA', 'REAR', 'CAMERA RW1', 'CAMERA FW1', 'CAMERA RB1', 'OCTA', 'FRONT',
+    'BATERIA SCRAP', 'BATERIA RMA', 'REAR', 'OCTA', 'FRONT', 'CAMERA RW1', 'CAMERA FW1', 'CAMERA RB1',
     'MIUDEZA(S)', 'BAG', 'SIMTRAY', 'CAIXA MASTER', 'CAIXA GIFT', 'TAPE',
     'CABO COAXIAL', 'CABO FLAT', 'BRACKET', 'BACK COVER', 'PARAFUSO',
     'SUB PBA', 'SPK', 'RCV', 'BLINDAGEM'
@@ -93,3 +93,15 @@ export const SCRAP_STATUS = [
 export const CAUSA_RAIZ_OPTIONS = [
     'MÁQUINA', 'OPERACIONAL', 'MATERIAL', 'MATERIAL-FORNECEDOR'
 ];
+
+export const batchProcessScraps = async (scrapIds: number[], nfNumber: string, userId: string, sentAt: Date) => {
+    try {
+        await apiFetch('/scraps/batch-process', {
+            method: 'POST',
+            body: JSON.stringify({ scrapIds, nfNumber, userId, sentAt })
+        });
+    } catch (e) {
+        console.error("Erro ao processar lote de scraps", e);
+        throw e;
+    }
+};

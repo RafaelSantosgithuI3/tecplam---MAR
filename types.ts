@@ -102,7 +102,7 @@ export interface MeetingLog {
 
 export interface Permission {
   role: string;
-  module: 'CHECKLIST' | 'MEETING' | 'MAINTENANCE' | 'AUDIT' | 'ADMIN' | 'LINE_STOP' | 'MANAGEMENT' | 'SCRAP';
+  module: 'CHECKLIST' | 'MEETING' | 'MAINTENANCE' | 'AUDIT' | 'ADMIN' | 'LINE_STOP' | 'MANAGEMENT' | 'SCRAP' | 'IQC' | 'PREPARATION';
   allowed: boolean;
 }
 
@@ -131,6 +131,13 @@ export interface ScrapData {
   countermeasure?: string; // CONTRA_MEDIDA (Pode ser nulo)
 
   line: string; // Nova Linha (Select)
+
+  // Campos IQC
+  nfNumber?: string;
+  sentBy?: string;
+  sentAt?: Date | string;
+  plant?: string;
+  situation?: string; // PENDING | SENT
 }
 
 export interface Material {
@@ -141,6 +148,41 @@ export interface Material {
   item: string;
   plant: string;
   price: number;
+}
+
+
+export interface ConfigModel {
+  id: string; // name
+  name: string;
+  sku?: string;
+}
+
+export interface PreparationLog {
+  id?: number;
+  date: string;
+  shift: string;
+  line: string;
+  model: string;
+  sku?: string;
+  plate?: string;
+  rear?: string;
+  btFt?: string;
+  pba?: string;
+  currentRfCal?: string;
+  input?: string;
+  preKey?: string;
+  lcia?: string;
+  audio?: string;
+  radiation?: string;
+  imei?: string;
+  vct?: string;
+  revision?: string;
+  desmonte?: string;
+  oven?: string;
+  repair?: string;
+  observation?: string;
+  responsible?: string;
+  createdAt?: Date | string;
 }
 
 export interface LineStatus {
