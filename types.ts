@@ -9,7 +9,23 @@ export interface User {
   email?: string; // Optional
   password?: string; // Stored securely in real app, simulated here
   isAdmin?: boolean; // Novo campo para controle explícito de admin
+  permissions?: string[]; // Array de strings, ex: ['VIEW_SCRAP', 'EDIT_PREPARATION']
 }
+
+// Constantes de Permissão
+export const PERMISSIONS = {
+  VIEW_SCRAP: 'view_scrap',
+  VIEW_PREPARATION: 'view_preparation',
+  VIEW_AUDIT: 'view_audit',
+  VIEW_IQC: 'view_iqc',
+  VIEW_MANAGEMENT: 'view_management', // Gestão de Modelos/Linhas
+  VIEW_DASHBOARD: 'view_dashboard',   // Dashboard Geral
+  VIEW_ADMIN: 'view_admin_panel',      // Aba de Permissões/Usuários
+  VIEW_LINE_STOP: 'view_line_stop',
+  VIEW_MAINTENANCE: 'view_maintenance',
+  VIEW_MEETING: 'view_meeting',
+  VIEW_CHECKLIST: 'view_checklist'
+};
 
 export interface ConfigItem {
   id: number | string;

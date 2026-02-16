@@ -6,7 +6,7 @@ import { getScraps } from './services/scrapService';
 import { Card } from './components/Card';
 import { Button } from './components/Button';
 import { Input } from './components/Input';
-import { User, ChecklistData, ChecklistItem, ChecklistLog, MeetingLog, ChecklistEvidence, Permission, LineStopData, ConfigItem, Material } from './types';
+import { User, ChecklistData, ChecklistItem, ChecklistLog, MeetingLog, ChecklistEvidence, Permission, LineStopData, ConfigItem, Material, PERMISSIONS } from './types';
 import { getMaterials } from './services/materialService';
 import { ManagementModule } from './components/ManagementModule';
 import { PreparationModule } from './components/PreparationModule';
@@ -256,25 +256,12 @@ const App = () => {
     const isSuperAdmin = currentUser ? (currentUser.matricula === 'admin' || currentUser.role === 'Admin' || currentUser.isAdmin === true) : false;
 
     // --- PERMISSION HELPERS ---
-    const hasPermission = (module: 'CHECKLIST' | 'MEETING' | 'MAINTENANCE' | 'AUDIT' | 'ADMIN' | 'LINE_STOP' | 'MANAGEMENT' | 'SCRAP' | 'IQC' | 'PREPARATION') => {
+    // --- PERMISSION HELPERS ---
+    const hasAccess = (requiredPermission: string) => {
         if (!currentUser) return false;
         if (isSuperAdmin) return true;
-
-        const perm = permissions.find(p => p.role === currentUser.role && p.module === module);
-        if (perm) return perm.allowed;
-
-        // Defaults
-        if (module === 'CHECKLIST') return true;
-        if (module === 'MEETING') return true;
-        if (module === 'MAINTENANCE') return true;
-        if (module === 'LINE_STOP') return true;
-        if (module === 'SCRAP') return true;
-        if (module === 'PREPARATION') return true;
-        if (module === 'IQC') return true;
-        if (module === 'AUDIT' || module === 'ADMIN' || module === 'MANAGEMENT') return false;
-
-        return false;
-    }
+        return currentUser.permissions?.includes(requiredPermission) || false;
+    };
 
     // --- SAFE LOG HELPERS ---
     const getLogTitle = (log: ChecklistLog): string => {
@@ -502,7 +489,7 @@ const App = () => {
                     );
                     setPendingLineStopsCount(visibleStops.length);
 
-                    if (hasPermission('AUDIT') || isSuperAdmin) {
+                    if (hasAccess(PERMISSIONS.VIEW_AUDIT)) {
                         const all = await getAllUsers();
                         let missing = await getMissingLeadersForToday(all);
 
@@ -1379,7 +1366,7 @@ const App = () => {
                         <LayoutDashboard size={18} /> Menu Principal
                     </button>
 
-                    {hasPermission('CHECKLIST') && (
+                    {hasAccess(PERMISSIONS.VIEW_CHECKLIST) && (
                         <>
                             <div className="text-xs font-bold text-slate-500 dark:text-zinc-600 uppercase tracking-widest mt-6 mb-2 px-4">Operação</div>
                             <button onClick={handleStartChecklist} className={navItemClass(view === 'CHECKLIST_MENU' || view === 'DASHBOARD' || view === 'PERSONAL')}>
@@ -1388,59 +1375,59 @@ const App = () => {
                         </>
                     )}
 
-                    {hasPermission('PREPARATION') && (
+                    {hasAccess(PERMISSIONS.VIEW_PREPARATION) && (
                         <button onClick={() => setView('PREPARATION')} className={navItemClass(view === 'PREPARATION')}>
                             <FileText size={18} /> Preparação de Linhas
                         </button>
                     )}
 
-                    {hasPermission('LINE_STOP') && (
+                    {hasAccess(PERMISSIONS.VIEW_LINE_STOP) && (
                         <button onClick={() => setView('LINE_STOP_DASHBOARD')} className={navItemClass(view === 'LINE_STOP_DASHBOARD')}>
                             <AlertTriangle size={18} /> Parada de Linha
                         </button>
                     )}
 
-                    {hasPermission('MAINTENANCE') && (
+                    {hasAccess(PERMISSIONS.VIEW_MAINTENANCE) && (
                         <button onClick={() => setView('MAINTENANCE_QR')} className={navItemClass(view === 'MAINTENANCE_QR')}>
                             <Hammer size={18} /> Manutenção
                         </button>
                     )}
 
-                    {hasPermission('MEETING') && (
+                    {hasAccess(PERMISSIONS.VIEW_MEETING) && (
                         <button onClick={() => { initMeetingForm(); setView('MEETING_MENU'); }} className={navItemClass(view === 'MEETING_MENU' || view === 'MEETING_FORM' || view === 'MEETING_HISTORY')}>
                             <FileText size={18} /> Reuniões
                         </button>
                     )}
 
-                    {(hasPermission('AUDIT') || hasPermission('ADMIN') || hasPermission('MANAGEMENT')) && (
+                    {(hasAccess(PERMISSIONS.VIEW_AUDIT) || hasAccess(PERMISSIONS.VIEW_ADMIN) || hasAccess(PERMISSIONS.VIEW_MANAGEMENT)) && (
                         <div className="text-xs font-bold text-gray-500 dark:text-zinc-600 uppercase tracking-widest mt-6 mb-2 px-4">Gestão</div>
                     )}
 
-                    {hasPermission('AUDIT') && (
+                    {hasAccess(PERMISSIONS.VIEW_AUDIT) && (
                         <button onClick={() => { setView('AUDIT_MENU'); setAuditTab('LEADER_HISTORY'); }} className={navItemClass(view === 'AUDIT_MENU')}>
                             <Search size={18} /> Auditoria
                         </button>
                     )}
 
-                    {hasPermission('MANAGEMENT') && (
+                    {hasAccess(PERMISSIONS.VIEW_MANAGEMENT) && (
                         <button onClick={() => setView('MANAGEMENT')} className={navItemClass(view === 'MANAGEMENT')}>
                             <Briefcase size={18} /> Gestão
                         </button>
                     )}
 
-                    {hasPermission('ADMIN') && (
+                    {hasAccess(PERMISSIONS.VIEW_ADMIN) && (
                         <button onClick={() => setView('ADMIN')} className={navItemClass(view === 'ADMIN')}>
                             <Shield size={18} /> Admin
                         </button>
                     )}
 
-                    {hasPermission('SCRAP') && (
+                    {hasAccess(PERMISSIONS.VIEW_SCRAP) && (
                         <button onClick={() => setView('SCRAP')} className={navItemClass(view === 'SCRAP')}>
                             <AlertTriangle size={18} /> Gestão de SCRAP
                         </button>
                     )}
 
-                    {hasPermission('IQC') && (
+                    {hasAccess(PERMISSIONS.VIEW_IQC) && (
                         <button onClick={() => setView('IQC')} className={navItemClass(view === 'IQC')}>
                             <Truck size={18} /> Painel IQC
                         </button>
@@ -1641,7 +1628,7 @@ const App = () => {
                         </div>
                     )}
 
-                    {missingLeadersNames.length > 0 && (hasPermission('AUDIT') || isSuperAdmin) && (
+                    {missingLeadersNames.length > 0 && hasAccess(PERMISSIONS.VIEW_AUDIT) && (
                         <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-500/50 p-4 rounded-xl flex flex-col gap-3">
                             <div className="flex items-center gap-4">
                                 <div className="p-2 bg-yellow-100 dark:bg-yellow-500 rounded-full text-yellow-700 dark:text-zinc-900"><Clock size={20} /></div>
@@ -1660,7 +1647,7 @@ const App = () => {
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                    {hasPermission('CHECKLIST') && (
+                    {hasAccess(PERMISSIONS.VIEW_CHECKLIST) && (
                         <div onClick={handleStartChecklist} className="group bg-white dark:bg-zinc-900 p-6 rounded-2xl border border-slate-200 dark:border-zinc-800 hover:border-blue-600/50 hover:bg-slate-50 dark:hover:bg-zinc-800 transition-all cursor-pointer relative overflow-hidden h-40 flex flex-col justify-center shadow-sm">
                             <div className="flex items-center gap-4">
                                 <div className="w-12 h-12 bg-blue-600/10 dark:bg-blue-600/20 text-blue-600 dark:text-blue-500 rounded-xl flex items-center justify-center group-hover:scale-110 transition-transform"><CheckSquare size={24} /></div>
@@ -1672,7 +1659,7 @@ const App = () => {
                         </div>
                     )}
 
-                    {hasPermission('LINE_STOP') && (
+                    {hasAccess(PERMISSIONS.VIEW_LINE_STOP) && (
                         <div onClick={() => setView('LINE_STOP_DASHBOARD')} className="group bg-white dark:bg-zinc-900 p-6 rounded-2xl border border-slate-200 dark:border-zinc-800 hover:border-red-600/50 hover:bg-slate-50 dark:hover:bg-zinc-800 transition-all cursor-pointer relative overflow-hidden h-40 flex flex-col justify-center shadow-sm">
                             <div className="flex items-center gap-4">
                                 <div className="w-12 h-12 bg-red-600/10 dark:bg-red-600/20 text-red-600 dark:text-red-500 rounded-xl flex items-center justify-center group-hover:scale-110 transition-transform"><AlertTriangle size={24} /></div>
@@ -1684,7 +1671,7 @@ const App = () => {
                         </div>
                     )}
 
-                    {hasPermission('MAINTENANCE') && (
+                    {hasAccess(PERMISSIONS.VIEW_MAINTENANCE) && (
                         <div onClick={() => setView('MAINTENANCE_QR')} className="group bg-white dark:bg-zinc-900 p-6 rounded-2xl border border-slate-200 dark:border-zinc-800 hover:border-orange-600/50 hover:bg-slate-50 dark:hover:bg-zinc-800 transition-all cursor-pointer relative overflow-hidden h-40 flex flex-col justify-center shadow-sm">
                             <div className="flex items-center gap-4">
                                 <div className="w-12 h-12 bg-orange-600/10 dark:bg-orange-600/20 text-orange-600 dark:text-orange-500 rounded-xl flex items-center justify-center group-hover:scale-110 transition-transform"><Hammer size={24} /></div>
@@ -1696,7 +1683,7 @@ const App = () => {
                         </div>
                     )}
 
-                    {hasPermission('MEETING') && (
+                    {hasAccess(PERMISSIONS.VIEW_MEETING) && (
                         <div onClick={() => { initMeetingForm(); setView('MEETING_MENU'); }} className="group bg-white dark:bg-zinc-900 p-6 rounded-2xl border border-slate-200 dark:border-zinc-800 hover:border-emerald-600/50 hover:bg-slate-50 dark:hover:bg-zinc-800 transition-all cursor-pointer relative overflow-hidden h-40 flex flex-col justify-center shadow-sm">
                             <div className="flex items-center gap-4">
                                 <div className="w-12 h-12 bg-emerald-600/10 dark:bg-emerald-600/20 text-emerald-600 dark:text-emerald-500 rounded-xl flex items-center justify-center group-hover:scale-110 transition-transform"><FileText size={24} /></div>
@@ -1708,7 +1695,7 @@ const App = () => {
                         </div>
                     )}
 
-                    {hasPermission('PREPARATION') && (
+                    {hasAccess(PERMISSIONS.VIEW_PREPARATION) && (
                         <div onClick={() => setView('PREPARATION')} className="group bg-white dark:bg-zinc-900 p-6 rounded-2xl border border-slate-200 dark:border-zinc-800 hover:border-violet-600/50 hover:bg-slate-50 dark:hover:bg-zinc-800 transition-all cursor-pointer relative overflow-hidden h-40 flex flex-col justify-center shadow-sm">
                             <div className="flex items-center gap-4">
                                 <div className="w-12 h-12 bg-violet-600/10 dark:bg-violet-600/20 text-violet-600 dark:text-violet-500 rounded-xl flex items-center justify-center group-hover:scale-110 transition-transform"><FileText size={24} /></div>
@@ -1720,7 +1707,7 @@ const App = () => {
                         </div>
                     )}
 
-                    {hasPermission('AUDIT') && (
+                    {hasAccess(PERMISSIONS.VIEW_AUDIT) && (
                         <div onClick={() => { setView('AUDIT_MENU'); setAuditTab('LEADER_HISTORY'); }} className="group bg-white dark:bg-zinc-900 p-6 rounded-2xl border border-slate-200 dark:border-zinc-800 hover:border-yellow-600/50 hover:bg-slate-50 dark:hover:bg-zinc-800 transition-all cursor-pointer relative overflow-hidden h-40 flex flex-col justify-center shadow-sm">
                             <div className="flex items-center gap-4">
                                 <div className="w-12 h-12 bg-yellow-600/10 dark:bg-yellow-600/20 text-yellow-600 dark:text-yellow-500 rounded-xl flex items-center justify-center group-hover:scale-110 transition-transform"><Search size={24} /></div>
@@ -1732,7 +1719,7 @@ const App = () => {
                         </div>
                     )}
 
-                    {hasPermission('MANAGEMENT') && (
+                    {hasAccess(PERMISSIONS.VIEW_MANAGEMENT) && (
                         <div onClick={() => setView('MANAGEMENT')} className="group bg-white dark:bg-zinc-900 p-6 rounded-2xl border border-slate-200 dark:border-zinc-800 hover:border-cyan-600/50 hover:bg-slate-50 dark:hover:bg-zinc-800 transition-all cursor-pointer relative overflow-hidden h-40 flex flex-col justify-center shadow-sm">
                             <div className="flex items-center gap-4">
                                 <div className="w-12 h-12 bg-cyan-600/10 dark:bg-cyan-600/20 text-cyan-600 dark:text-cyan-500 rounded-xl flex items-center justify-center group-hover:scale-110 transition-transform"><Briefcase size={24} /></div>
@@ -1744,7 +1731,7 @@ const App = () => {
                         </div>
                     )}
 
-                    {hasPermission('ADMIN') && (
+                    {hasAccess(PERMISSIONS.VIEW_ADMIN) && (
                         <div onClick={() => setView('ADMIN')} className="group bg-white dark:bg-zinc-900 p-6 rounded-2xl border border-slate-200 dark:border-zinc-800 hover:border-zinc-600/50 hover:bg-slate-50 dark:hover:bg-zinc-800 transition-all cursor-pointer relative overflow-hidden h-40 flex flex-col justify-center shadow-sm">
                             <div className="flex items-center gap-4">
                                 <div className="w-12 h-12 bg-zinc-700/10 dark:bg-zinc-700/50 text-slate-700 dark:text-zinc-300 rounded-xl flex items-center justify-center group-hover:scale-110 transition-transform"><Shield size={24} /></div>
@@ -1756,17 +1743,19 @@ const App = () => {
                         </div>
                     )}
 
-                    <div onClick={() => setView('SCRAP')} className="group bg-white dark:bg-zinc-900 p-6 rounded-2xl border border-slate-200 dark:border-zinc-800 hover:border-red-500/50 hover:bg-slate-50 dark:hover:bg-zinc-800 transition-all cursor-pointer relative overflow-hidden h-40 flex flex-col justify-center shadow-sm">
-                        <div className="flex items-center gap-4">
-                            <div className="w-12 h-12 bg-red-500/10 dark:bg-red-500/20 text-red-600 dark:text-red-500 rounded-xl flex items-center justify-center group-hover:scale-110 transition-transform"><AlertTriangle size={24} /></div>
-                            <div>
-                                <h3 className="font-bold text-xl text-slate-900 dark:text-zinc-100">Gestão de SCRAP</h3>
-                                <p className="text-xs text-slate-500 dark:text-zinc-500 mt-1">Refugos e Perdas</p>
+                    {hasAccess(PERMISSIONS.VIEW_SCRAP) && (
+                        <div onClick={() => setView('SCRAP')} className="group bg-white dark:bg-zinc-900 p-6 rounded-2xl border border-slate-200 dark:border-zinc-800 hover:border-red-500/50 hover:bg-slate-50 dark:hover:bg-zinc-800 transition-all cursor-pointer relative overflow-hidden h-40 flex flex-col justify-center shadow-sm">
+                            <div className="flex items-center gap-4">
+                                <div className="w-12 h-12 bg-red-500/10 dark:bg-red-500/20 text-red-600 dark:text-red-500 rounded-xl flex items-center justify-center group-hover:scale-110 transition-transform"><AlertTriangle size={24} /></div>
+                                <div>
+                                    <h3 className="font-bold text-xl text-slate-900 dark:text-zinc-100">Gestão de SCRAP</h3>
+                                    <p className="text-xs text-slate-500 dark:text-zinc-500 mt-1">Refugos e Perdas</p>
+                                </div>
                             </div>
                         </div>
-                    </div>
+                    )}
 
-                    {hasPermission('IQC') && (
+                    {hasAccess(PERMISSIONS.VIEW_IQC) && (
                         <div onClick={() => setView('IQC')} className="group bg-white dark:bg-zinc-900 p-6 rounded-2xl border border-slate-200 dark:border-zinc-800 hover:border-blue-500/50 hover:bg-slate-50 dark:hover:bg-zinc-800 transition-all cursor-pointer relative overflow-hidden h-40 flex flex-col justify-center shadow-sm">
                             <div className="flex items-center gap-4">
                                 <div className="w-12 h-12 bg-blue-500/10 dark:bg-blue-500/20 text-blue-600 dark:text-blue-500 rounded-xl flex items-center justify-center group-hover:scale-110 transition-transform"><Truck size={24} /></div>

@@ -32,6 +32,10 @@ export const loginUser = async (matricula: string, password: string): Promise<{ 
         });
 
         const user = response.user;
+        if (!user.permissions) {
+            user.permissions = [];
+        }
+
         // Alterado para sessionStorage para não persistir após fechar o navegador
         sessionStorage.setItem(CURRENT_USER_KEY, JSON.stringify(user));
         return { success: true, user, message: 'Login realizado.' };

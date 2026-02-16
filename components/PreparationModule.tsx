@@ -44,9 +44,9 @@ export const PreparationModule: React.FC<PreparationModuleProps> = ({ currentUse
         model: '',
         sku: '',
         plate: '', rear: '', btFt: '', pba: '',
-        currentRfCal: '0', input: '0', preKey: '0', lcia: '0',
-        audio: '0', radiation: '0', imei: '0', vct: '', revision: '0',
-        desmonte: '0', oven: '0', repair: '0', observation: ''
+        currentRfCal: '', input: '', preKey: '', lcia: '',
+        audio: '', radiation: '', imei: '', vct: '', revision: '',
+        desmonte: '', oven: '', repair: '', observation: ''
     };
 
     const [form, setForm] = useState<Partial<PreparationLog>>(initialForm);
