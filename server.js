@@ -436,6 +436,7 @@ app.post('/api/line-stops', async (req, res) => {
                 // Let autoincrement handle ID unless we need to force it.
                 // Legacy code forced ID. For Prisma, better to let DB handle it.
                 userId, userName, userRole, line, date,
+                shift: req.body.shift, // Salva o turno
                 status: finalStatus,
                 data: dataStr,
                 signedDocUrl: signedDocUrl || null
@@ -1003,9 +1004,23 @@ app.get('/api/admin/backup', (req, res) => {
 const distPath = path.join(__dirname, 'dist');
 
 // Servir arquivos estáticos com Cache Longo (1 ano) para aliviar o HD
+// Configuração de Cache Inteligente
+const setCustomCacheControl = (res, path) => {
+    if (express.static.mime.lookup(path) === 'text/html') {
+        // Para HTML (index.html): Nunca fazer cache.
+        // Isso garante que o usuário sempre pegue a versão mais nova do JS/CSS.
+        res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+        res.setHeader('Pragma', 'no-cache');
+        res.setHeader('Expires', '0');
+    } else {
+        // Para JS, CSS, Imagens (Assets do Vite): Cache Longo (1 ano)
+        // O Vite muda o nome do arquivo se o conteúdo mudar, então é seguro.
+        res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+    }
+};
+
 app.use(express.static(distPath, {
-    maxAge: '1y',
-    etag: false
+    setHeaders: setCustomCacheControl
 }));
 app.get('*', (req, res) => {
     const indexFile = path.join(distPath, 'index.html');

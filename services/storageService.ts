@@ -202,7 +202,7 @@ export const saveLineStop = async (log: ChecklistLog) => {
     try {
         await apiFetch('/line-stops', {
             method: 'POST',
-            body: JSON.stringify(log)
+            body: JSON.stringify({ ...log, shift: log.userShift })
         });
     } catch (e) {
         console.error("Erro ao salvar parada", e);

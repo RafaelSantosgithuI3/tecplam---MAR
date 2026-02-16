@@ -78,6 +78,7 @@ model LineStop {
   userName     String? @map("user_name")
   userRole     String? @map("user_role")
   line         String?
+  shift        String? // Novo campo para turno
   date         String?
   status       String?
   data         String?
