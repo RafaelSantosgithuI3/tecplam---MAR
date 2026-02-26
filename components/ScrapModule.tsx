@@ -3,8 +3,9 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
     LayoutDashboard, AlertTriangle, FileText, CheckCircle2,
     ArrowLeft, Save, Search, Filter, Download, Plus, X,
-    History, BarChart3, Settings, Upload, Trash2, Shield, Eye, Edit3 // Adicionando Edit3 aqui
+    History, BarChart3, Settings, Upload, Trash2, Shield, Eye, Edit3, Box, QrCode
 } from 'lucide-react';
+import { ScrapBoxMount, ScrapBoxIdentified, QRScannerInput } from './ScrapBoxViews';
 import { Card } from './Card';
 import { Button } from './Button';
 import { Input } from './Input';
@@ -37,7 +38,7 @@ interface ScrapModuleProps {
     initialTab?: Tab;
 }
 
-type Tab = 'FORM' | 'PENDING' | 'HISTORY' | 'OPERATIONAL' | 'MANAGEMENT_ADVANCED' | 'EDIT_DELETE';
+type Tab = 'FORM' | 'PENDING' | 'HISTORY' | 'OPERATIONAL' | 'MANAGEMENT_ADVANCED' | 'EDIT_DELETE' | 'BOX_MOUNT' | 'BOX_IDENTIFIED';
 
 export const ScrapModule: React.FC<ScrapModuleProps> = ({ currentUser, onBack, initialTab }) => {
     const [activeTab, setActiveTab] = useState<Tab>(initialTab || 'FORM');
@@ -226,7 +227,8 @@ const ScrapForm = ({ users, models, stations, lines, materials, onSuccess, curre
         description: '',
         responsible: '',
         reason: '',
-        station: ''
+        station: '',
+        qrCode: ''
     };
 
     const [formData, setFormData] = useState<Partial<ScrapData>>(initialState);
@@ -267,8 +269,8 @@ const ScrapForm = ({ users, models, stations, lines, materials, onSuccess, curre
     };
 
     const handleSubmit = async () => {
-        if (!formData.leaderName || !formData.model || !formData.item || !formData.line) {
-            alert("Preencha todos os campos obrigatórios (Líder, Linha, Modelo, Item)!");
+        if (!formData.leaderName || !formData.model || !formData.item || !formData.line || !formData.qrCode) {
+            alert("Preencha todos os campos obrigatórios (QR Code, Líder, Linha, Modelo, Item)!");
             return;
         }
 
@@ -355,6 +357,26 @@ const ScrapForm = ({ users, models, stations, lines, materials, onSuccess, curre
                 <hr className="border-slate-200 dark:border-zinc-800" />
 
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                    <div>
+                        <label className="block text-xs uppercase mb-1.5 font-bold text-blue-600 dark:text-blue-400">Leia o QR da label do desmonte *</label>
+                        <input
+                            type="text"
+                            className="w-full bg-blue-50/50 dark:bg-blue-900/10 border-2 border-blue-400/50 dark:border-blue-500/50 rounded-lg p-2.5 text-sm outline-none focus:ring-2 focus:ring-blue-500 font-mono text-slate-900 dark:text-zinc-100 transition-all placeholder-blue-300 dark:placeholder-blue-700"
+                            value={formData.qrCode || ''}
+                            onChange={(e) => setFormData((prev: any) => ({ ...prev, qrCode: e.target.value }))}
+                            onKeyDown={(e) => {
+                                if (e.key === 'Enter') {
+                                    e.preventDefault();
+                                    const qr = formData.qrCode || '';
+                                    if (qr && qr.length >= 11) {
+                                        handleCodeChange(qr.substring(0, 11));
+                                    }
+                                }
+                            }}
+                            placeholder="Bipe o código..."
+                            required
+                        />
+                    </div>
                     <div>
                         <label className="block text-xs font-medium text-zinc-400 mb-1.5 uppercase">Cód. Matéria Prima</label>
                         <div className="relative">

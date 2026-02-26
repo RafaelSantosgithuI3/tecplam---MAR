@@ -717,6 +717,91 @@ app.post('/api/preparation-logs', async (req, res) => {
     }
 });
 
+// --- SCRAP BOXES ---
+app.get('/api/boxes', async (req, res) => {
+    try {
+        const boxes = await prisma.scrapBox.findMany({
+            include: { scraps: true },
+            orderBy: { createdAt: 'desc' }
+        });
+        res.json(boxes);
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+app.post('/api/boxes', async (req, res) => {
+    try {
+        const { type } = req.body;
+        const newBox = await prisma.scrapBox.create({
+            data: { type, status: 'OPEN' },
+            include: { scraps: true }
+        });
+        res.json(newBox);
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+app.put('/api/boxes/:id', async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { status, nfNumber } = req.body;
+        const dataToUpdate = {};
+        if (status !== undefined) {
+            dataToUpdate.status = status;
+            if (status !== 'OPEN') {
+                dataToUpdate.closedAt = new Date();
+            } else {
+                dataToUpdate.closedAt = null;
+            }
+        }
+        if (nfNumber !== undefined) dataToUpdate.nfNumber = nfNumber;
+
+        const updatedBox = await prisma.scrapBox.update({
+            where: { id: parseInt(id) },
+            data: dataToUpdate,
+            include: { scraps: true }
+        });
+        res.json(updatedBox);
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+app.post('/api/boxes/:id/scraps', async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { qrCode } = req.body;
+
+        if (!qrCode) return res.status(400).json({ error: "QR Code obrigatório" });
+
+        // Encontra o scrap para vincular
+        const scrap = await prisma.scrapLog.findFirst({
+            where: { qrCode: String(qrCode), boxId: null }
+        });
+
+        if (!scrap) return res.status(404).json({ error: "Scrap não encontrado com este QR Code ou já vinculado a uma caixa." });
+
+        const updatedScrap = await prisma.scrapLog.update({
+            where: { id: scrap.id },
+            data: { boxId: parseInt(id) }
+        });
+
+        // Update Cache Manually (Write-Through)
+        if (SCRAP_CACHE) {
+            const index = SCRAP_CACHE.findIndex(s => s.id === scrap.id);
+            if (index !== -1) {
+                SCRAP_CACHE[index] = updatedScrap;
+            }
+        }
+
+        res.json({ message: "Scrap vinculado com sucesso", scrap: updatedScrap });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
 // --- SCRAP ---
 
 app.get('/api/scraps', async (req, res) => {
@@ -773,6 +858,7 @@ app.post('/api/scraps', async (req, res) => {
                 countermeasure: rest.countermeasure || null,
                 line: rest.line,
                 plant: plantToSave,
+                qrCode: rest.qrCode || null,
                 situation: 'PENDING'
             }
         });
@@ -823,6 +909,7 @@ app.put('/api/scraps/:id', async (req, res) => {
     if (updates.nfNumber !== undefined) dataToUpdate.nfNumber = updates.nfNumber;
     if (updates.sentBy !== undefined) dataToUpdate.sentBy = updates.sentBy;
     if (updates.sentAt !== undefined) dataToUpdate.sentAt = new Date(updates.sentAt);
+    if (updates.qrCode !== undefined) dataToUpdate.qrCode = updates.qrCode;
 
     // Handle snake_case inputs if coming from raw JSON manually
     if (updates.leader_name !== undefined) dataToUpdate.leaderName = updates.leader_name;
@@ -1041,8 +1128,101 @@ function getLocalIp() {
 console.log("🚀 Iniciando servidor...");
 // Warm-up Cache before listening matches user request "Chame essa função assim que o servidor iniciar (antes do app.listen)"
 loadScrapCache().then(() => {
+    // ==========================================
+    // ROTAS WMS (ScrapBox)
+    // ==========================================
+
+    app.get('/api/boxes', async (req, res) => {
+        try {
+            const boxes = await prisma.scrapBox.findMany({
+                include: { scraps: true },
+                orderBy: { id: 'desc' }
+            });
+            res.json(boxes);
+        } catch (e) {
+            res.status(500).json({ error: "Erro ao buscar caixas: " + e.message });
+        }
+    });
+
+    app.post('/api/boxes', async (req, res) => {
+        try {
+            const { type } = req.body;
+            if (!type) return res.status(400).json({ error: "Tipo de caixa é obrigatório." });
+
+            const newBox = await prisma.scrapBox.create({
+                data: { type, status: 'OPEN' }
+            });
+            res.json(newBox);
+        } catch (e) {
+            res.status(500).json({ error: "Erro ao criar caixa: " + e.message });
+        }
+    });
+
+    app.put('/api/boxes/:id', async (req, res) => {
+        try {
+            const { status, nfNumber } = req.body;
+            const boxId = parseInt(req.params.id);
+
+            const data = {};
+            if (status) data.status = status;
+            if (nfNumber) data.nfNumber = nfNumber;
+            if (status === 'IDENTIFIED') data.closedAt = new Date();
+
+            const updatedBox = await prisma.scrapBox.update({
+                where: { id: boxId },
+                data
+            });
+            res.json(updatedBox);
+        } catch (e) {
+            res.status(500).json({ error: "Erro ao atualizar caixa: " + e.message });
+        }
+    });
+
+    app.post('/api/boxes/:id/scraps', async (req, res) => {
+        try {
+            const { qrCode } = req.body;
+            const boxId = parseInt(req.params.id);
+
+            if (!qrCode) return res.status(400).json({ error: "QR Code não fornecido." });
+
+            const scrap = await prisma.scrapLog.findFirst({
+                where: { qrCode: qrCode, situation: 'PENDING', boxId: null } // Ensure not sent and not boxed
+            });
+
+            if (!scrap) {
+                return res.status(404).json({ error: "Scrap não encontrado, já vinculado a outra caixa ou já enviado." });
+            }
+
+            const box = await prisma.scrapBox.findUnique({ where: { id: boxId } });
+
+            // Validar categoria/tipo
+            const itemUpper = (scrap.item || '').toUpperCase();
+            if (box.type !== 'MIUDEZA(S)' && box.type !== 'MIUDEZAS') {
+                let typeMatch = box.type.replace('BATERIA RMA', 'BATERIA').replace('BATERIA SCRAP', 'BATERIA');
+                if (!itemUpper.includes(typeMatch)) {
+                    return res.status(400).json({ error: `Scrap não pertence ao tipo da caixa (${box.type}). Categoria lida: ${scrap.item}` });
+                }
+            }
+
+            const updatedScrap = await prisma.scrapLog.update({
+                where: { id: scrap.id },
+                data: { boxId }
+            });
+
+            // Update RAM cache
+            if (global.SCRAP_CACHE) {
+                const index = global.SCRAP_CACHE.findIndex(s => s.id === scrap.id);
+                if (index !== -1) global.SCRAP_CACHE[index] = { ...global.SCRAP_CACHE[index], boxId };
+            }
+
+            res.json({ success: true, scrap: updatedScrap });
+        } catch (e) {
+            res.status(500).json({ error: "Erro ao vincular scrap: " + e.message });
+        }
+    });
+
     app.listen(PORT, '0.0.0.0', () => {
-        console.log(`✅ SERVIDOR RODANDO! (Prisma ORM | RAM Cache Enabled)`);
+        console.log(`✅ SERVIDOR RODANDO EM HTTP! (Prisma ORM | RAM Cache Enabled)`);
         console.log(`--------------------------------------------------`);
         console.log(`💻 ACESSO LOCAL:     http://localhost:${PORT}`);
         console.log(`📱 ACESSO NA REDE:   http://${getLocalIp()}:${PORT}`);

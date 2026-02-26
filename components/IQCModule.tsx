@@ -6,7 +6,7 @@ import { Input } from './Input';
 import { User, ScrapData } from '../types';
 import {
     LayoutDashboard, CheckSquare, History, BarChart3,
-    ArrowLeft, Download, Filter, Truck, FileText, ChevronDown, ChevronUp, FileSpreadsheet
+    ArrowLeft, Download, Filter, Truck, FileText, ChevronDown, ChevronUp, FileSpreadsheet, Box, QrCode
 } from 'lucide-react';
 import {
     getScraps, batchProcessScraps
@@ -17,6 +17,7 @@ import { exportExecutiveReport, exportInvoiceReport } from '../services/excelSer
 
 // Import shared components
 import { ScrapOperational } from './ScrapModule';
+import { ScrapBoxMount, ScrapBoxIdentified } from './ScrapBoxViews';
 
 const formatCurrency = (val: number | undefined) => {
     return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(val || 0);
@@ -28,7 +29,7 @@ const formatDateDisplay = (dateString: string | undefined) => {
     return `${day}/${month}/${year}`;
 };
 
-type IQCTab = 'MONITORING' | 'BATCH_PROCESS' | 'HISTORY_SENT' | 'DASHBOARD';
+type IQCTab = 'MONITORING' | 'BATCH_PROCESS' | 'HISTORY_SENT' | 'DASHBOARD' | 'BOX_MOUNT' | 'BOX_IDENTIFIED';
 
 export const IQCModule = ({ currentUser, onBack }: { currentUser: User, onBack: () => void }) => {
     const [activeTab, setActiveTab] = useState<IQCTab>('MONITORING');
@@ -70,7 +71,7 @@ export const IQCModule = ({ currentUser, onBack }: { currentUser: User, onBack: 
                     <div>
                         <h1 className="text-2xl font-bold bg-gradient-to-r from-blue-600 to-cyan-500 bg-clip-text text-transparent flex items-center gap-2">
                             <Truck size={24} className="text-blue-600" />
-                            Painel IQC & Logística
+                            Controle de SCRAP & Logística
                         </h1>
                         <p className="text-slate-500 dark:text-zinc-400 text-sm">Controle de envio e baixa fiscal de SCRAP</p>
                     </div>
@@ -88,6 +89,12 @@ export const IQCModule = ({ currentUser, onBack }: { currentUser: User, onBack: 
                     </Button>
                     <Button variant={activeTab === 'DASHBOARD' ? 'primary' : 'ghost'} onClick={() => setActiveTab('DASHBOARD')} size="sm">
                         <BarChart3 size={16} /> Dashboard Detalhado
+                    </Button>
+                    <Button variant={activeTab === 'BOX_MOUNT' ? 'primary' : 'ghost'} onClick={() => setActiveTab('BOX_MOUNT')} size="sm">
+                        <Box size={16} /> Montar Caixa
+                    </Button>
+                    <Button variant={activeTab === 'BOX_IDENTIFIED' ? 'primary' : 'ghost'} onClick={() => setActiveTab('BOX_IDENTIFIED')} size="sm">
+                        <QrCode size={16} /> Associar NF
                     </Button>
                 </div>
             </div>
@@ -108,6 +115,14 @@ export const IQCModule = ({ currentUser, onBack }: { currentUser: User, onBack: 
 
                 {activeTab === 'DASHBOARD' && (
                     <ExecutiveDashboard scraps={scraps} />
+                )}
+
+                {activeTab === 'BOX_MOUNT' && (
+                    <ScrapBoxMount currentUser={currentUser} onUpdate={refreshData} />
+                )}
+
+                {activeTab === 'BOX_IDENTIFIED' && (
+                    <ScrapBoxIdentified currentUser={currentUser} onUpdate={refreshData} />
                 )}
             </div>
         </div>

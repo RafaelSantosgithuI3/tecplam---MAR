@@ -62,9 +62,9 @@ const MODULE_NAMES: Record<string, string> = {
     MAINTENANCE: 'Manutenção',
     AUDIT: 'Auditoria',
     ADMIN: 'Administração',
-    MANAGEMENT: 'Gestão',
+    MANAGEMENT: 'Gestão de Processos',
     SCRAP: 'Gestão de SCRAP',
-    IQC: 'Painel IQC',
+    IQC: 'Controle de SCRAP',
     PREPARATION: 'Preparação de Linhas'
 };
 
@@ -128,6 +128,7 @@ const App = () => {
     const [loginPassword, setLoginPassword] = useState('');
     const [showLoginPassword, setShowLoginPassword] = useState(false);
     const [loginError, setLoginError] = useState('');
+    const [isLoginLoading, setIsLoginLoading] = useState(false);
 
     // Register States
     const [regName, setRegName] = useState('');
@@ -256,10 +257,29 @@ const App = () => {
     const isSuperAdmin = currentUser ? (currentUser.matricula === 'admin' || currentUser.role === 'Admin' || currentUser.isAdmin === true) : false;
 
     // --- PERMISSION HELPERS ---
-    // --- PERMISSION HELPERS ---
     const hasAccess = (requiredPermission: string) => {
         if (!currentUser) return false;
         if (isSuperAdmin) return true;
+
+        const permissionToModule: Record<string, string> = {
+            [PERMISSIONS.VIEW_CHECKLIST]: 'CHECKLIST',
+            [PERMISSIONS.VIEW_PREPARATION]: 'PREPARATION',
+            [PERMISSIONS.VIEW_LINE_STOP]: 'LINE_STOP',
+            [PERMISSIONS.VIEW_MAINTENANCE]: 'MAINTENANCE',
+            [PERMISSIONS.VIEW_MEETING]: 'MEETING',
+            [PERMISSIONS.VIEW_AUDIT]: 'AUDIT',
+            [PERMISSIONS.VIEW_MANAGEMENT]: 'MANAGEMENT',
+            [PERMISSIONS.VIEW_ADMIN]: 'ADMIN',
+            [PERMISSIONS.VIEW_SCRAP]: 'SCRAP',
+            [PERMISSIONS.VIEW_IQC]: 'IQC'
+        };
+
+        const targetModule = permissionToModule[requiredPermission];
+        if (targetModule) {
+            const rule = permissions.find(p => p.role === currentUser.role && p.module === targetModule);
+            if (rule) return rule.allowed;
+        }
+
         return currentUser.permissions?.includes(requiredPermission) || false;
     };
 
@@ -703,10 +723,10 @@ const App = () => {
 
     const handleLogin = async (e?: React.FormEvent) => {
         if (e) e.preventDefault();
-        setIsLoading(true);
+        setIsLoginLoading(true);
         setLoginError('');
         const res = await loginUser(loginMatricula, loginPassword);
-        setIsLoading(false);
+        setIsLoginLoading(false);
         if (res.success && res.user) {
             setCurrentUser(res.user);
             setView('MENU');
@@ -722,13 +742,13 @@ const App = () => {
             setRegError("As senhas não coincidem.");
             return;
         }
-        setIsLoading(true);
+        setIsLoginLoading(true);
         setRegError('');
         const res = await registerUser({
             name: regName, matricula: regMatricula, role: regRole,
             shift: regShift, email: regEmail, password: regPassword
         });
-        setIsLoading(false);
+        setIsLoginLoading(false);
         if (res.success) {
             alert("Cadastro realizado com sucesso! Faça login.");
             setView('LOGIN');
@@ -739,9 +759,9 @@ const App = () => {
 
     const handleRecover = async (e: React.FormEvent) => {
         e.preventDefault();
-        setIsLoading(true);
+        setIsLoginLoading(true);
         const res = await recoverPassword(recoverMatricula, recoverName, recoverRole);
-        setIsLoading(false);
+        setIsLoginLoading(false);
         if (res.success) {
             alert(res.message);
             setView('LOGIN');
@@ -1429,7 +1449,7 @@ const App = () => {
 
                     {hasAccess(PERMISSIONS.VIEW_IQC) && (
                         <button onClick={() => setView('IQC')} className={navItemClass(view === 'IQC')}>
-                            <Truck size={18} /> Painel IQC
+                            <Truck size={18} /> Controle de SCRAP
                         </button>
                     )}
                 </nav>
@@ -1545,7 +1565,7 @@ const App = () => {
                                 </div>
                             </div>
                             {loginError && <div className="text-red-600 dark:text-red-400 text-sm bg-red-50 dark:bg-red-900/20 p-3 rounded border border-red-200 dark:border-red-900/50 flex items-center gap-2"><AlertCircle size={16} /> {loginError}</div>}
-                            <Button fullWidth type="submit" disabled={isLoading}>{isLoading ? 'Entrando...' : 'Entrar'}</Button>
+                            <Button fullWidth type="submit" disabled={isLoginLoading}>{isLoginLoading ? 'Entrando...' : 'Entrar'}</Button>
                         </form>
                         <div className="mt-6 flex flex-col gap-3 text-center">
                             <button onClick={() => setView('REGISTER')} className="text-sm text-slate-500 dark:text-zinc-500 hover:text-blue-600 dark:hover:text-blue-400 transition-colors">Não tem conta? Cadastre-se</button>
@@ -1587,7 +1607,7 @@ const App = () => {
 
                             {regError && <div className="text-red-400 text-sm bg-red-900/20 p-3 rounded border border-red-900/50 flex items-center gap-2"><AlertCircle size={16} /> {regError}</div>}
 
-                            <Button fullWidth type="submit" disabled={isLoading}>{isLoading ? 'Cadastrando...' : 'Criar Conta'}</Button>
+                            <Button fullWidth type="submit" disabled={isLoginLoading}>{isLoginLoading ? 'Cadastrando...' : 'Criar Conta'}</Button>
                         </form>
                         <button onClick={() => setView('LOGIN')} className="mt-4 w-full text-sm text-zinc-500 hover:text-blue-400 transition-colors">Já tem conta? Faça Login</button>
                     </div>
@@ -1760,7 +1780,7 @@ const App = () => {
                             <div className="flex items-center gap-4">
                                 <div className="w-12 h-12 bg-blue-500/10 dark:bg-blue-500/20 text-blue-600 dark:text-blue-500 rounded-xl flex items-center justify-center group-hover:scale-110 transition-transform"><Truck size={24} /></div>
                                 <div>
-                                    <h3 className="font-bold text-xl text-slate-900 dark:text-zinc-100">Painel IQC</h3>
+                                    <h3 className="font-bold text-xl text-slate-900 dark:text-zinc-100">Controle de SCRAP</h3>
                                     <p className="text-xs text-slate-500 dark:text-zinc-500 mt-1">Controle de Notas Fiscais</p>
                                 </div>
                             </div>

@@ -752,6 +752,13 @@ export const exportScrapToExcel = async (scraps: any[]) => {
 };
 
 export const exportExecutiveReport = async (scraps: ScrapData[], fileNamePrefix: string = 'Relatorio_Detalhado_SCRAP-IQC') => {
+    // Ordenação: Do Mais Antigo para o Mais Novo
+    const sortedScraps = [...scraps].sort((a, b) => {
+        const dateA = a.date ? new Date(`${a.date}T00:00:00`).getTime() : 0;
+        const dateB = b.date ? new Date(`${b.date}T00:00:00`).getTime() : 0;
+        return dateA - dateB;
+    });
+
     const workbook = new ExcelJS.Workbook();
 
     // --------------------------------------------------------------------------------
@@ -774,7 +781,7 @@ export const exportExecutiveReport = async (scraps: ScrapData[], fileNamePrefix:
 
     PLANTS.forEach(p => plantData[p] = {});
 
-    scraps.forEach(s => {
+    sortedScraps.forEach(s => {
         // Categorization Rules
         const itemUpper = (s.item || '').toUpperCase();
         let category = 'MIUDEZAS';
@@ -1056,7 +1063,7 @@ export const exportExecutiveReport = async (scraps: ScrapData[], fileNamePrefix:
         cell.style = headerStyle;
     });
 
-    scraps.forEach((s, idx) => {
+    sortedScraps.forEach((s, idx) => {
         // Format Date
         let dateStr = s.date;
         try {
@@ -1068,12 +1075,18 @@ export const exportExecutiveReport = async (scraps: ScrapData[], fileNamePrefix:
             }
         } catch (e) { }
 
+        // Adicionar Planta na aba de Dados Brutos
+        let plantName = s.plant;
+        if (!plantName && s.code) {
+            plantName = materialMap[s.code];
+        }
+
         // ADD ROW with placeholder values we will overwrite immediately
         const rawRow = sheet3.addRow([
-            dateStr,
+            dateStr || '-',
             s.nfNumber || '-',
             s.sentBy || (s.userId ? s.userId : '-'),
-            s.plant || '-',
+            plantName || '-',
             s.leaderName,
             s.shift,
             s.line,
@@ -1089,6 +1102,16 @@ export const exportExecutiveReport = async (scraps: ScrapData[], fileNamePrefix:
             s.countermeasure
         ]);
 
+        // Estilização: Todas as Bordas (All Borders)
+        rawRow.eachCell((cell) => {
+            cell.border = {
+                top: { style: 'thin' },
+                left: { style: 'thin' },
+                bottom: { style: 'thin' },
+                right: { style: 'thin' }
+            };
+        });
+
         // STRICT CELL FORMATTING FOR DATA VALUES
 
         // Qty (Col 12)
@@ -1099,6 +1122,21 @@ export const exportExecutiveReport = async (scraps: ScrapData[], fileNamePrefix:
 
         // Total Val (Col 14)
         formatCell(rawRow.getCell(14), Number(s.totalValue || 0), '"R$ "#,##0.00');
+    });
+
+    // Auto-Ajuste do Tamanho das Colunas (Auto-fit Width)
+    [sheet1, sheet2, sheet3].forEach(worksheet => {
+        worksheet.columns.forEach((column) => {
+            let maxLength = 0;
+            column.eachCell({ includeEmpty: true }, (cell) => {
+                const columnLength = cell.value ? cell.value.toString().length : 10;
+                if (columnLength > maxLength) {
+                    maxLength = columnLength;
+                }
+            });
+            // Adiciona uma margem de respiro de 2 caracteres
+            column.width = maxLength < 10 ? 10 : maxLength + 2;
+        });
     });
 
     // Generate Buffer
@@ -1279,3 +1317,100 @@ export const downloadPreparationExcel = async (logs: PreparationLog[], filters: 
     const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
     saveAs(blob, `Relatorio_Preparacao_${filters.date}.xlsx`);
 }
+
+export const generateBoxLabels = async (boxId: number | string, scraps: any[], extraParams: any) => {
+    // 1. Agrupar scraps pelo código
+    const groups: { [code: string]: { plant: string, model: string, code: string, desc: string, qty: number, user: string } } = {};
+
+    scraps.forEach(s => {
+        if (!groups[s.code]) {
+            groups[s.code] = {
+                plant: s.plant || 'ND',
+                model: s.usedModel || s.model || 'ND',
+                code: s.code,
+                desc: s.description || 'ND',
+                qty: 0,
+                user: s.leaderName || 'ND'
+            };
+        }
+        groups[s.code].qty += Number(s.qty) || 0;
+    });
+
+    const uniqueCodes = Object.values(groups);
+    if (uniqueCodes.length === 0) return;
+
+    const workbook = new ExcelJS.Workbook();
+    let templateBuffer: ArrayBuffer | null = null;
+
+    try {
+        const response = await fetch('/template_placa-identificacao.xlsx');
+        if (response.ok) {
+            templateBuffer = await response.arrayBuffer();
+        } else {
+            throw new Error("Template não encontrado");
+        }
+    } catch (e) {
+        alert("Erro ao carregar template_placa-identificacao.xlsx");
+        return;
+    }
+
+    await workbook.xlsx.load(templateBuffer);
+    const templateSheet = workbook.worksheets[0];
+
+    const outputWorkbook = new ExcelJS.Workbook();
+    const outputSheet = outputWorkbook.addWorksheet('Placas de Identificacao');
+
+    const copyCell = (srcCell: ExcelJS.Cell, destCell: ExcelJS.Cell) => {
+        destCell.value = srcCell.value;
+        if (srcCell.style) {
+            destCell.style = JSON.parse(JSON.stringify(srcCell.style));
+        }
+    };
+
+    const copyBlock = (startRowOutput: number, data: any) => {
+        const BLOCK_SIZE = 15;
+        for (let r = 1; r <= BLOCK_SIZE; r++) {
+            const srcRow = templateSheet.getRow(r);
+            const destRow = outputSheet.getRow(startRowOutput + r - 1);
+            destRow.height = srcRow.height;
+
+            srcRow.eachCell({ includeEmpty: true }, (cell, colNumber) => {
+                copyCell(cell, destRow.getCell(colNumber));
+            });
+        }
+
+        const mergedRows = [3, 5, 6, 7, 8, 9, 10, 11, 13];
+        mergedRows.forEach(rowOffset => {
+            const rowOutput = startRowOutput + rowOffset - 1;
+            try { outputSheet.mergeCells(`B${rowOutput}:F${rowOutput}`); } catch (e) { }
+        });
+
+        const dateStr = new Date().toLocaleDateString('pt-BR');
+
+        outputSheet.getCell(`B${startRowOutput + 2}`).value = data.plant;
+        outputSheet.getCell(`B${startRowOutput + 4}`).value = extraParams.type === 'BATERIA' ? (extraParams.volumes || '1') : '1';
+        outputSheet.getCell(`B${startRowOutput + 5}`).value = data.model;
+        outputSheet.getCell(`B${startRowOutput + 6}`).value = data.code;
+        outputSheet.getCell(`B${startRowOutput + 7}`).value = data.desc;
+        outputSheet.getCell(`B${startRowOutput + 8}`).value = data.qty;
+        outputSheet.getCell(`B${startRowOutput + 9}`).value = data.user;
+        outputSheet.getCell(`B${startRowOutput + 10}`).value = extraParams.dynamicParam || '-';
+        outputSheet.getCell(`B${startRowOutput + 12}`).value = dateStr;
+    };
+
+    templateSheet.columns.forEach((col, i) => {
+        if (col && col.width) {
+            outputSheet.getColumn(i + 1).width = col.width;
+        }
+    });
+
+    let currentOutputRow = 1;
+    for (let i = 0; i < uniqueCodes.length; i++) {
+        copyBlock(currentOutputRow, uniqueCodes[i]);
+        currentOutputRow += 16;
+    }
+
+    const buffer = await outputWorkbook.xlsx.writeBuffer();
+    const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+    saveAs(blob, `Placas_Caixa_${boxId}.xlsx`);
+};

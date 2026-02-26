@@ -145,6 +145,7 @@ export interface ScrapData {
   reason: string; // MOTIVO
   rootCause: string; // CAUSA_RAIZ
   countermeasure?: string; // CONTRA_MEDIDA (Pode ser nulo)
+  qrCode?: string; // QR Code do material lido
 
   line: string; // Nova Linha (Select)
 

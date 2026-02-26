@@ -78,11 +78,11 @@ model LineStop {
   userName     String? @map("user_name")
   userRole     String? @map("user_role")
   line         String?
-  shift        String? // Novo campo para turno
   date         String?
   status       String?
   data         String?
   signedDocUrl String? @map("signed_doc_url")
+  shift        String?
 
   @@map("line_stops")
 }
@@ -102,13 +102,13 @@ model Meeting {
 }
 
 model ScrapLog {
-  id             Int     @id @default(autoincrement())
-  userId         String? @map("user_id")
+  id             Int       @id @default(autoincrement())
+  userId         String?   @map("user_id")
   date           String?
   time           String?
   week           Int?
   shift          String?
-  leaderName     String? @map("leader_name")
+  leaderName     String?   @map("leader_name")
   pqc            String?
   model          String?
   qty            Int?
@@ -116,27 +116,25 @@ model ScrapLog {
   status         String?
   code           String?
   description    String?
-  unitValue      Float?  @map("unit_value")
-  totalValue     Float?  @map("total_value")
-  usedModel      String? @map("used_model")
+  unitValue      Float?    @map("unit_value")
+  totalValue     Float?    @map("total_value")
+  usedModel      String?   @map("used_model")
   responsible    String?
   station        String?
   reason         String?
-  rootCause      String? @map("root_cause")
+  rootCause      String?   @map("root_cause")
   countermeasure String?
   line           String?
-
-  nfNumber       String? @map("nf_number")
-  sentBy         String? @map("sent_by")
+  nfNumber       String?   @map("nf_number")
+  sentBy         String?   @map("sent_by")
   sentAt         DateTime? @map("sent_at")
   plant          String?
-  situation      String  @default("PENDING")
+  situation      String    @default("PENDING")
 
-  @@map("scrap_data")
-  
   @@index([date])
   @@index([situation])
   @@index([nfNumber])
+  @@map("scrap_data")
 }
 
 model Material {
@@ -155,7 +153,7 @@ model RecoveryRequest {
   matricula String
   name      String
   role      String
-  status    String   @default("PENDING") // PENDING, COMPLETED
+  status    String   @default("PENDING")
   createdAt DateTime @default(now())
 
   @@map("recovery_requests")
@@ -174,7 +172,7 @@ model ConfigRole {
 }
 
 model ConfigModel {
-  name String @id
+  name String  @id
   sku  String?
 
   @@map("config_models")
@@ -196,34 +194,34 @@ model ConfigPermission {
 }
 
 model PreparationLog {
-  id          Int      @id @default(autoincrement())
-  date        String
-  shift       String
-  line        String
-  model       String
-  sku         String?
-  plate       Int?
-  rear        Int?
-  btFt        Int?     @map("bt_ft")
-  pba         Int?
-  currentRfCal Float?  @map("current_rf_cal")
-  input       Int?
-  preKey      Int?     @map("pre_key")
-  lcia        Int?
-  audio       Int?
-  radiation   Int?
-  imei        Int?
-  vct         Int?
-  revision    Int?
-  desmonte    Int?
-  oven        Int?
-  repair      Int?
-  observation String?
-  responsible String?
-  createdAt   DateTime @default(now()) @map("created_at")
+  id           Int      @id @default(autoincrement())
+  date         String
+  shift        String
+  line         String
+  model        String
+  sku          String?
+  plate        Int?
+  rear         Int?
+  btFt         Int?     @map("bt_ft")
+  pba          Int?
+  currentRfCal Float?   @map("current_rf_cal")
+  input        Int?
+  preKey       Int?     @map("pre_key")
+  lcia         Int?
+  audio        Int?
+  radiation    Int?
+  imei         Int?
+  vct          Int?
+  revision     Int?
+  desmonte     Int?
+  oven         Int?
+  repair       Int?
+  observation  String?
+  responsible  String?
+  createdAt    DateTime @default(now()) @map("created_at")
 
-  @@map("preparation_logs")
   @@index([date])
   @@index([shift])
   @@index([model])
+  @@map("preparation_logs")
 }
