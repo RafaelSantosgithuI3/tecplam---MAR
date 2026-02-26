@@ -612,16 +612,7 @@ export const exportScrapToExcel = async (scraps: any[]) => {
         await workbook.xlsx.load(templateBuffer);
     }
 
-    // Group by Plant
-    const groups: { [key: string]: any[] } = {};
-    scraps.forEach(s => {
-        const p = s.plant || 'Geral';
-        if (!groups[p]) groups[p] = [];
-        groups[p].push(s);
-    });
-
-    const plants = Object.keys(groups);
-    if (plants.length === 0) return;
+    if (scraps.length === 0) return;
 
     // Helper to fill sheet
     const fillSheet = (sheet: ExcelJS.Worksheet, data: any[]) => {
@@ -702,53 +693,22 @@ export const exportScrapToExcel = async (scraps: any[]) => {
         Object.keys(columnWidths).forEach(col => {
             sheet.getColumn(col).width = columnWidths[col];
         });
+
     };
 
-    // If template exists, use it for the first plant, then copy for others
-    // If no template, remove default sheet and add new ones
-    if (!templateBuffer) {
-        workbook.removeWorksheet(workbook.worksheets[0].id);
+    let sheet = workbook.worksheets[0];
+    if (!sheet) {
+        sheet = workbook.addWorksheet('Dados Operacionais');
+    } else {
+        sheet.name = 'Dados Operacionais';
     }
 
-    // We assume the first sheet is the template structure if loaded
-    const masterSheet = workbook.worksheets[0];
-    const initialName = masterSheet ? masterSheet.name : 'Scrap';
-
-    // Process each plant
-    for (let i = 0; i < plants.length; i++) {
-        const plant = plants[i];
-        let sheet: ExcelJS.Worksheet;
-
-        if (i === 0 && masterSheet) {
-            sheet = masterSheet;
-            sheet.name = plant;
-        } else {
-            sheet = workbook.addWorksheet(plant);
-            if (masterSheet) {
-                // Copy header rows (1-3)
-                for (let r = 1; r <= 3; r++) {
-                    const rowSrc = masterSheet.getRow(r);
-                    const rowDest = sheet.getRow(r);
-                    rowDest.values = rowSrc.values;
-                    // Copy basic styles manually as Deep Copy isn't native/easy
-                    rowDest.height = rowSrc.height;
-                    rowSrc.eachCell({ includeEmpty: true }, (cell, colNumber) => {
-                        const target = rowDest.getCell(colNumber);
-                        target.style = JSON.parse(JSON.stringify(cell.style));
-                        target.value = cell.value;
-                    });
-                }
-                // Copy Merges
-                // (Simplification: assuming static merges in template if any)
-            }
-        }
-        fillSheet(sheet, groups[plant]);
-    }
+    fillSheet(sheet, scraps);
 
     const buffer = await workbook.xlsx.writeBuffer();
     const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
     const dateStr = new Date().toISOString().split('T')[0];
-    saveAs(blob, `Relatorio_Scrap_Agrupado_${dateStr}.xlsx`);
+    saveAs(blob, `Relatorio_Scrap_Operacional_${dateStr}.xlsx`);
 };
 
 export const exportExecutiveReport = async (scraps: ScrapData[], fileNamePrefix: string = 'Relatorio_Detalhado_SCRAP-IQC') => {

@@ -9,6 +9,7 @@ import { ScrapBoxMount, ScrapBoxIdentified, QRScannerInput } from './ScrapBoxVie
 import { Card } from './Card';
 import { Button } from './Button';
 import { Input } from './Input';
+import { QRStreamReader } from './QRStreamReader';
 import { User, ScrapData, Material } from '../types';
 import {
     getModels, getLines, getStations,
@@ -30,6 +31,12 @@ const formatDateDisplay = (dateString: string | undefined) => {
     // Divide a string "YYYY-MM-DD" e remonta manualmente para evitar conversão UTC do navegador
     const [year, month, day] = dateString.split('-');
     return `${day}/${month}/${year}`;
+};
+
+const CRITICAL_ITEMS = ['REAR', 'FRONT', 'OCTA', 'BATERIA SCRAP'];
+const isCriticalItem = (item?: string) => {
+    if (!item) return false;
+    return CRITICAL_ITEMS.includes(item.toUpperCase().trim());
 };
 
 interface ScrapModuleProps {
@@ -233,6 +240,17 @@ const ScrapForm = ({ users, models, stations, lines, materials, onSuccess, curre
 
     const [formData, setFormData] = useState<Partial<ScrapData>>(initialState);
 
+    const isAndroid = /Android/i.test(navigator.userAgent);
+    const [showQRReader, setShowQRReader] = useState(false);
+
+    const handleQRScanSuccess = (text: string) => {
+        setShowQRReader(false);
+        setFormData((prev: any) => ({ ...prev, qrCode: text }));
+        if (text && text.length >= 11) {
+            handleCodeChange(text.substring(0, 11));
+        }
+    };
+
     // Derived Form Values
     useEffect(() => {
         if (formData.date) {
@@ -359,23 +377,33 @@ const ScrapForm = ({ users, models, stations, lines, materials, onSuccess, curre
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                     <div>
                         <label className="block text-xs uppercase mb-1.5 font-bold text-blue-600 dark:text-blue-400">Leia o QR da label do desmonte *</label>
-                        <input
-                            type="text"
-                            className="w-full bg-blue-50/50 dark:bg-blue-900/10 border-2 border-blue-400/50 dark:border-blue-500/50 rounded-lg p-2.5 text-sm outline-none focus:ring-2 focus:ring-blue-500 font-mono text-slate-900 dark:text-zinc-100 transition-all placeholder-blue-300 dark:placeholder-blue-700"
-                            value={formData.qrCode || ''}
-                            onChange={(e) => setFormData((prev: any) => ({ ...prev, qrCode: e.target.value }))}
-                            onKeyDown={(e) => {
-                                if (e.key === 'Enter') {
-                                    e.preventDefault();
-                                    const qr = formData.qrCode || '';
-                                    if (qr && qr.length >= 11) {
-                                        handleCodeChange(qr.substring(0, 11));
+                        <div className="flex gap-2">
+                            <input
+                                type="text"
+                                className="w-full bg-blue-50/50 dark:bg-blue-900/10 border-2 border-blue-400/50 dark:border-blue-500/50 rounded-lg p-2.5 text-sm outline-none focus:ring-2 focus:ring-blue-500 font-mono text-slate-900 dark:text-zinc-100 transition-all placeholder-blue-300 dark:placeholder-blue-700"
+                                value={formData.qrCode || ''}
+                                onChange={(e) => setFormData((prev: any) => ({ ...prev, qrCode: e.target.value }))}
+                                onKeyDown={(e) => {
+                                    if (e.key === 'Enter') {
+                                        e.preventDefault();
+                                        const qr = formData.qrCode || '';
+                                        if (qr && qr.length >= 11) {
+                                            handleCodeChange(qr.substring(0, 11));
+                                        }
                                     }
-                                }
-                            }}
-                            placeholder="Bipe o código..."
-                            required
-                        />
+                                }}
+                                placeholder="Bipe o código..."
+                                required
+                            />
+                            {isAndroid && (
+                                <button type="button" onClick={() => setShowQRReader(true)} className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-2 rounded-lg flex items-center justify-center transition-colors shadow flex-shrink-0" title="Ler com a câmera">
+                                    <QrCode size={20} />
+                                </button>
+                            )}
+                        </div>
+                        {showQRReader && (
+                            <QRStreamReader onScanSuccess={handleQRScanSuccess} onClose={() => setShowQRReader(false)} />
+                        )}
                     </div>
                     <div>
                         <label className="block text-xs font-medium text-zinc-400 mb-1.5 uppercase">Cód. Matéria Prima</label>
@@ -485,7 +513,7 @@ const ScrapPending = ({ scraps, currentUser, onUpdate, users }: any) => {
     const pending = scraps.filter((s: ScrapData) => {
         const isRelated = s.leaderName === currentUser.name || currentUser.isAdmin || currentUser.role.includes('Admin') || currentUser.role.includes('Supervisor') || currentUser.role.includes('Gerente');
         const noCountermeasure = !s.countermeasure || s.countermeasure.trim() === '';
-        return isRelated && noCountermeasure;
+        return isRelated && noCountermeasure && isCriticalItem(s.item);
     });
 
     const [selected, setSelected] = useState<ScrapData | null>(null);
@@ -1367,6 +1395,16 @@ const ScrapEditDelete = ({ scraps, users, lines, models, onUpdate, categories, s
 
 const ScrapEditModal = ({ scrap, users, lines, models, categories, statusOptions, rootCauseOptions, materials, stations, currentUser, onClose, onSave }: any) => {
     const [formData, setFormData] = useState<Partial<ScrapData>>({ ...scrap });
+    const isAndroid = /Android/i.test(navigator.userAgent);
+    const [showQRReader, setShowQRReader] = useState(false);
+
+    const handleQRScanSuccess = (text: string) => {
+        setShowQRReader(false);
+        setFormData((prev: any) => ({ ...prev, qrCode: text }));
+        if (text && text.length >= 11) {
+            handleCodeChange(text.substring(0, 11));
+        }
+    };
 
     // 1. Auto-Calculate Week from Date
     useEffect(() => {
@@ -1496,6 +1534,35 @@ const ScrapEditModal = ({ scrap, users, lines, models, categories, statusOptions
                     <hr className="border-slate-200 dark:border-zinc-800" />
 
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                        <div>
+                            <label className="block text-xs uppercase mb-1.5 font-bold text-blue-600 dark:text-blue-400">Leia o QR da label do desmonte *</label>
+                            <div className="flex gap-2">
+                                <input
+                                    type="text"
+                                    className="w-full bg-blue-50/50 dark:bg-blue-900/10 border-2 border-blue-400/50 dark:border-blue-500/50 rounded-lg p-2.5 text-sm outline-none focus:ring-2 focus:ring-blue-500 font-mono text-slate-900 dark:text-zinc-100 transition-all placeholder-blue-300 dark:placeholder-blue-700"
+                                    value={formData.qrCode || ''}
+                                    onChange={(e) => setFormData((prev: any) => ({ ...prev, qrCode: e.target.value }))}
+                                    onKeyDown={(e) => {
+                                        if (e.key === 'Enter') {
+                                            e.preventDefault();
+                                            const qr = formData.qrCode || '';
+                                            if (qr && qr.length >= 11) {
+                                                handleCodeChange(qr.substring(0, 11));
+                                            }
+                                        }
+                                    }}
+                                    placeholder="Bipe o código..."
+                                />
+                                {isAndroid && (
+                                    <button type="button" onClick={() => setShowQRReader(true)} className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-2 rounded-lg flex items-center justify-center transition-colors shadow flex-shrink-0" title="Ler com a câmera">
+                                        <QrCode size={20} />
+                                    </button>
+                                )}
+                            </div>
+                            {showQRReader && (
+                                <QRStreamReader onScanSuccess={handleQRScanSuccess} onClose={() => setShowQRReader(false)} />
+                            )}
+                        </div>
                         <div>
                             <label className="block text-xs font-medium text-zinc-400 mb-1.5 uppercase">Cód. Matéria Prima</label>
                             <div className="relative">

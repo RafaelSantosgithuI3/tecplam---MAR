@@ -6,6 +6,7 @@ import { ChecklistItem, ChecklistLog, User, ChecklistData, ChecklistEvidence } f
 import { getMaintenanceItems, saveLog, fileToBase64, getManausDate } from '../services/storageService';
 import { ArrowLeft, Save, Camera, QrCode } from 'lucide-react';
 import jsQR from 'jsqr';
+import { QRStreamReader } from './QRStreamReader';
 
 interface MaintenanceModuleProps {
     currentUser: User;
@@ -19,6 +20,13 @@ export const MaintenanceModule: React.FC<MaintenanceModuleProps> = ({ currentUse
     const [data, setData] = useState<ChecklistData>({});
     const [evidence, setEvidence] = useState<ChecklistEvidence>({});
     const [obs, setObs] = useState('');
+    const isAndroid = /Android/i.test(navigator.userAgent);
+    const [showQRReader, setShowQRReader] = useState(false);
+
+    const handleQRScanSuccess = (text: string) => {
+        setShowQRReader(false);
+        handleCode(text);
+    };
 
     const handleCode = async (code: string) => {
         const loaded = await getMaintenanceItems(code);
@@ -86,11 +94,25 @@ export const MaintenanceModule: React.FC<MaintenanceModuleProps> = ({ currentUse
                 <div className="bg-white dark:bg-zinc-900 p-8 rounded-2xl border border-slate-200 dark:border-zinc-800 text-center max-w-sm w-full shadow-lg">
                     <div className="w-20 h-20 bg-orange-50 dark:bg-orange-900/10 text-orange-500 rounded-full flex items-center justify-center mx-auto mb-4 border border-orange-200 dark:border-orange-500/20"><QrCode size={40} /></div>
                     <h2 className="text-xl font-bold text-slate-900 dark:text-white mb-2">Escanear Máquina</h2>
-                    <p className="text-slate-500 dark:text-zinc-400 text-sm mb-6">Tire uma foto do QR Code da máquina.</p>
-                    <label className="block w-full">
-                        <span className="btn-primary w-full flex justify-center cursor-pointer bg-orange-600 hover:bg-orange-700 text-white py-3 rounded-lg font-bold">Abrir Câmera</span>
-                        <input type="file" accept="image/*" capture="environment" className="hidden" onChange={e => e.target.files?.[0] && handlePhotoScan(e.target.files[0])} />
-                    </label>
+                    <p className="text-slate-500 dark:text-zinc-400 text-sm mb-6">Tire uma foto ou leia o QR Code da máquina.</p>
+                    
+                    {isAndroid ? (
+                        <Button 
+                            className="w-full justify-center bg-orange-600 hover:bg-orange-700 text-white py-3 rounded-lg font-bold"
+                            onClick={() => setShowQRReader(true)}
+                        >
+                            <Camera className="mr-2" size={20} />
+                            Ler QR Code
+                        </Button>
+                    ) : (
+                        <label className="block w-full">
+                            <span className="btn-primary w-full flex justify-center cursor-pointer bg-orange-600 hover:bg-orange-700 text-white py-3 rounded-lg font-bold">Abrir Câmera</span>
+                            <input type="file" accept="image/*" capture="environment" className="hidden" onChange={e => {
+                                if (e.target.files?.[0]) handlePhotoScan(e.target.files[0]);
+                            }} />
+                        </label>
+                    )}
+
                     <div className="mt-4 pt-4 border-t border-slate-200 dark:border-zinc-800">
                         <p className="text-xs text-slate-400 dark:text-zinc-500 mb-2 uppercase font-bold">Ou digite o código</p>
                         <div className="flex gap-2">
@@ -98,6 +120,9 @@ export const MaintenanceModule: React.FC<MaintenanceModuleProps> = ({ currentUse
                             <Button onClick={() => handleCode(targetCode)}>OK</Button>
                         </div>
                     </div>
+                    {showQRReader && (
+                        <QRStreamReader onScanSuccess={handleQRScanSuccess} onClose={() => setShowQRReader(false)} />
+                    )}
                 </div>
             </div>
         )

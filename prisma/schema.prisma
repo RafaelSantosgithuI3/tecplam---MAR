@@ -130,6 +130,9 @@ model ScrapLog {
   sentAt         DateTime? @map("sent_at")
   plant          String?
   situation      String    @default("PENDING")
+  qrCode         String?   @map("qr_code")
+  boxId          Int?      @map("box_id")
+  box            ScrapBox? @relation(fields: [boxId], references: [id])
 
   @@index([date])
   @@index([situation])
@@ -224,4 +227,17 @@ model PreparationLog {
   @@index([shift])
   @@index([model])
   @@map("preparation_logs")
+}
+
+model ScrapBox {
+  id        Int        @id @default(autoincrement())
+  type      String
+  status    String     @default("OPEN")
+  nfNumber  String?    @map("nf_number")
+  createdAt DateTime   @default(now()) @map("created_at")
+  closedAt  DateTime?  @map("closed_at")
+
+  scraps    ScrapLog[]
+
+  @@map("scrap_boxes")
 }

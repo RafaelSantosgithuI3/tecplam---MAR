@@ -1,4 +1,5 @@
 const express = require('express');
+const https = require('https');
 const cors = require('cors');
 const bodyParser = require('body-parser');
 const path = require('path');
@@ -1221,12 +1222,27 @@ loadScrapCache().then(() => {
         }
     });
 
-    app.listen(PORT, '0.0.0.0', () => {
-        console.log(`✅ SERVIDOR RODANDO EM HTTP! (Prisma ORM | RAM Cache Enabled)`);
-        console.log(`--------------------------------------------------`);
-        console.log(`💻 ACESSO LOCAL:     http://localhost:${PORT}`);
-        console.log(`📱 ACESSO NA REDE:   http://${getLocalIp()}:${PORT}`);
-        console.log(`--------------------------------------------------`);
-        console.log(`Conectado ao database via Prisma.`);
-    });
+    try {
+        const certDir = path.join(__dirname, 'sslcert');
+        const key = fs.readFileSync(path.join(certDir, 'server.key'));
+        const cert = fs.readFileSync(path.join(certDir, 'server.crt'));
+        https.createServer({ key, cert }, app).listen(PORT, '0.0.0.0', () => {
+            console.log(`✅ SERVIDOR RODANDO EM HTTPS! (Prisma ORM | RAM Cache Enabled)`);
+            console.log(`--------------------------------------------------`);
+            console.log(`💻 ACESSO LOCAL:     https://localhost:${PORT}`);
+            console.log(`📱 ACESSO NA REDE:   https://${getLocalIp()}:${PORT}`);
+            console.log(`--------------------------------------------------`);
+            console.log(`Conectado ao database via Prisma.`);
+        });
+    } catch (e) {
+        console.log('⚠️ Certificados SSL não encontrados ou erro ao ler (Fallback HTTP)...');
+        app.listen(PORT, '0.0.0.0', () => {
+            console.log(`✅ SERVIDOR RODANDO EM HTTP! (Prisma ORM | RAM Cache Enabled)`);
+            console.log(`--------------------------------------------------`);
+            console.log(`💻 ACESSO LOCAL:     http://localhost:${PORT}`);
+            console.log(`📱 ACESSO NA REDE:   http://${getLocalIp()}:${PORT}`);
+            console.log(`--------------------------------------------------`);
+            console.log(`Conectado ao database via Prisma.`);
+        });
+    }
 });

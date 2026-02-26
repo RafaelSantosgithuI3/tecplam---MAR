@@ -78,6 +78,12 @@ const getWeekNumber = (d: Date) => {
     return weekNo;
 }
 
+const CRITICAL_ITEMS = ['REAR', 'FRONT', 'OCTA', 'BATERIA SCRAP'];
+const isCriticalItem = (item?: string) => {
+    if (!item) return false;
+    return CRITICAL_ITEMS.includes(item.toUpperCase().trim());
+};
+
 const calcTotalTime = (start: string, end: string) => {
     if (!start || !end) return '';
     const [h1, m1] = start.split(':').map(Number);
@@ -631,7 +637,7 @@ const App = () => {
                     setPendingLineStopsCount(visibleStops.length);
 
                     const allScraps = await getScraps();
-                    const myPending = allScraps.filter(s => s.leaderName === currentUser?.name && !s.countermeasure);
+                    const myPending = allScraps.filter(s => s.leaderName === currentUser?.name && !s.countermeasure && isCriticalItem(s.item));
                     setPendingScrapCount(myPending.length);
                 } catch (e) { console.error(e); }
             }
