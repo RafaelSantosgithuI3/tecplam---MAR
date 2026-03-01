@@ -193,7 +193,7 @@ export const MaterialsManager: React.FC<MaterialsManagerProps> = ({ materials, s
                             const wb = XLSX.utils.book_new();
                             XLSX.utils.book_append_sheet(wb, ws, "Template");
                             XLSX.writeFile(wb, "Template_Materiais.xlsx");
-                        }}><Download size={16} /> Baixar Modelo</Button>
+                        }}><Download size={16} /> Baixar Template</Button>
                     </div>
                 </div>
 

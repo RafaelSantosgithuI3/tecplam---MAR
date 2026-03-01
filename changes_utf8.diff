@@ -1,0 +1,161 @@
+﻿diff --git a/components/ScrapModule.tsx b/components/ScrapModule.tsx
+index f23311f..774c632 100644
+--- a/components/ScrapModule.tsx
++++ b/components/ScrapModule.tsx
+@@ -245,7 +245,32 @@ const ScrapForm = ({ users, models, stations, lines, materials, onSuccess, curre
+ 
+     const handleQRScanSuccess = (text: string) => {
+         setShowQRReader(false);
+-        setFormData((prev: any) => ({ ...prev, qrCode: text }));
++
++        let extractedDate = undefined;
++        let extractedQty = undefined;
++
++        if (text && text.length >= 38) {
++            const dateStr = text.substring(30, 34);
++            const qtyStr = text.substring(35, 38);
++
++            const day = dateStr.substring(0, 2);
++            const month = dateStr.substring(2, 4);
++            const year = new Date().getFullYear();
++            extractedDate = `${year}-${month}-${day}`;
++
++            const parsedQty = parseInt(qtyStr, 10);
++            if (!isNaN(parsedQty)) {
++                extractedQty = parsedQty;
++            }
++        }
++
++        setFormData((prev: any) => ({
++            ...prev,
++            qrCode: text,
++            ...(extractedDate ? { date: extractedDate } : {}),
++            ...(extractedQty !== undefined ? { qty: extractedQty } : {})
++        }));
++
+         if (text && text.length >= 11) {
+             handleCodeChange(text.substring(0, 11));
+         }
+@@ -387,8 +412,8 @@ const ScrapForm = ({ users, models, stations, lines, materials, onSuccess, curre
+                                     if (e.key === 'Enter') {
+                                         e.preventDefault();
+                                         const qr = formData.qrCode || '';
+-                                        if (qr && qr.length >= 11) {
+-                                            handleCodeChange(qr.substring(0, 11));
++                                        if (qr) {
++                                            handleQRScanSuccess(qr);
+                                         }
+                                     }
+                                 }}
+@@ -420,9 +445,35 @@ const ScrapForm = ({ users, models, stations, lines, materials, onSuccess, curre
+                             </datalist>
+                         </div>
+                     </div>
++                </div>
++
++                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                     <Input label="Modelo Usado" value={formData.usedModel} readOnly className="opacity-50" placeholder="Autom├ítico pelo C├│digo" />
+-                    <div className="lg:col-span-2">
+-                        <Input label="Descri├º├úo do Material" value={formData.description} readOnly className="opacity-50" />
++                    <div className="bg-red-50 dark:bg-red-900/10 p-4 rounded-xl border border-red-200 dark:border-red-900/30 flex flex-col justify-center">
++                        <label className="text-xs font-bold text-red-600 dark:text-red-400 uppercase">Valor Total</label>
++                        <span className="text-2xl font-bold text-red-600 dark:text-red-500">{formatCurrency(formData.totalValue)}</span>
++                    </div>
++
++                    <Input label="Descri├º├úo do Material" value={formData.description} readOnly className="opacity-50" />
++                    <Input label="Respons├ível" value={formData.responsible} onChange={e => setFormData({ ...formData, responsible: e.target.value })} />
++
++                    <div>
++                        <label className="block text-xs font-medium text-gray-500 dark:text-zinc-400 mb-1.5 uppercase">Motivo Detalhado</label>
++                        <textarea
++                            className="w-full bg-gray-50 dark:bg-zinc-950 border border-gray-300 dark:border-zinc-800 rounded-lg p-3 text-sm outline-none focus:ring-2 focus:ring-blue-600 min-h-[80px] text-gray-900 dark:text-zinc-100 placeholder-gray-400 dark:placeholder-zinc-600 transition-colors"
++                            value={formData.reason || ''}
++                            onChange={e => setFormData({ ...formData, reason: e.target.value })}
++                            placeholder="Descreva..."
++                        />
++                    </div>
++                    <div>
++                        <label className="block text-xs font-medium text-gray-500 dark:text-zinc-400 mb-1.5 uppercase">Contra Medida</label>
++                        <textarea
++                            className="w-full bg-gray-50 dark:bg-zinc-950 border border-gray-300 dark:border-zinc-800 rounded-lg p-3 text-sm outline-none focus:ring-2 focus:ring-blue-600 min-h-[80px] text-gray-900 dark:text-zinc-100 placeholder-gray-400 dark:placeholder-zinc-600 transition-colors"
++                            value={formData.countermeasure || ''}
++                            onChange={e => setFormData({ ...formData, countermeasure: e.target.value })}
++                            placeholder="A├º├úo tomada..."
++                        />
+                     </div>
+                 </div>
+ 
+@@ -457,48 +508,6 @@ const ScrapForm = ({ users, models, stations, lines, materials, onSuccess, curre
+                     <Input label="Valor UN" value={formatCurrency(formData.unitValue)} readOnly className="opacity-50" />
+                 </div>
+ 
+-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+-                    <div className="bg-red-50 dark:bg-red-900/10 p-4 rounded-xl border border-red-200 dark:border-red-900/30 flex flex-col justify-center">
+-                        <label className="text-xs font-bold text-red-600 dark:text-red-400 uppercase">Valor Total</label>
+-                        <span className="text-2xl font-bold text-red-600 dark:text-red-500">{formatCurrency(formData.totalValue)}</span>
+-                    </div>
+-                    <div>
+-                        <label className="block text-xs font-medium text-slate-500 dark:text-zinc-400 mb-1.5 uppercase">Causa Raiz</label>
+-                        <select
+-                            className="w-full bg-white dark:bg-zinc-950 border border-slate-300 dark:border-zinc-800 rounded-lg p-2.5 text-sm outline-none focus:ring-2 focus:ring-blue-600 text-slate-900 dark:text-zinc-100"
+-                            value={formData.rootCause || ''}
+-                            onChange={e => setFormData({ ...formData, rootCause: e.target.value })}
+-                        >
+-                            <option value="" disabled>Selecione...</option>
+-                            {CAUSA_RAIZ_OPTIONS.map(o => <option key={o} value={o}>{o}</option>)}
+-                        </select>
+-                    </div>
+-                    <div>
+-                        <label className="block text-xs font-medium text-slate-500 dark:text-zinc-400 mb-1.5 uppercase">Esta├º├úo</label>
+-                        <select
+-                            className="w-full bg-white dark:bg-zinc-950 border border-slate-300 dark:border-zinc-800 rounded-lg p-2.5 text-sm outline-none focus:ring-2 focus:ring-blue-600 text-slate-900 dark:text-zinc-100"
+-                            value={formData.station || ''}
+-                            onChange={e => setFormData({ ...formData, station: e.target.value })}
+-                        >
+-                            <option value="" disabled>Selecione...</option>
+-                            {stations.map((m: string) => <option key={m} value={m}>{m}</option>)}
+-                        </select>
+-                    </div>
+-                </div>
+-
+-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+-                    <Input label="Respons├ível" value={formData.responsible} onChange={e => setFormData({ ...formData, responsible: e.target.value })} />
+-                    <div>
+-                        <label className="block text-xs font-medium text-gray-500 dark:text-zinc-400 mb-1.5 uppercase">Motivo Detalhado</label>
+-                        <textarea
+-                            className="w-full bg-gray-50 dark:bg-zinc-950 border border-gray-300 dark:border-zinc-800 rounded-lg p-3 text-sm outline-none focus:ring-2 focus:ring-blue-600 min-h-[80px] text-gray-900 dark:text-zinc-100 placeholder-gray-400 dark:placeholder-zinc-600 transition-colors"
+-                            value={formData.reason || ''}
+-                            onChange={e => setFormData({ ...formData, reason: e.target.value })}
+-                            placeholder="Descreva..."
+-                        />
+-                    </div>
+-                </div>
+-
+                 <div className="pt-4 flex justify-end">
+                     <Button onClick={handleSubmit} size="lg" className="w-full md:w-auto">
+                         <Save size={18} /> Salvar Scrap
+@@ -512,7 +521,7 @@ const ScrapForm = ({ users, models, stations, lines, materials, onSuccess, curre
+ const ScrapPending = ({ scraps, currentUser, onUpdate, users }: any) => {
+     const pending = scraps.filter((s: ScrapData) => {
+         const isRelated = s.leaderName === currentUser.name || currentUser.isAdmin || currentUser.role.includes('Admin') || currentUser.role.includes('Supervisor') || currentUser.role.includes('Gerente');
+-        const noCountermeasure = !s.countermeasure || s.countermeasure.trim() === '';
++        const noCountermeasure = s.countermeasure == null || s.countermeasure.trim() === '';
+         return isRelated && noCountermeasure && isCriticalItem(s.item);
+     });
+ 
+@@ -553,6 +562,7 @@ const ScrapPending = ({ scraps, currentUser, onUpdate, users }: any) => {
+                                 <th className="p-4">L├¡der</th>
+                                 <th className="p-4">Turno</th>
+                                 <th className="p-4">Modelo</th>
++                                <th className="p-4">Item</th>
+                                 <th className="p-4">Qtd</th>
+                                 <th className="p-4">Valor</th>
+                                 <th className="p-4"></th>
+@@ -565,6 +575,7 @@ const ScrapPending = ({ scraps, currentUser, onUpdate, users }: any) => {
+                                     <td className="p-4 text-slate-900 dark:text-white font-medium">{s.leaderName}</td>
+                                     <td className="p-4">{s.shift}</td>
+                                     <td className="p-4 text-zinc-300">{s.model}</td>
++                                    <td className="p-4 text-zinc-300">{s.item}</td>
+                                     <td className="p-4">{s.qty}</td>
+                                     <td className="p-4 font-mono text-red-400">{formatCurrency(s.totalValue)}</td>
+                                     <td className="p-4 text-right">

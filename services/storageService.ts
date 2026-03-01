@@ -153,6 +153,22 @@ export const saveStations = async (stations: string[]) => {
     try { await apiFetch('/config/stations', { method: 'POST', body: JSON.stringify({ items: stations }) }); } catch (e) { console.error(e); }
 };
 
+export const getLayoutWorkstations = async (): Promise<any[]> => {
+    try {
+        const ws = await apiFetch('/workstations');
+        return Array.isArray(ws) ? ws : [];
+    } catch (e) { return []; }
+};
+
+export const addLayoutWorkstation = async (name: string, modelName: string, peopleNeeded: number, order?: string) => {
+    try {
+        return await apiFetch('/workstations', {
+            method: 'POST',
+            body: JSON.stringify({ name, modelName, peopleNeeded, order })
+        });
+    } catch (e) { console.error(e); throw e; }
+};
+
 // --- LOGS ---
 
 export const saveLog = async (log: ChecklistLog) => {

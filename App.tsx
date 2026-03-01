@@ -9,6 +9,7 @@ import { Input } from './components/Input';
 import { User, ChecklistData, ChecklistItem, ChecklistLog, MeetingLog, ChecklistEvidence, Permission, LineStopData, ConfigItem, Material, PERMISSIONS } from './types';
 import { getMaterials } from './services/materialService';
 import { ManagementModule } from './components/ManagementModule';
+import { PeopleManagementModule } from './components/PeopleManagementModule';
 import { PreparationModule } from './components/PreparationModule';
 import { MaterialsManager } from './components/MaterialsManager';
 import {
@@ -35,7 +36,7 @@ import {
 } from 'lucide-react';
 import jsQR from 'jsqr';
 
-type ViewState = 'SETUP' | 'LOGIN' | 'REGISTER' | 'RECOVER' | 'MENU' | 'CHECKLIST_MENU' | 'AUDIT_MENU' | 'DASHBOARD' | 'ADMIN' | 'SUCCESS' | 'PERSONAL' | 'PROFILE' | 'MEETING_MENU' | 'MEETING_FORM' | 'MEETING_HISTORY' | 'MAINTENANCE_QR' | 'LINE_STOP_DASHBOARD' | 'MANAGEMENT' | 'SCRAP' | 'IQC' | 'PREPARATION';
+type ViewState = 'SETUP' | 'LOGIN' | 'REGISTER' | 'RECOVER' | 'MENU' | 'CHECKLIST_MENU' | 'AUDIT_MENU' | 'DASHBOARD' | 'ADMIN' | 'SUCCESS' | 'PERSONAL' | 'PROFILE' | 'MEETING_MENU' | 'MEETING_FORM' | 'MEETING_HISTORY' | 'MAINTENANCE_QR' | 'LINE_STOP_DASHBOARD' | 'MANAGEMENT' | 'PEOPLE_MANAGEMENT' | 'SCRAP' | 'IQC' | 'PREPARATION';
 
 interface LineStatus {
     status: 'OK' | 'NG' | 'PENDING';
@@ -63,6 +64,7 @@ const MODULE_NAMES: Record<string, string> = {
     AUDIT: 'Auditoria',
     ADMIN: 'Administração',
     MANAGEMENT: 'Gestão de Processos',
+    PEOPLE_MANAGEMENT: 'Gestão de Pessoas',
     SCRAP: 'Gestão de SCRAP',
     IQC: 'Controle de SCRAP',
     PREPARATION: 'Preparação de Linhas'
@@ -275,6 +277,7 @@ const App = () => {
             [PERMISSIONS.VIEW_MEETING]: 'MEETING',
             [PERMISSIONS.VIEW_AUDIT]: 'AUDIT',
             [PERMISSIONS.VIEW_MANAGEMENT]: 'MANAGEMENT',
+            [PERMISSIONS.VIEW_PEOPLE_MANAGEMENT]: 'PEOPLE_MANAGEMENT',
             [PERMISSIONS.VIEW_ADMIN]: 'ADMIN',
             [PERMISSIONS.VIEW_SCRAP]: 'SCRAP',
             [PERMISSIONS.VIEW_IQC]: 'IQC'
@@ -312,7 +315,7 @@ const App = () => {
         const role = user.role.toUpperCase();
 
         // 1. Super Usuários e TI
-        const generalRoles = ['DIRETOR', 'COORDENADOR', 'SUPERVISOR', 'GERENTE', 'ADMIN', 'TI'];
+        const generalRoles = ['DIRETOR', 'SUPERVISOR', 'GERENTE', 'ADMIN', 'TI'];
         if (generalRoles.some(r => role.includes(r)) || user.isAdmin) return true;
 
         // 2. Regras por Setor
@@ -1132,7 +1135,7 @@ const App = () => {
         }
     }
 
-    const handleTogglePermission = (role: string, module: 'CHECKLIST' | 'MEETING' | 'MAINTENANCE' | 'AUDIT' | 'ADMIN' | 'LINE_STOP' | 'MANAGEMENT') => {
+    const handleTogglePermission = (role: string, module: Permission['module']) => {
         const existing = permissions.find(p => p.role === role && p.module === module);
         const newVal = existing ? !existing.allowed : true;
         const newPerm: Permission = { role, module, allowed: newVal };
@@ -1438,6 +1441,12 @@ const App = () => {
                     {hasAccess(PERMISSIONS.VIEW_MANAGEMENT) && (
                         <button onClick={() => setView('MANAGEMENT')} className={navItemClass(view === 'MANAGEMENT')}>
                             <Briefcase size={18} /> Gestão
+                        </button>
+                    )}
+
+                    {hasAccess(PERMISSIONS.VIEW_PEOPLE_MANAGEMENT) && (
+                        <button onClick={() => setView('PEOPLE_MANAGEMENT')} className={navItemClass(view === 'PEOPLE_MANAGEMENT')}>
+                            <UserIcon size={18} /> Gestão de Pessoas
                         </button>
                     )}
 
@@ -1752,6 +1761,18 @@ const App = () => {
                                 <div>
                                     <h3 className="font-bold text-xl text-slate-900 dark:text-zinc-100">Gestão</h3>
                                     <p className="text-xs text-slate-500 dark:text-zinc-500 mt-1">Cadastros Gerais</p>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {hasAccess(PERMISSIONS.VIEW_PEOPLE_MANAGEMENT) && (
+                        <div onClick={() => setView('PEOPLE_MANAGEMENT')} className="group bg-white dark:bg-zinc-900 p-6 rounded-2xl border border-slate-200 dark:border-zinc-800 hover:border-cyan-600/50 hover:bg-slate-50 dark:hover:bg-zinc-800 transition-all cursor-pointer relative overflow-hidden h-40 flex flex-col justify-center shadow-sm">
+                            <div className="flex items-center gap-4">
+                                <div className="w-12 h-12 bg-cyan-600/10 dark:bg-cyan-600/20 text-cyan-600 dark:text-cyan-500 rounded-xl flex items-center justify-center group-hover:scale-110 transition-transform"><UserIcon size={24} /></div>
+                                <div>
+                                    <h3 className="font-bold text-xl text-slate-900 dark:text-zinc-100">Gestão de Pessoas</h3>
+                                    <p className="text-xs text-slate-500 dark:text-zinc-500 mt-1">Colaboradores & Layout</p>
                                 </div>
                             </div>
                         </div>
@@ -2092,7 +2113,7 @@ const App = () => {
                                     <thead>
                                         <tr className="bg-slate-50 dark:bg-zinc-950 text-slate-500 dark:text-zinc-400 border-b border-slate-200 dark:border-zinc-800">
                                             <th className="p-3 text-left">Cargo</th>
-                                            {['CHECKLIST', 'LINE_STOP', 'MEETING', 'MAINTENANCE', 'AUDIT', 'ADMIN', 'MANAGEMENT', 'SCRAP', 'IQC', 'PREPARATION'].map(mod => (
+                                            {['CHECKLIST', 'LINE_STOP', 'MEETING', 'MAINTENANCE', 'AUDIT', 'ADMIN', 'MANAGEMENT', 'PEOPLE_MANAGEMENT', 'SCRAP', 'IQC', 'PREPARATION'].map(mod => (
                                                 <th key={mod} className="p-3">{mod}</th>
                                             ))}
                                         </tr>
@@ -2101,7 +2122,7 @@ const App = () => {
                                         {availableRoles.map(role => (
                                             <tr key={role.id} className="hover:bg-slate-50 dark:hover:bg-zinc-900/50 transition-colors">
                                                 <td className="p-3 text-left font-bold text-slate-900 dark:text-white">{role.name}</td>
-                                                {['CHECKLIST', 'LINE_STOP', 'MEETING', 'MAINTENANCE', 'AUDIT', 'ADMIN', 'MANAGEMENT', 'SCRAP', 'IQC', 'PREPARATION'].map(mod => {
+                                                {['CHECKLIST', 'LINE_STOP', 'MEETING', 'MAINTENANCE', 'AUDIT', 'ADMIN', 'MANAGEMENT', 'PEOPLE_MANAGEMENT', 'SCRAP', 'IQC', 'PREPARATION'].map(mod => {
                                                     const perm = permissions.find(p => p.role === role.name && p.module === (mod as any));
                                                     const isAllowed = perm ? perm.allowed : (['CHECKLIST', 'MEETING', 'MAINTENANCE', 'LINE_STOP'].includes(mod));
                                                     return (
@@ -2185,6 +2206,15 @@ const App = () => {
         return (
             <Layout sidebar={<SidebarContent />} onToggleTheme={toggleTheme} isDark={isDark}>
                 <ManagementModule onBack={() => setView('MENU')} />
+            </Layout>
+        );
+    }
+
+    // --- PEOPLE MANAGEMENT MODULE ---
+    if (view === 'PEOPLE_MANAGEMENT') {
+        return (
+            <Layout sidebar={<SidebarContent />} onToggleTheme={toggleTheme} isDark={isDark}>
+                <PeopleManagementModule currentUser={currentUser!} onBack={() => setView('MENU')} />
             </Layout>
         );
     }

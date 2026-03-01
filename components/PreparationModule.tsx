@@ -196,11 +196,11 @@ export const PreparationModule: React.FC<PreparationModuleProps> = ({ currentUse
                     <Card>
                         <h3 className="text-lg font-bold mb-4 border-b border-slate-200 dark:border-zinc-800 pb-2 text-slate-900 dark:text-white">Postos (Opcionais)</h3>
                         <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-                            <Input label="Placa" value={form.plate} onChange={e => setForm({ ...form, plate: e.target.value })} />
-                            <Input label="Rear" value={form.rear} onChange={e => setForm({ ...form, rear: e.target.value })} />
-                            <Input label="Bt-Ft" value={form.btFt} onChange={e => setForm({ ...form, btFt: e.target.value })} />
-                            <Input label="Pba" value={form.pba} onChange={e => setForm({ ...form, pba: e.target.value })} />
-                            <Input label="Vct" value={form.vct} onChange={e => setForm({ ...form, vct: e.target.value })} />
+                            <Input label="Placa" value={form.plate || ''} onChange={e => setForm({ ...form, plate: e.target.value.replace(/\D/g, '') })} />
+                            <Input label="Rear" value={form.rear || ''} onChange={e => setForm({ ...form, rear: e.target.value.replace(/\D/g, '') })} />
+                            <Input label="Bt-Ft" value={form.btFt || ''} onChange={e => setForm({ ...form, btFt: e.target.value.replace(/\D/g, '') })} />
+                            <Input label="Pba" value={form.pba || ''} onChange={e => setForm({ ...form, pba: e.target.value.replace(/\D/g, '') })} />
+                            <Input label="Vct" value={form.vct || ''} onChange={e => setForm({ ...form, vct: e.target.value.replace(/\D/g, '') })} />
                         </div>
                     </Card>
 
@@ -221,8 +221,8 @@ export const PreparationModule: React.FC<PreparationModuleProps> = ({ currentUse
                                 <Input
                                     key={f.k}
                                     label={f.label}
-                                    value={form[f.k as keyof PreparationLog] as string}
-                                    onChange={e => setForm({ ...form, [f.k]: e.target.value })}
+                                    value={form[f.k as keyof PreparationLog] !== undefined ? String(form[f.k as keyof PreparationLog]) : ''}
+                                    onChange={e => setForm({ ...form, [f.k]: e.target.value.replace(/\D/g, '') })}
                                 />
                             ))}
                         </div>
@@ -240,8 +240,8 @@ export const PreparationModule: React.FC<PreparationModuleProps> = ({ currentUse
                                 <Input
                                     key={f.k}
                                     label={f.label}
-                                    value={form[f.k as keyof PreparationLog] as string}
-                                    onChange={e => setForm({ ...form, [f.k]: e.target.value })}
+                                    value={form[f.k as keyof PreparationLog] !== undefined ? String(form[f.k as keyof PreparationLog]) : ''}
+                                    onChange={e => setForm({ ...form, [f.k]: e.target.value.replace(/\D/g, '') })}
                                 />
                             ))}
                         </div>

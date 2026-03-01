@@ -24,7 +24,8 @@ export const PERMISSIONS = {
   VIEW_LINE_STOP: 'view_line_stop',
   VIEW_MAINTENANCE: 'view_maintenance',
   VIEW_MEETING: 'view_meeting',
-  VIEW_CHECKLIST: 'view_checklist'
+  VIEW_CHECKLIST: 'view_checklist',
+  VIEW_PEOPLE_MANAGEMENT: 'view_people_management'
 };
 
 export interface ConfigItem {
@@ -118,7 +119,7 @@ export interface MeetingLog {
 
 export interface Permission {
   role: string;
-  module: 'CHECKLIST' | 'MEETING' | 'MAINTENANCE' | 'AUDIT' | 'ADMIN' | 'LINE_STOP' | 'MANAGEMENT' | 'SCRAP' | 'IQC' | 'PREPARATION';
+  module: 'CHECKLIST' | 'MEETING' | 'MAINTENANCE' | 'AUDIT' | 'ADMIN' | 'LINE_STOP' | 'MANAGEMENT' | 'PEOPLE_MANAGEMENT' | 'SCRAP' | 'IQC' | 'PREPARATION';
   allowed: boolean;
 }
 
@@ -145,6 +146,7 @@ export interface ScrapData {
   reason: string; // MOTIVO
   rootCause: string; // CAUSA_RAIZ
   countermeasure?: string; // CONTRA_MEDIDA (Pode ser nulo)
+  immediateAction?: string; // ACAO_IMEDIATA
   qrCode?: string; // QR Code do material lido
 
   line: string; // Nova Linha (Select)

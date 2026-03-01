@@ -5,13 +5,17 @@ import { Input } from './Input';
 import { Card } from './Card';
 import { Plus, Trash2, Edit2, Save, X, Search, Smartphone, List, User as UserIcon, Shield, ArrowLeft } from 'lucide-react';
 import { ConfigItem, ConfigModel } from '../types';
-import { getLines, addLine, deleteLine, getRoles, addRole, deleteRole, getStations, saveStations, getModelsFull, saveModelsFull } from '../services/storageService';
+import { getLines, addLine, deleteLine, getRoles, addRole, deleteRole, getStations, saveStations, getModelsFull, saveModelsFull, getLayoutWorkstations, addLayoutWorkstation } from '../services/storageService';
+import { apiFetch } from '../services/networkConfig';
+import { exportWorkstationsByModel } from '../services/excelService';
+import { getMaterials } from '../services/materialService';
+import { MaterialsManager } from './MaterialsManager';
 
 interface ManagementModuleProps {
     onBack: () => void;
 }
 
-type Tab = 'LINES' | 'ROLES' | 'MODELS' | 'STATIONS';
+type Tab = 'LINES' | 'ROLES' | 'MODELS' | 'STATIONS' | 'STATIONS_LAYOUT' | 'MATERIALS';
 
 export const ManagementModule: React.FC<ManagementModuleProps> = ({ onBack }) => {
     const [tab, setTab] = useState<Tab>('LINES');
@@ -19,6 +23,12 @@ export const ManagementModule: React.FC<ManagementModuleProps> = ({ onBack }) =>
     const [roles, setRoles] = useState<ConfigItem[]>([]);
     const [models, setModels] = useState<ConfigModel[]>([]);
     const [stations, setStations] = useState<string[]>([]);
+    const [materials, setMaterials] = useState<any[]>([]);
+
+    const [layoutStations, setLayoutStations] = useState<any[]>([]);
+    const [selectedLayoutModel, setSelectedLayoutModel] = useState<string>('');
+    const [newLayoutStationName, setNewLayoutStationName] = useState('');
+    const [newLayoutPeopleNeeded, setNewLayoutPeopleNeeded] = useState('');
 
     const [newItem, setNewItem] = useState('');
     const [newSku, setNewSku] = useState('');
@@ -32,8 +42,19 @@ export const ManagementModule: React.FC<ManagementModuleProps> = ({ onBack }) =>
     const loadData = async () => {
         if (tab === 'LINES') setLines(await getLines());
         if (tab === 'ROLES') setRoles(await getRoles());
-        if (tab === 'MODELS') setModels(await getModelsFull());
         if (tab === 'STATIONS') setStations(await getStations());
+        if (tab === 'MATERIALS') setMaterials(await getMaterials());
+        if (tab === 'MODELS' || tab === 'STATIONS_LAYOUT') {
+            const _models = await getModelsFull();
+            setModels(_models);
+            if (tab === 'STATIONS_LAYOUT') {
+                const ls = await getLayoutWorkstations();
+                setLayoutStations(ls);
+                if (!selectedLayoutModel && _models.length > 0) {
+                    setSelectedLayoutModel(_models[0].name);
+                }
+            }
+        }
     };
 
     const handleAddLine = async () => {
@@ -212,6 +233,99 @@ export const ManagementModule: React.FC<ManagementModuleProps> = ({ onBack }) =>
         </div>
     );
 
+    const handleSaveLayoutStation = async () => {
+        if (!selectedLayoutModel || !newLayoutStationName || !newLayoutPeopleNeeded) return;
+        await addLayoutWorkstation(newLayoutStationName, selectedLayoutModel, parseInt(newLayoutPeopleNeeded));
+        setNewLayoutStationName('');
+        setNewLayoutPeopleNeeded('');
+        loadData();
+    };
+
+    const renderStationsLayout = () => {
+        const currentModelStations = layoutStations.filter(s => s.modelName === selectedLayoutModel);
+        const totalPeople = currentModelStations.reduce((acc, curr) => acc + curr.peopleNeeded, 0);
+        const uniqueStationNames = Array.from(new Set(layoutStations.map(s => s.name)));
+
+        return (
+            <div className="space-y-6">
+                <Card className="space-y-4">
+                    <h3 className="font-bold text-slate-800 dark:text-zinc-100">Cadastrar Posto</h3>
+                    <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                        <div className="flex flex-col gap-2">
+                            <label className="text-sm font-medium text-slate-700 dark:text-zinc-300">Modelo</label>
+                            <select
+                                className="w-full bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 rounded-xl px-4 py-3 text-slate-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-cyan-500/20 focus:border-cyan-500"
+                                value={selectedLayoutModel}
+                                onChange={e => setSelectedLayoutModel(e.target.value)}
+                            >
+                                <option value="">Selecione...</option>
+                                {models.map(m => <option key={m.name} value={m.name}>{m.name}</option>)}
+                            </select>
+                        </div>
+                        <div className="flex flex-col gap-2 md:col-span-2">
+                            <label className="text-sm font-medium text-slate-700 dark:text-zinc-300">Nome do Posto</label>
+                            <input
+                                list="station-names"
+                                className="w-full bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 rounded-xl px-4 py-3 text-slate-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-cyan-500/20 focus:border-cyan-500"
+                                value={newLayoutStationName}
+                                onChange={e => setNewLayoutStationName(e.target.value)}
+                                placeholder="Ex: Montagem 1"
+                            />
+                            <datalist id="station-names">
+                                {uniqueStationNames.map(name => <option key={name} value={name} />)}
+                            </datalist>
+                        </div>
+                        <div className="flex flex-col gap-2">
+                            <label className="text-sm font-medium text-slate-700 dark:text-zinc-300">Pessoas Nesc.</label>
+                            <input
+                                type="number"
+                                min="1"
+                                className="w-full bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 rounded-xl px-4 py-3 text-slate-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-cyan-500/20 focus:border-cyan-500"
+                                value={newLayoutPeopleNeeded}
+                                onChange={e => setNewLayoutPeopleNeeded(e.target.value)}
+                            />
+                        </div>
+                    </div>
+                    <div className="flex justify-end">
+                        <Button onClick={handleSaveLayoutStation}><Plus size={16} /> Adicionar Posto</Button>
+                    </div>
+                </Card>
+
+                <Card className="space-y-4">
+                    <div className="flex justify-between items-center">
+                        <h3 className="font-bold text-slate-800 dark:text-zinc-100">Postos do Modelo: {selectedLayoutModel || 'Nenhum'}</h3>
+                        <Button variant="secondary" onClick={() => exportWorkstationsByModel(currentModelStations)}><List size={16} /> Exportar Excel</Button>
+                    </div>
+
+                    <div className="bg-white dark:bg-zinc-900 rounded-xl border border-slate-200 dark:border-zinc-800 overflow-hidden">
+                        <table className="w-full text-left text-sm">
+                            <thead className="bg-slate-50 dark:bg-zinc-950 text-slate-500 dark:text-zinc-500 border-b border-slate-200 dark:border-zinc-800">
+                                <tr>
+                                    <th className="p-4 font-medium">Posto</th>
+                                    <th className="p-4 font-medium text-right">Pessoas Necessárias</th>
+                                </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-200 dark:divide-zinc-800">
+                                {currentModelStations.map(s => (
+                                    <tr key={s.id} className="hover:bg-slate-50 dark:hover:bg-zinc-800/50">
+                                        <td className="p-4 text-slate-900 dark:text-zinc-100">{s.name}</td>
+                                        <td className="p-4 text-right font-medium text-slate-900 dark:text-zinc-100">{s.peopleNeeded}</td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                            <tfoot className="bg-slate-50 dark:bg-zinc-950">
+                                <tr>
+                                    <td className="p-4 font-bold text-slate-900 dark:text-zinc-100 text-right">Soma Total:</td>
+                                    <td className="p-4 font-bold text-slate-900 dark:text-zinc-100 text-right">{totalPeople}</td>
+                                </tr>
+                            </tfoot>
+                        </table>
+                    </div>
+                </Card>
+            </div>
+        );
+    };
+
     return (
         <div className="w-full max-w-7xl mx-auto space-y-6">
             <header className="flex flex-col gap-4 mb-4 md:mb-8 pb-4 md:pb-6 border-b border-zinc-200 dark:border-zinc-800">
@@ -225,7 +339,9 @@ export const ManagementModule: React.FC<ManagementModuleProps> = ({ onBack }) =>
                     <Button variant={tab === 'LINES' ? 'primary' : 'secondary'} onClick={() => setTab('LINES')}><List size={16} /> Linhas</Button>
                     <Button variant={tab === 'ROLES' ? 'primary' : 'secondary'} onClick={() => setTab('ROLES')}><UserIcon size={16} /> Cargos</Button>
                     <Button variant={tab === 'MODELS' ? 'primary' : 'secondary'} onClick={() => setTab('MODELS')}><Smartphone size={16} /> Modelos & SKU</Button>
-                    <Button variant={tab === 'STATIONS' ? 'primary' : 'secondary'} onClick={() => setTab('STATIONS')}><List size={16} /> Postos</Button>
+                    <Button variant={tab === 'STATIONS' ? 'primary' : 'secondary'} onClick={() => setTab('STATIONS')}><List size={16} /> Postos (Antigo)</Button>
+                    <Button variant={tab === 'STATIONS_LAYOUT' ? 'primary' : 'secondary'} onClick={() => setTab('STATIONS_LAYOUT')}><List size={16} /> Postos (Layout)</Button>
+                    <Button variant={tab === 'MATERIALS' ? 'primary' : 'secondary'} onClick={() => setTab('MATERIALS')}><Plus size={16} /> Itens de Scrap</Button>
                 </div>
             </header>
 
@@ -233,6 +349,8 @@ export const ManagementModule: React.FC<ManagementModuleProps> = ({ onBack }) =>
             {tab === 'ROLES' && renderRoles()}
             {tab === 'MODELS' && renderModels()}
             {tab === 'STATIONS' && renderStations()}
+            {tab === 'STATIONS_LAYOUT' && renderStationsLayout()}
+            {tab === 'MATERIALS' && <MaterialsManager materials={materials} setMaterials={setMaterials} onRefresh={loadData} />}
         </div>
     );
 };

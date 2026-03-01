@@ -170,6 +170,22 @@ app.get('/api/users', async (req, res) => {
     }
 });
 
+app.get('/api/users/matricula/:matricula', async (req, res) => {
+    try {
+        const user = await prisma.user.findUnique({
+            where: { matricula: String(req.params.matricula) }
+        });
+        if (!user) return res.status(404).json({ error: "Usuário não encontrado." });
+
+        const safeUser = { ...user };
+        delete safeUser.password;
+
+        res.json(safeUser);
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
 app.delete('/api/users/:id', async (req, res) => {
     try {
         await prisma.user.delete({
@@ -857,6 +873,7 @@ app.post('/api/scraps', async (req, res) => {
                 reason: rest.reason,
                 rootCause: rest.rootCause,
                 countermeasure: rest.countermeasure || null,
+                immediateAction: rest.immediateAction || null,
                 line: rest.line,
                 plant: plantToSave,
                 qrCode: rest.qrCode || null,
@@ -905,6 +922,7 @@ app.put('/api/scraps/:id', async (req, res) => {
     if (updates.reason !== undefined) dataToUpdate.reason = updates.reason;
     if (updates.rootCause !== undefined) dataToUpdate.rootCause = updates.rootCause;
     if (updates.countermeasure !== undefined) dataToUpdate.countermeasure = updates.countermeasure;
+    if (updates.immediateAction !== undefined) dataToUpdate.immediateAction = updates.immediateAction;
     if (updates.line !== undefined) dataToUpdate.line = updates.line;
     if (updates.plant !== undefined) dataToUpdate.plant = updates.plant;
     if (updates.nfNumber !== undefined) dataToUpdate.nfNumber = updates.nfNumber;
@@ -1125,6 +1143,182 @@ function getLocalIp() {
     }
     return 'localhost';
 }
+
+// --- PEOPLE MANAGEMENT & WORKSTATIONS ---
+
+app.get('/api/employees', async (req, res) => {
+    try {
+        const employees = await prisma.employee.findMany();
+        res.json(employees);
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+app.post('/api/employees', async (req, res) => {
+    try {
+        const { matricula, photo, fullName, shift, role, sector, superiorId, idlSt, type, status, address, addressNum, whatsapp } = req.body;
+        const employee = await prisma.employee.upsert({
+            where: { matricula: String(matricula) },
+            update: { photo, fullName, shift, role, sector, superiorId, idlSt, type, status, address, addressNum, whatsapp },
+            create: { matricula: String(matricula), photo, fullName, shift, role, sector, superiorId, idlSt, type, status, address, addressNum, whatsapp }
+        });
+        res.json({ message: "Salvo com sucesso", employee });
+    } catch (e) {
+        console.error("Save Employee Error:", e);
+        res.status(500).json({ error: e.message });
+    }
+});
+
+app.get('/api/employees/:matricula', async (req, res) => {
+    try {
+        const queryMatricula = String(req.params.matricula).trim().toUpperCase();
+
+        const allEmployees = await prisma.employee.findMany({
+            include: { attendanceLogs: true }
+        });
+
+        const employee = allEmployees.find(e =>
+            String(e.matricula).trim().toUpperCase() === queryMatricula
+        );
+
+        if (!employee) return res.status(404).json({ error: "Colaborador não encontrado" });
+        res.json(employee);
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+app.put('/api/employees/:matricula/transfer', async (req, res) => {
+    try {
+        const { superiorId } = req.body;
+        const employee = await prisma.employee.findUnique({ where: { matricula: String(req.params.matricula) } });
+        if (!employee) return res.status(404).json({ error: "Colaborador não encontrado" });
+
+        let history = [];
+        try { history = JSON.parse(employee.previousLeaders || "[]"); } catch (e) { }
+
+        if (employee.superiorId) {
+            history.unshift(employee.superiorId);
+            if (history.length > 2) history.pop();
+        }
+
+        const updated = await prisma.employee.update({
+            where: { matricula: String(req.params.matricula) },
+            data: { superiorId, previousLeaders: JSON.stringify(history) }
+        });
+        res.json({ message: "Transferência realizada", employee: updated });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+app.post('/api/attendance', async (req, res) => {
+    try {
+        const { employeeId, date, type, delayMinutes, loggedById } = req.body;
+        const log = await prisma.attendanceLog.create({
+            data: { employeeId: String(employeeId), date: new Date(date), type, delayMinutes, loggedById }
+        });
+        res.json({ message: "Apontamento salvo", log });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+app.get('/api/workstations', async (req, res) => {
+    try {
+        const workstations = await prisma.workstation.findMany({
+            include: { productionModel: true }
+        });
+        res.json(workstations);
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+app.get('/api/production-models', async (req, res) => {
+    try {
+        const models = await prisma.productionModel.findMany();
+        res.json(models);
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+app.post('/api/production-models', async (req, res) => {
+    try {
+        const { name } = req.body;
+        const pModel = await prisma.productionModel.create({
+            data: { name }
+        });
+        res.json({ message: "Modelo criado", model: pModel });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+app.post('/api/workstations', async (req, res) => {
+    try {
+        const { name, modelName, order, peopleNeeded, productionModelId } = req.body;
+        const workstation = await prisma.workstation.create({
+            data: {
+                name,
+                modelName,
+                order: order || null,
+                peopleNeeded: parseInt(peopleNeeded),
+                productionModelId: productionModelId ? parseInt(productionModelId) : null
+            }
+        });
+        res.json({ message: "Posto criado", workstation });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+app.post('/api/employees/:matricula/workstation-slots', async (req, res) => {
+    try {
+        const { modelText, orderText, workstationName } = req.body;
+        const employee = await prisma.employee.findUnique({
+            where: { matricula: String(req.params.matricula) }
+        });
+
+        if (!employee) return res.status(404).json({ error: "Colaborador não encontrado" });
+
+        const slots = [
+            { m: 'm1', pm: 'pm1', nm: 'nm1' },
+            { m: 'm2', pm: 'pm2', nm: 'nm2' },
+            { m: 'm3', pm: 'pm3', nm: 'nm3' },
+            { m: 'm4', pm: 'pm4', nm: 'nm4' },
+            { m: 'm5', pm: 'pm5', nm: 'nm5' },
+            { m: 'm6', pm: 'pm6', nm: 'nm6' }
+        ];
+
+        let slotToUpdate = null;
+        for (const slot of slots) {
+            if (!employee[slot.m]) {
+                slotToUpdate = slot;
+                break;
+            }
+        }
+
+        if (!slotToUpdate) {
+            return res.status(400).json({ error: "Todos os 6 slots de posto já estão preenchidos para este colaborador." });
+        }
+
+        const updated = await prisma.employee.update({
+            where: { matricula: String(req.params.matricula) },
+            data: {
+                [slotToUpdate.m]: modelText,
+                [slotToUpdate.pm]: orderText,
+                [slotToUpdate.nm]: workstationName
+            }
+        });
+
+        res.json({ message: `Posto vinculado com sucesso no slot ${slotToUpdate.m.replace('m', '')}`, employee: updated });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
 
 console.log("🚀 Iniciando servidor...");
 // Warm-up Cache before listening matches user request "Chame essa função assim que o servidor iniciar (antes do app.listen)"

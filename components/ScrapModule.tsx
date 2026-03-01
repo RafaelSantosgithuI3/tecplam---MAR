@@ -3,7 +3,7 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
     LayoutDashboard, AlertTriangle, FileText, CheckCircle2,
     ArrowLeft, Save, Search, Filter, Download, Plus, X,
-    History, BarChart3, Settings, Upload, Trash2, Shield, Eye, Edit3, Box, QrCode
+    History, BarChart3, Settings, Upload, Trash2, Shield, Eye, Edit3, Box, QrCode, Truck
 } from 'lucide-react';
 import { ScrapBoxMount, ScrapBoxIdentified, QRScannerInput } from './ScrapBoxViews';
 import { Card } from './Card';
@@ -45,7 +45,7 @@ interface ScrapModuleProps {
     initialTab?: Tab;
 }
 
-type Tab = 'FORM' | 'PENDING' | 'HISTORY' | 'OPERATIONAL' | 'MANAGEMENT_ADVANCED' | 'EDIT_DELETE' | 'BOX_MOUNT' | 'BOX_IDENTIFIED';
+type Tab = 'FORM' | 'PENDING' | 'HISTORY' | 'OPERATIONAL' | 'MANAGEMENT_ADVANCED' | 'EDIT_DELETE' | 'BOX_MOUNT' | 'BOX_IDENTIFIED' | 'NEW_ADVANCED';
 
 export const ScrapModule: React.FC<ScrapModuleProps> = ({ currentUser, onBack, initialTab }) => {
     const [activeTab, setActiveTab] = useState<Tab>(initialTab || 'FORM');
@@ -151,9 +151,14 @@ export const ScrapModule: React.FC<ScrapModuleProps> = ({ currentUser, onBack, i
                         </Button>
                     )}
 
-                    {/* Aba Gestão Avançada: Liberada para todos no módulo */}
+                    {/* Aba Rank Geral (Antiga Gestão Avançada) */}
                     <Button variant={activeTab === 'MANAGEMENT_ADVANCED' ? 'primary' : 'ghost'} onClick={() => setActiveTab('MANAGEMENT_ADVANCED')} size="sm">
-                        <Shield size={16} /> Gestão Avançada
+                        <Shield size={16} /> Rank Geral
+                    </Button>
+
+                    {/* Nova Aba Gestão Avançada (Copiada do Controle de Scrap) */}
+                    <Button variant={activeTab === 'NEW_ADVANCED' ? 'primary' : 'ghost'} onClick={() => setActiveTab('NEW_ADVANCED')} size="sm">
+                        <LayoutDashboard size={16} /> Gestão Avançada
                     </Button>
                 </div>
             </div>
@@ -208,6 +213,9 @@ export const ScrapModule: React.FC<ScrapModuleProps> = ({ currentUser, onBack, i
                 {activeTab === 'MANAGEMENT_ADVANCED' && (
                     <ScrapManagementAdvanced scraps={scraps} />
                 )}
+                {activeTab === 'NEW_ADVANCED' && (
+                    <NewAdvancedDashboard scraps={scraps} users={users} />
+                )}
             </div>
         </div>
     );
@@ -245,7 +253,32 @@ const ScrapForm = ({ users, models, stations, lines, materials, onSuccess, curre
 
     const handleQRScanSuccess = (text: string) => {
         setShowQRReader(false);
-        setFormData((prev: any) => ({ ...prev, qrCode: text }));
+
+        let extractedDate = undefined;
+        let extractedQty = undefined;
+
+        if (text && text.length >= 38) {
+            const dateStr = text.substring(30, 34);
+            const qtyStr = text.substring(35, 38);
+
+            const day = dateStr.substring(0, 2);
+            const month = dateStr.substring(2, 4);
+            const year = new Date().getFullYear();
+            extractedDate = `${year}-${month}-${day}`;
+
+            const parsedQty = parseInt(qtyStr, 10);
+            if (!isNaN(parsedQty)) {
+                extractedQty = parsedQty;
+            }
+        }
+
+        setFormData((prev: any) => ({
+            ...prev,
+            qrCode: text,
+            ...(extractedDate ? { date: extractedDate } : {}),
+            ...(extractedQty !== undefined ? { qty: extractedQty } : {})
+        }));
+
         if (text && text.length >= 11) {
             handleCodeChange(text.substring(0, 11));
         }
@@ -328,7 +361,7 @@ const ScrapForm = ({ users, models, stations, lines, materials, onSuccess, curre
                             onChange={e => handleLeaderChange(e.target.value)}
                         >
                             <option value="" disabled>Selecione...</option>
-                            {users.filter((u: User) => u.role.includes('Líder') || u.role.includes('Supervisor')).map((u: User) => (
+                            {users.filter((u: User) => u.role.includes('Líder') || u.role.includes('Supervisor') || u.role.includes('Coordenador') || u.role.includes('Técnico de processo')).map((u: User) => (
                                 <option key={u.matricula} value={u.name}>{u.name}</option>
                             ))}
                         </select>
@@ -376,7 +409,7 @@ const ScrapForm = ({ users, models, stations, lines, materials, onSuccess, curre
 
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                     <div>
-                        <label className="block text-xs uppercase mb-1.5 font-bold text-blue-600 dark:text-blue-400">Leia o QR da label do desmonte *</label>
+                        <label className="block text-xs uppercase mb-1.5 font-bold text-blue-600 dark:text-blue-400">Leia o QR da Etiqueta do desmonte *</label>
                         <div className="flex gap-2">
                             <input
                                 type="text"
@@ -387,8 +420,8 @@ const ScrapForm = ({ users, models, stations, lines, materials, onSuccess, curre
                                     if (e.key === 'Enter') {
                                         e.preventDefault();
                                         const qr = formData.qrCode || '';
-                                        if (qr && qr.length >= 11) {
-                                            handleCodeChange(qr.substring(0, 11));
+                                        if (qr) {
+                                            handleQRScanSuccess(qr);
                                         }
                                     }
                                 }}
@@ -420,14 +453,35 @@ const ScrapForm = ({ users, models, stations, lines, materials, onSuccess, curre
                             </datalist>
                         </div>
                     </div>
-                    <Input label="Modelo Usado" value={formData.usedModel} readOnly className="opacity-50" placeholder="Automático pelo Código" />
-                    <div className="lg:col-span-2">
+                    <div className="md:col-span-2 lg:col-span-2">
                         <Input label="Descrição do Material" value={formData.description} readOnly className="opacity-50" />
                     </div>
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                    <Input label="Modelo Usado" value={formData.usedModel} readOnly className="opacity-50" placeholder="Automático pelo Código" />
+                    <Input label="Valor UN" value={formatCurrency(formData.unitValue)} readOnly className="opacity-50" />
                     <Input type="number" label="Quantidade" value={formData.qty} onChange={e => setFormData({ ...formData, qty: Number(e.target.value) })} />
+                    <div className="bg-red-50 dark:bg-red-900/10 p-4 rounded-xl border border-red-200 dark:border-red-900/30 flex flex-col justify-center">
+                        <label className="text-xs font-bold text-red-600 dark:text-red-400 uppercase">Valor Total</label>
+                        <span className="text-2xl font-bold text-red-600 dark:text-red-500">{formatCurrency(formData.totalValue)}</span>
+                    </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                    <div>
+                        <label className="block text-xs font-medium text-slate-500 dark:text-zinc-400 mb-1.5 uppercase">Causa Raiz</label>
+                        <input
+                            list="causa-raiz-list"
+                            className="w-full bg-white dark:bg-zinc-950 border border-slate-300 dark:border-zinc-800 rounded-lg p-2.5 text-sm outline-none focus:ring-2 focus:ring-blue-600 text-slate-900 dark:text-zinc-100"
+                            value={formData.rootCause || ''}
+                            onChange={e => setFormData({ ...formData, rootCause: e.target.value })}
+                            placeholder="Selecione..."
+                        />
+                        <datalist id="causa-raiz-list">
+                            {CAUSA_RAIZ_OPTIONS.map(opt => <option key={opt} value={opt} />)}
+                        </datalist>
+                    </div>
                     <div>
                         <label className="block text-xs font-medium text-slate-500 dark:text-zinc-400 mb-1.5 uppercase">Item (Categoria)</label>
                         <input
@@ -454,40 +508,10 @@ const ScrapForm = ({ users, models, stations, lines, materials, onSuccess, curre
                             {SCRAP_STATUS.map(i => <option key={i} value={i} />)}
                         </datalist>
                     </div>
-                    <Input label="Valor UN" value={formatCurrency(formData.unitValue)} readOnly className="opacity-50" />
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    <div className="bg-red-50 dark:bg-red-900/10 p-4 rounded-xl border border-red-200 dark:border-red-900/30 flex flex-col justify-center">
-                        <label className="text-xs font-bold text-red-600 dark:text-red-400 uppercase">Valor Total</label>
-                        <span className="text-2xl font-bold text-red-600 dark:text-red-500">{formatCurrency(formData.totalValue)}</span>
-                    </div>
-                    <div>
-                        <label className="block text-xs font-medium text-slate-500 dark:text-zinc-400 mb-1.5 uppercase">Causa Raiz</label>
-                        <select
-                            className="w-full bg-white dark:bg-zinc-950 border border-slate-300 dark:border-zinc-800 rounded-lg p-2.5 text-sm outline-none focus:ring-2 focus:ring-blue-600 text-slate-900 dark:text-zinc-100"
-                            value={formData.rootCause || ''}
-                            onChange={e => setFormData({ ...formData, rootCause: e.target.value })}
-                        >
-                            <option value="" disabled>Selecione...</option>
-                            {CAUSA_RAIZ_OPTIONS.map(o => <option key={o} value={o}>{o}</option>)}
-                        </select>
-                    </div>
-                    <div>
-                        <label className="block text-xs font-medium text-slate-500 dark:text-zinc-400 mb-1.5 uppercase">Estação</label>
-                        <select
-                            className="w-full bg-white dark:bg-zinc-950 border border-slate-300 dark:border-zinc-800 rounded-lg p-2.5 text-sm outline-none focus:ring-2 focus:ring-blue-600 text-slate-900 dark:text-zinc-100"
-                            value={formData.station || ''}
-                            onChange={e => setFormData({ ...formData, station: e.target.value })}
-                        >
-                            <option value="" disabled>Selecione...</option>
-                            {stations.map((m: string) => <option key={m} value={m}>{m}</option>)}
-                        </select>
-                    </div>
-                </div>
-
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                     <Input label="Responsável" value={formData.responsible} onChange={e => setFormData({ ...formData, responsible: e.target.value })} />
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
                         <label className="block text-xs font-medium text-gray-500 dark:text-zinc-400 mb-1.5 uppercase">Motivo Detalhado</label>
                         <textarea
@@ -495,6 +519,15 @@ const ScrapForm = ({ users, models, stations, lines, materials, onSuccess, curre
                             value={formData.reason || ''}
                             onChange={e => setFormData({ ...formData, reason: e.target.value })}
                             placeholder="Descreva..."
+                        />
+                    </div>
+                    <div>
+                        <label className="block text-xs font-medium text-gray-500 dark:text-zinc-400 mb-1.5 uppercase">Contra Medida</label>
+                        <textarea
+                            className="w-full bg-gray-50 dark:bg-zinc-950 border border-gray-300 dark:border-zinc-800 rounded-lg p-3 text-sm outline-none focus:ring-2 focus:ring-blue-600 min-h-[80px] text-gray-900 dark:text-zinc-100 placeholder-gray-400 dark:placeholder-zinc-600 transition-colors"
+                            value={formData.countermeasure || ''}
+                            onChange={e => setFormData({ ...formData, countermeasure: e.target.value })}
+                            placeholder="Ação tomada..."
                         />
                     </div>
                 </div>
@@ -511,8 +544,8 @@ const ScrapForm = ({ users, models, stations, lines, materials, onSuccess, curre
 
 const ScrapPending = ({ scraps, currentUser, onUpdate, users }: any) => {
     const pending = scraps.filter((s: ScrapData) => {
-        const isRelated = s.leaderName === currentUser.name || currentUser.isAdmin || currentUser.role.includes('Admin') || currentUser.role.includes('Supervisor') || currentUser.role.includes('Gerente');
-        const noCountermeasure = !s.countermeasure || s.countermeasure.trim() === '';
+        const isRelated = s.leaderName === currentUser.name || currentUser.isAdmin || currentUser.role.includes('Admin') || currentUser.role.includes('Supervisor') || currentUser.role.includes('Diretor');
+        const noCountermeasure = s.countermeasure == null || s.countermeasure.trim() === '';
         return isRelated && noCountermeasure && isCriticalItem(s.item);
     });
 
@@ -553,6 +586,7 @@ const ScrapPending = ({ scraps, currentUser, onUpdate, users }: any) => {
                                 <th className="p-4">Líder</th>
                                 <th className="p-4">Turno</th>
                                 <th className="p-4">Modelo</th>
+                                <th className="p-4">Item</th>
                                 <th className="p-4">Qtd</th>
                                 <th className="p-4">Valor</th>
                                 <th className="p-4"></th>
@@ -565,6 +599,7 @@ const ScrapPending = ({ scraps, currentUser, onUpdate, users }: any) => {
                                     <td className="p-4 text-slate-900 dark:text-white font-medium">{s.leaderName}</td>
                                     <td className="p-4">{s.shift}</td>
                                     <td className="p-4 text-zinc-300">{s.model}</td>
+                                    <td className="p-4 text-zinc-300">{s.item}</td>
                                     <td className="p-4">{s.qty}</td>
                                     <td className="p-4 font-mono text-red-400">{formatCurrency(s.totalValue)}</td>
                                     <td className="p-4 text-right">
@@ -1675,6 +1710,192 @@ const ScrapEditModal = ({ scrap, users, lines, models, categories, statusOptions
                     </div>
                 </div>
             </Card>
+        </div>
+    );
+};
+
+const NewAdvancedDashboard = ({ scraps, users }: { scraps: ScrapData[], users: User[] }) => {
+    const [filters, setFilters] = useState({
+        period: 'MONTH',
+        plant: 'ALL',
+        shift: 'ALL',
+        model: 'ALL',
+        leader: 'ALL',
+        specificDate: '',
+        specificWeek: '',
+        specificMonth: new Date().toISOString().slice(0, 7),
+        specificYear: ''
+    });
+
+    const availableModels = useMemo(() => {
+        let modelsSource = scraps;
+        if (filters.leader !== 'ALL') {
+            modelsSource = modelsSource.filter(s => s.leaderName === filters.leader);
+        }
+        const uniqueModels = Array.from(new Set(modelsSource.map(s => s.model).filter(Boolean)));
+        return uniqueModels.sort();
+    }, [scraps, filters.leader]);
+
+    const filtered = useMemo(() => {
+        let res = [...scraps];
+
+        if (filters.period === 'DAY' && filters.specificDate) res = res.filter(s => s.date === filters.specificDate);
+        else if (filters.period === 'WEEK' && filters.specificWeek) {
+            const [y, w] = filters.specificWeek.split('-W').map(Number);
+            res = res.filter(s => {
+                const sd = new Date(s.date);
+                const utcDate = new Date(sd.getUTCFullYear(), sd.getUTCMonth(), sd.getUTCDate());
+                const sw = getWeekNumber(utcDate);
+                return sw === w && sd.getFullYear() === y;
+            });
+        }
+        else if (filters.period === 'MONTH' && filters.specificMonth) res = res.filter(s => s.date.startsWith(filters.specificMonth));
+        else if (filters.period === 'YEAR' && filters.specificYear) res = res.filter(s => s.date.startsWith(filters.specificYear));
+
+        if (filters.plant !== 'ALL') res = res.filter(s => s.plant === filters.plant);
+        if (filters.shift !== 'ALL') res = res.filter(s => String(s.shift) === filters.shift);
+        if (filters.leader !== 'ALL') res = res.filter(s => s.leaderName === filters.leader);
+        if (filters.model !== 'ALL') res = res.filter(s => s.model === filters.model);
+
+        return res;
+    }, [scraps, filters]);
+
+    const stats = useMemo(() => {
+        const totalVal = filtered.reduce((acc, s) => acc + (s.totalValue || 0), 0);
+        const totalQty = filtered.reduce((acc, s) => acc + (s.qty || 0), 0);
+
+        const specificItems = ['FRONT', 'REAR', 'OCTA', 'CAMERA', 'BATERIA RMA', 'BATERIA SCRAP'];
+        const byCategory: Record<string, number> = {};
+        const byModel: Record<string, number> = {};
+        const byLine: Record<string, number> = {};
+
+        specificItems.forEach(k => byCategory[k] = 0);
+        byCategory['MIUDEZAS'] = 0;
+
+        filtered.forEach(s => {
+            const val = s.totalValue || 0;
+            const itemUpper = (s.item || '').toUpperCase();
+
+            let catKey = 'MIUDEZAS';
+            if (itemUpper.includes('CAMERA')) {
+                catKey = 'CAMERA';
+            } else {
+                const found = specificItems.find(i => itemUpper.includes(i) && i !== 'CAMERA');
+                if (found) catKey = found;
+            }
+
+            byCategory[catKey] = (byCategory[catKey] || 0) + val;
+            byModel[s.model] = (byModel[s.model] || 0) + val;
+            byLine[s.line] = (byLine[s.line] || 0) + val;
+        });
+
+        return {
+            totalVal,
+            totalQty,
+            category: Object.entries(byCategory).sort((a, b) => b[1] - a[1]),
+            model: Object.entries(byModel).sort((a, b) => b[1] - a[1]).slice(0, 10),
+            line: Object.entries(byLine).sort((a, b) => b[1] - a[1])
+        };
+    }, [filtered]);
+
+    return (
+        <div className="space-y-6">
+            <Card>
+                <div className="flex justify-between items-center flex-wrap gap-4">
+                    <h3 className="font-bold text-lg">Dashboard Geral</h3>
+                    <div className="flex flex-wrap gap-2 items-center">
+                        <div className="flex flex-wrap items-center gap-2 w-full md:w-auto">
+                            <select className="bg-slate-50 dark:bg-zinc-950 border border-slate-300 dark:border-zinc-800 p-2 rounded text-sm outline-none w-full md:w-auto" onChange={e => setFilters({ ...filters, period: e.target.value })} value={filters.period}>
+                                <option value="ALL">Todo Período</option>
+                                <option value="DAY">Dia</option>
+                                <option value="WEEK">Semana</option>
+                                <option value="MONTH">Mês</option>
+                                <option value="YEAR">Ano</option>
+                            </select>
+                            {filters.period === 'DAY' && <Input type="date" value={filters.specificDate} onChange={e => setFilters({ ...filters, specificDate: e.target.value })} className="w-full md:w-auto" />}
+                            {filters.period === 'WEEK' && <Input type="week" value={filters.specificWeek} onChange={e => setFilters({ ...filters, specificWeek: e.target.value })} className="w-full md:w-auto" />}
+                            {filters.period === 'MONTH' && <Input type="month" value={filters.specificMonth} onChange={e => setFilters({ ...filters, specificMonth: e.target.value })} className="w-full md:w-auto" />}
+                            {filters.period === 'YEAR' && <Input type="number" placeholder="2026" value={filters.specificYear} onChange={e => setFilters({ ...filters, specificYear: e.target.value })} className="w-full md:w-24" />}
+                        </div>
+
+                        <select className="bg-slate-50 dark:bg-zinc-950 border border-slate-300 dark:border-zinc-800 p-2 rounded text-sm outline-none" value={filters.leader} onChange={e => setFilters({ ...filters, leader: e.target.value })}>
+                            <option value="ALL">Todos os Líderes</option>
+                            {users.filter((u: User) => u.role.toLowerCase().includes('líder') || u.role.toLowerCase().includes('supervisor')).map((u: User) => (
+                                <option key={u.matricula} value={u.name}>{u.name}</option>
+                            ))}
+                        </select>
+
+                        <select className="bg-slate-50 dark:bg-zinc-950 border border-slate-300 dark:border-zinc-800 p-2 rounded text-sm outline-none" value={filters.plant} onChange={e => setFilters({ ...filters, plant: e.target.value })}>
+                            <option value="ALL">Todas Plantas</option>
+                            <option value="P81L">P81L</option>
+                            <option value="P81M">P81M</option>
+                            <option value="P81N">P81N</option>
+                        </select>
+                        <select className="bg-slate-50 dark:bg-zinc-950 border border-slate-300 dark:border-zinc-800 p-2 rounded text-sm outline-none" value={filters.shift} onChange={e => setFilters({ ...filters, shift: e.target.value })}>
+                            <option value="ALL">Todos Turnos</option>
+                            <option value="1">1º Turno</option>
+                            <option value="2">2º Turno</option>
+                        </select>
+                        <select className="bg-slate-50 dark:bg-zinc-950 border border-slate-300 dark:border-zinc-800 p-2 rounded text-sm outline-none" value={filters.model} onChange={e => setFilters({ ...filters, model: e.target.value })}>
+                            <option value="ALL">Todos os Modelos</option>
+                            {availableModels.map(m => (
+                                <option key={m} value={m}>{m}</option>
+                            ))}
+                        </select>
+
+                        <Button onClick={() => exportExecutiveReport(filtered)} className="bg-green-600 hover:bg-green-700 text-white ml-2">
+                            <Download size={18} /> Excel (Filtrado)
+                        </Button>
+                    </div>
+                </div>
+            </Card>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <Card className="bg-blue-900 text-white border-blue-800">
+                    <p className="text-blue-200 text-xs font-bold uppercase">Valor Total (Filtrado)</p>
+                    <p className="text-3xl font-bold mt-1">{formatCurrency(stats.totalVal)}</p>
+                </Card>
+                <Card className="bg-slate-900 text-white border-slate-800">
+                    <p className="text-slate-400 text-xs font-bold uppercase">Quantidade (Filtrado)</p>
+                    <p className="text-3xl font-bold mt-1">{stats.totalQty} <span className="text-base font-normal text-slate-500">itens</span></p>
+                </Card>
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                <Card>
+                    <h3 className="font-bold text-slate-900 dark:text-white mb-4 flex items-center gap-2"><LayoutDashboard size={16} className="text-purple-500" /> Por Categoria</h3>
+                    <div className="space-y-3">
+                        {stats.category.map(([name, val]) => (
+                            <div key={name} className="flex justify-between items-center text-sm">
+                                <span className={val > 0 ? 'text-slate-700 dark:text-zinc-300' : 'text-slate-400 dark:text-zinc-600'}>{name}</span>
+                                <span className="font-bold">{formatCurrency(val)}</span>
+                            </div>
+                        ))}
+                    </div>
+                </Card>
+                <Card>
+                    <h3 className="font-bold text-slate-900 dark:text-white mb-4 flex items-center gap-2"><Truck size={16} className="text-blue-500" /> Top Modelos</h3>
+                    <div className="space-y-3">
+                        {stats.model.map(([name, val], i) => (
+                            <div key={name} className="flex justify-between items-center text-sm">
+                                <span className="text-slate-700 dark:text-zinc-300 whitespace-normal break-words w-2/3">{i + 1}. {name}</span>
+                                <span className="font-bold text-blue-600 dark:text-blue-400">{formatCurrency(val)}</span>
+                            </div>
+                        ))}
+                    </div>
+                </Card>
+                <Card>
+                    <h3 className="font-bold text-slate-900 dark:text-white mb-4 flex items-center gap-2"><Filter size={16} className="text-green-500" /> Por Linha</h3>
+                    <div className="space-y-3">
+                        {stats.line.map(([name, val]) => (
+                            <div key={name} className="flex justify-between items-center text-sm">
+                                <span className="text-slate-700 dark:text-zinc-300">{name}</span>
+                                <span className="font-bold text-green-600 dark:text-green-400">{formatCurrency(val)}</span>
+                            </div>
+                        ))}
+                    </div>
+                </Card>
+            </div>
         </div>
     );
 };

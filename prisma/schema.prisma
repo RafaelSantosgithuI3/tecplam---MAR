@@ -124,6 +124,7 @@ model ScrapLog {
   reason         String?
   rootCause      String?   @map("root_cause")
   countermeasure String?
+  immediateAction String?   @map("immediate_action")
   line           String?
   nfNumber       String?   @map("nf_number")
   sentBy         String?   @map("sent_by")
@@ -240,4 +241,79 @@ model ScrapBox {
   scraps    ScrapLog[]
 
   @@map("scrap_boxes")
+}
+
+model Employee {
+  matricula        String     @id @unique
+  photo            String?
+  fullName         String
+  shift            String
+  role             String
+  sector           String
+  superiorId       String?
+  idlSt            String?
+  type             String?
+  status           String?
+  address          String?
+  addressNum       String?
+  whatsapp         String?
+  previousLeaders  String?
+
+  m1               String?
+  pm1              String?
+  nm1              String?
+  m2               String?
+  pm2              String?
+  nm2              String?
+  m3               String?
+  pm3              String?
+  nm3              String?
+  m4               String?
+  pm4              String?
+  nm4              String?
+  m5               String?
+  pm5              String?
+  nm5              String?
+  m6               String?
+  pm6              String?
+  nm6              String?
+
+  attendanceLogs   AttendanceLog[]
+
+  @@map("employees")
+}
+
+model ProductionModel {
+  id             Int       @id @default(autoincrement())
+  name           String
+
+  workstations   Workstation[]
+
+  @@map("production_models")
+}
+
+model Workstation {
+  id                Int       @id @default(autoincrement())
+  name              String
+  modelName         String?
+  order             String?
+  peopleNeeded      Int
+  productionModelId Int?      @map("production_model_id")
+
+  productionModel   ProductionModel? @relation(fields: [productionModelId], references: [id])
+
+  @@map("workstations")
+}
+
+model AttendanceLog {
+  id             Int          @id @default(autoincrement())
+  employeeId     String
+  date           DateTime
+  type           String
+  delayMinutes   Int?
+  loggedById     String
+
+  employee       Employee     @relation(fields: [employeeId], references: [matricula])
+
+  @@map("attendance_logs")
 }

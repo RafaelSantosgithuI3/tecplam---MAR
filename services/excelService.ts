@@ -1374,3 +1374,112 @@ export const generateBoxLabels = async (boxId: number | string, scraps: any[], e
     const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
     saveAs(blob, `Placas_Caixa_${boxId}.xlsx`);
 };
+
+// --- PEOPLE MANAGEMENT MODULE EXPORTS ---
+
+const commonHeaderStyle: Partial<ExcelJS.Style> = {
+    font: { bold: true, color: { argb: 'FFFFFFFF' } },
+    fill: { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1E3A8A' } }, // Dark Blue
+    alignment: { horizontal: 'center', vertical: 'middle' },
+    border: { top: { style: 'thin' }, left: { style: 'thin' }, bottom: { style: 'thin' }, right: { style: 'thin' } }
+};
+
+const commonDataStyle: Partial<ExcelJS.Style> = {
+    font: { size: 10 },
+    alignment: { vertical: 'middle', horizontal: 'left', wrapText: true },
+    border: { top: { style: 'thin' }, left: { style: 'thin' }, bottom: { style: 'thin' }, right: { style: 'thin' } }
+};
+
+export const exportLeaderLayout = async (leader: any, subordinados: any[]) => {
+    const workbook = new ExcelJS.Workbook();
+    const sheet = workbook.addWorksheet('Layout por Líder');
+
+    sheet.columns = [
+        { header: 'Matrícula', key: 'matricula', width: 15 },
+        { header: 'Nome', key: 'nome', width: 40 },
+        { header: 'Função', key: 'funcao', width: 25 },
+        { header: 'Turno', key: 'turno', width: 10 },
+        { header: 'Postos Vinculados', key: 'postos', width: 50 },
+    ];
+
+    // Style Header
+    sheet.getRow(1).eachCell(cell => { cell.style = commonHeaderStyle as any; });
+
+    subordinados.forEach(s => {
+        const row = sheet.addRow({
+            matricula: s.matricula,
+            nome: s.fullName,
+            funcao: s.role,
+            turno: s.shift,
+            postos: s.workstations ? s.workstations.map((w: any) => `${w.modelName} - ${w.name}`).join(' | ') : '-'
+        });
+        row.eachCell(cell => { cell.style = commonDataStyle as any; });
+    });
+
+    const buffer = await workbook.xlsx.writeBuffer();
+    const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+    const safeName = (leader?.name || 'LIDER').replace(/[^a-z0-9]/gi, '_').toUpperCase();
+    saveAs(blob, `LAYOUT_LIDER_${safeName}.xlsx`);
+};
+
+export const exportModelLayout = async (model: string, workstations: any[], employees: any[]) => {
+    const workbook = new ExcelJS.Workbook();
+    const sheet = workbook.addWorksheet('Layout por Modelo');
+
+    sheet.columns = [
+        { header: 'Posto de Trabalho', key: 'posto', width: 30 },
+        { header: 'ID do Posto', key: 'posto_id', width: 15 },
+        { header: 'Colaboradores Habilitados', key: 'colaboradores', width: 60 }
+    ];
+
+    // Style Header
+    sheet.getRow(1).eachCell(cell => { cell.style = commonHeaderStyle as any; });
+
+    const modelWks = workstations.filter(w => w.modelName === model);
+
+    modelWks.forEach(wks => {
+        const habilitados = employees.filter(e => e.workstations && e.workstations.some((w: any) => w.id === wks.id));
+        const row = sheet.addRow({
+            posto: wks.name,
+            posto_id: wks.id,
+            colaboradores: habilitados.length > 0 ? habilitados.map(e => `${e.fullName} (${e.matricula})`).join(', ') : 'Nenhum'
+        });
+        row.eachCell(cell => { cell.style = commonDataStyle as any; });
+    });
+
+    const buffer = await workbook.xlsx.writeBuffer();
+    const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+    saveAs(blob, `LAYOUT_MODELO_${model.replace(/[^a-z0-9]/gi, '_')}.xlsx`);
+};
+
+export const exportWorkstationsByModel = async (workstations: any[]) => {
+    const workbook = new ExcelJS.Workbook();
+    const sheet = workbook.addWorksheet('Postos de Trabalho');
+
+    sheet.columns = [
+        { header: 'Modelo', key: 'modelo', width: 20 },
+        { header: 'ID', key: 'id', width: 10 },
+        { header: 'Posto de Trabalho', key: 'posto', width: 30 },
+        { header: 'Pessoas Necessárias', key: 'pessoas', width: 20 }
+    ];
+
+    sheet.getRow(1).eachCell(cell => { cell.style = commonHeaderStyle as any; });
+
+    // Grouping workstations by model
+    const sortedWks = [...workstations].sort((a, b) => a.modelName.localeCompare(b.modelName));
+
+    sortedWks.forEach(wks => {
+        const row = sheet.addRow({
+            modelo: wks.modelName,
+            id: wks.id,
+            posto: wks.name,
+            pessoas: wks.peopleNeeded
+        });
+        row.eachCell(cell => { cell.style = commonDataStyle as any; });
+    });
+
+    const buffer = await workbook.xlsx.writeBuffer();
+    const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+    saveAs(blob, `POSTOS_DE_TRABALHO.xlsx`);
+};
+
