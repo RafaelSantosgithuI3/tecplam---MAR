@@ -82,6 +82,9 @@ app.post('/api/login', async (req, res) => {
 app.post('/api/register', async (req, res) => {
     const { matricula, name, role, shift, email, password } = req.body;
     try {
+        const existing = await prisma.user.findUnique({ where: { matricula: String(matricula) } });
+        if (existing) return res.status(400).json({ error: "Erro: Matrícula já cadastrada no sistema (Ativa ou Inativa)." });
+
         const hash = await bcrypt.hash(password, SALT_ROUNDS);
         await prisma.user.create({
             data: {
@@ -1125,14 +1128,7 @@ const setCustomCacheControl = (res, path) => {
     }
 };
 
-app.use(express.static(distPath, {
-    setHeaders: setCustomCacheControl
-}));
-app.get('*', (req, res) => {
-    const indexFile = path.join(distPath, 'index.html');
-    if (fs.existsSync(indexFile)) res.sendFile(indexFile);
-    else res.send('Frontend não buildado (npm run build).');
-});
+
 
 function getLocalIp() {
     const interfaces = os.networkInterfaces();
@@ -1157,11 +1153,17 @@ app.get('/api/employees', async (req, res) => {
 
 app.post('/api/employees', async (req, res) => {
     try {
-        const { matricula, photo, fullName, shift, role, sector, superiorId, idlSt, type, status, address, addressNum, whatsapp } = req.body;
+        const { matricula, photo, fullName, shift, role, sector, superiorId, idlSt, type, status, address, addressNum, whatsapp, gloveSize, gloveType, gloveExchanges, isEdit } = req.body;
+
+        if (!isEdit) {
+            const existing = await prisma.employee.findUnique({ where: { matricula: String(matricula) } });
+            if (existing) return res.status(400).json({ error: "Erro: Matrícula já cadastrada no sistema (Ativa ou Inativa)." });
+        }
+
         const employee = await prisma.employee.upsert({
             where: { matricula: String(matricula) },
-            update: { photo, fullName, shift, role, sector, superiorId, idlSt, type, status, address, addressNum, whatsapp },
-            create: { matricula: String(matricula), photo, fullName, shift, role, sector, superiorId, idlSt, type, status, address, addressNum, whatsapp }
+            update: { photo, fullName, shift, role, sector, superiorId, idlSt, type, status, address, addressNum, whatsapp, gloveSize, gloveType, gloveExchanges: gloveExchanges ? Number(gloveExchanges) : null },
+            create: { matricula: String(matricula), photo, fullName, shift, role, sector, superiorId, idlSt, type, status, address, addressNum, whatsapp, gloveSize, gloveType, gloveExchanges: gloveExchanges ? Number(gloveExchanges) : null }
         });
         res.json({ message: "Salvo com sucesso", employee });
     } catch (e) {
@@ -1170,21 +1172,38 @@ app.post('/api/employees', async (req, res) => {
     }
 });
 
-app.get('/api/employees/:matricula', async (req, res) => {
+app.get('/api/employees/search/:matricula', async (req, res) => {
     try {
         const queryMatricula = String(req.params.matricula).trim().toUpperCase();
 
-        const allEmployees = await prisma.employee.findMany({
+        const employee = await prisma.employee.findFirst({
+            where: { matricula: queryMatricula },
             include: { attendanceLogs: true }
         });
-
-        const employee = allEmployees.find(e =>
-            String(e.matricula).trim().toUpperCase() === queryMatricula
-        );
 
         if (!employee) return res.status(404).json({ error: "Colaborador não encontrado" });
         res.json(employee);
     } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+app.put('/api/employees/:matricula/deactivate', async (req, res) => {
+    try {
+        const mat = String(req.params.matricula).trim();
+        await prisma.$transaction(async (tx) => {
+            const emp = await tx.employee.findUnique({ where: { matricula: mat } });
+            if (emp) {
+                await tx.employee.update({ where: { matricula: mat }, data: { status: 'INATIVO' } });
+            }
+            const user = await tx.user.findUnique({ where: { matricula: mat } });
+            if (user) {
+                await tx.user.update({ where: { matricula: mat }, data: { status: 'INATIVO' } });
+            }
+        });
+        res.json({ message: "Desligado com sucesso" });
+    } catch (e) {
+        console.error("Deactivate Error:", e);
         res.status(500).json({ error: e.message });
     }
 });
@@ -1217,7 +1236,7 @@ app.post('/api/attendance', async (req, res) => {
     try {
         const { employeeId, date, type, delayMinutes, loggedById } = req.body;
         const log = await prisma.attendanceLog.create({
-            data: { employeeId: String(employeeId), date: new Date(date), type, delayMinutes, loggedById }
+            data: { employeeId: String(employeeId), date: String(date), type, delayMinutes: delayMinutes ? String(delayMinutes) : null, loggedById }
         });
         res.json({ message: "Apontamento salvo", log });
     } catch (e) {
@@ -1414,6 +1433,15 @@ loadScrapCache().then(() => {
         } catch (e) {
             res.status(500).json({ error: "Erro ao vincular scrap: " + e.message });
         }
+    });
+
+    app.use(express.static(distPath, {
+        setHeaders: setCustomCacheControl
+    }));
+    app.get('*', (req, res) => {
+        const indexFile = path.join(distPath, 'index.html');
+        if (fs.existsSync(indexFile)) res.sendFile(indexFile);
+        else res.send('Frontend não buildado (npm run build).');
     });
 
     try {

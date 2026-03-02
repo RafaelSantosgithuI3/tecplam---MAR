@@ -1483,3 +1483,51 @@ export const exportWorkstationsByModel = async (workstations: any[]) => {
     saveAs(blob, `POSTOS_DE_TRABALHO.xlsx`);
 };
 
+export const exportGloveControl = async (displayList: any[], leaderName: string) => {
+    const workbook = new ExcelJS.Workbook();
+    const sheet = workbook.addWorksheet('Luvas - Equipe');
+
+    sheet.columns = [
+        { header: 'Matrícula', key: 'matricula', width: 15 },
+        { header: 'Nome', key: 'nome', width: 30 },
+        { header: 'Função', key: 'funcao', width: 25 },
+        { header: 'Tamanho', key: 'tamanho', width: 15 },
+        { header: 'Tipo', key: 'tipo', width: 15 },
+        { header: 'Trocas/Sem', key: 'trocas', width: 15 }
+    ];
+
+    const headerRow = sheet.getRow(1);
+    headerRow.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1E3A8A' } };
+    headerRow.font = { color: { argb: 'FFFFFFFF' }, bold: true };
+    headerRow.alignment = { horizontal: 'center' };
+
+    let totalLuvas = 0;
+
+    displayList.forEach(e => {
+        let sizeVal = e.gloveSize || '';
+        if (e.gloveType === 'Dedinho' && sizeVal) {
+            sizeVal = `${sizeVal}(D)`;
+        }
+
+        const trocas = Number(e.gloveExchanges) || 0;
+        totalLuvas += trocas;
+
+        sheet.addRow({
+            matricula: e.matricula,
+            nome: e.fullName,
+            funcao: e.role,
+            tamanho: sizeVal,
+            tipo: e.gloveType || '',
+            trocas: trocas
+        });
+    });
+
+    const dashRow = sheet.addRow(['', '', '', '', 'TOTAL LUVAS:', totalLuvas]);
+    dashRow.font = { bold: true };
+    dashRow.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFEF08A' } }; // yellow light
+
+    const buffer = await workbook.xlsx.writeBuffer();
+    const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+    saveAs(blob, `controle_luvas_${leaderName}.xlsx`);
+};
+

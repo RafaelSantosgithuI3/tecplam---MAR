@@ -243,7 +243,8 @@ const ScrapForm = ({ users, models, stations, lines, materials, onSuccess, curre
         responsible: '',
         reason: '',
         station: '',
-        qrCode: ''
+        qrCode: '',
+        immediateAction: ''
     };
 
     const [formData, setFormData] = useState<Partial<ScrapData>>(initialState);
@@ -511,7 +512,7 @@ const ScrapForm = ({ users, models, stations, lines, materials, onSuccess, curre
                     <Input label="Responsável" value={formData.responsible} onChange={e => setFormData({ ...formData, responsible: e.target.value })} />
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                     <div>
                         <label className="block text-xs font-medium text-gray-500 dark:text-zinc-400 mb-1.5 uppercase">Motivo Detalhado</label>
                         <textarea
@@ -519,6 +520,15 @@ const ScrapForm = ({ users, models, stations, lines, materials, onSuccess, curre
                             value={formData.reason || ''}
                             onChange={e => setFormData({ ...formData, reason: e.target.value })}
                             placeholder="Descreva..."
+                        />
+                    </div>
+                    <div>
+                        <label className="block text-xs font-medium text-gray-500 dark:text-zinc-400 mb-1.5 uppercase">Ação Imediata</label>
+                        <textarea
+                            className="w-full bg-gray-50 dark:bg-zinc-950 border border-gray-300 dark:border-zinc-800 rounded-lg p-3 text-sm outline-none focus:ring-2 focus:ring-blue-600 min-h-[80px] text-gray-900 dark:text-zinc-100 placeholder-gray-400 dark:placeholder-zinc-600 transition-colors"
+                            value={formData.immediateAction || ''}
+                            onChange={e => setFormData({ ...formData, immediateAction: e.target.value })}
+                            placeholder="Ação imediata tomada..."
                         />
                     </div>
                     <div>

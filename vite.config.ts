@@ -7,13 +7,13 @@ export default defineConfig({
   build: {
     outDir: 'dist',
     emptyOutDir: true,
-    chunkSizeWarningLimit: 1000,
+    chunkSizeWarningLimit: 3000,
     rollupOptions: {
       output: {
         manualChunks: {
           vendor: ['react', 'react-dom'],
           lucide: ['lucide-react'],
-          xlsx: ['exceljs', 'file-saver']
+          xlsx: ['exceljs', 'file-saver', 'xlsx']
         }
       }
     }

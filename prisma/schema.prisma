@@ -15,6 +15,7 @@ model User {
   email     String?
   password  String?
   isAdmin   Boolean @default(false) @map("is_admin")
+  status    String? @default("ATIVO")
 
   @@map("users")
 }
@@ -258,6 +259,9 @@ model Employee {
   addressNum       String?
   whatsapp         String?
   previousLeaders  String?
+  gloveSize        String?
+  gloveType        String?
+  gloveExchanges   Int?
 
   m1               String?
   pm1              String?
@@ -308,9 +312,9 @@ model Workstation {
 model AttendanceLog {
   id             Int          @id @default(autoincrement())
   employeeId     String
-  date           DateTime
+  date           String
   type           String
-  delayMinutes   Int?
+  delayMinutes   String?
   loggedById     String
 
   employee       Employee     @relation(fields: [employeeId], references: [matricula])
