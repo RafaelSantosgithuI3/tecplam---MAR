@@ -1327,6 +1327,15 @@ export const generateBoxLabels = async (boxId: number | string, scraps: any[], e
         }
     };
 
+    // Preservar imagens do template no outputSheet
+    templateSheet.getImages().forEach((img: any) => {
+        const imageId = outputWorkbook.addImage({
+            buffer: workbook.getImage(img.imageId).buffer,
+            extension: workbook.getImage(img.imageId).extension as any,
+        });
+        outputSheet.addImage(imageId, img.range);
+    });
+
     const copyBlock = (startRowOutput: number, data: any) => {
         const BLOCK_SIZE = 15;
         for (let r = 1; r <= BLOCK_SIZE; r++) {
@@ -1339,23 +1348,63 @@ export const generateBoxLabels = async (boxId: number | string, scraps: any[], e
             });
         }
 
-        const mergedRows = [3, 5, 6, 7, 8, 9, 10, 11, 13];
-        mergedRows.forEach(rowOffset => {
-            const rowOutput = startRowOutput + rowOffset - 1;
-            try { outputSheet.mergeCells(`B${rowOutput}:F${rowOutput}`); } catch (e) { }
-        });
-
         const dateStr = new Date().toLocaleDateString('pt-BR');
 
+        const mergeSafe = (r: number) => {
+            const rowOutput = startRowOutput + r - 1;
+            try { outputSheet.mergeCells(`B${rowOutput}:F${rowOutput}`); } catch (e) { }
+        };
+
+        // Linha 2: merge A2:F2 com texto em A2 (preserva imagem no template)
+        const row2Abs = startRowOutput + 1;
+        try { outputSheet.mergeCells(`A${row2Abs}:F${row2Abs}`); } catch (e) { }
+        outputSheet.getCell(`A${row2Abs}`).value = 'PLACA DE IDENTIFICAÇÃO';
+
+        // Correção da Planta (Linha 3 -> Célula B3) e Mesclagem B3:F3
+        mergeSafe(3);
         outputSheet.getCell(`B${startRowOutput + 2}`).value = data.plant;
-        outputSheet.getCell(`B${startRowOutput + 4}`).value = extraParams.type === 'BATERIA' ? (extraParams.volumes || '1') : '1';
-        outputSheet.getCell(`B${startRowOutput + 5}`).value = data.model;
-        outputSheet.getCell(`B${startRowOutput + 6}`).value = data.code;
-        outputSheet.getCell(`B${startRowOutput + 7}`).value = data.desc;
-        outputSheet.getCell(`B${startRowOutput + 8}`).value = data.qty;
-        outputSheet.getCell(`B${startRowOutput + 9}`).value = data.user;
-        outputSheet.getCell(`B${startRowOutput + 10}`).value = extraParams.dynamicParam || '-';
+
+        // Linha 4: Mesclar estritamente de B4 até F4 (B4:F4)
+        mergeSafe(4);
+
+        // Deslocamento de Dados (Linhas 4 a 9 para 5 a 10) e Mesclagens correspondentes
+        [5, 6, 7, 8, 9, 10, 13].forEach(rowOffset => mergeSafe(rowOffset));
+
+        outputSheet.getCell(`B${startRowOutput + 4}`).value = extraParams.type === 'BATERIA' ? (extraParams.volumes || '1') : '1'; // Era na linha 4, agora 5
+        outputSheet.getCell(`B${startRowOutput + 5}`).value = data.model; // Era na linha 5, agora 6
+        outputSheet.getCell(`B${startRowOutput + 6}`).value = data.code; // Era na linha 6, agora 7
+        outputSheet.getCell(`B${startRowOutput + 7}`).value = data.desc; // Era na linha 7, agora 8
+        outputSheet.getCell(`B${startRowOutput + 8}`).value = data.qty; // Era na linha 8, agora 9
+
+        // Linha 10: Injetar usuário acionando
+        outputSheet.getCell(`B${startRowOutput + 9}`).value = extraParams.userName || 'Sistema';
+
+        // Manutenção do Rodapé (Linhas 11, 12, 13, 14) 
+        mergeSafe(11);
+        outputSheet.getCell(`B${startRowOutput + 10}`).value = extraParams.para || '';
+
+        mergeSafe(12);
+        outputSheet.getCell(`B${startRowOutput + 11}`).value = extraParams.statusMaterial || 'SCRAP';
+
         outputSheet.getCell(`B${startRowOutput + 12}`).value = dateStr;
+
+        // Linha 14: merge B14:F14 e injeta data (ou conteúdo do template)
+        const row14Abs = startRowOutput + 13;
+        try { outputSheet.mergeCells(`B${row14Abs}:F${row14Abs}`); } catch (e) { }
+        outputSheet.getCell(`B${row14Abs}`).value = templateSheet.getCell('B14').value;
+
+        // Apply borders iteratively
+        for (let r = 1; r <= BLOCK_SIZE; r++) {
+            const destRow = outputSheet.getRow(startRowOutput + r - 1);
+            destRow.eachCell({ includeEmpty: true }, (cell) => {
+                cell.border = {
+                    top: { style: 'thin' },
+                    left: { style: 'thin' },
+                    bottom: { style: 'thin' },
+                    right: { style: 'thin' }
+                };
+            });
+        }
     };
 
     templateSheet.columns.forEach((col, i) => {

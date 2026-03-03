@@ -1,11 +1,12 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Camera, Box, Package, Plus, Search, FileText, CheckCircle2 } from 'lucide-react';
+import { Camera, Box, Package, Plus, Search, FileText, CheckCircle2, Trash2, X } from 'lucide-react';
 import jsQR from 'jsqr';
 import { Card } from './Card';
 import { Button } from './Button';
 import { Input } from './Input';
-import { getBoxes, createBox, closeBox, associateBoxNF, linkScrapToBox } from '../services/boxService';
+import { getBoxes, createBox, closeBox, associateBoxNF, linkScrapToBox, deleteBox, reopenBox } from '../services/boxService';
 import { exportExecutiveReport, generateBoxLabels } from '../services/excelService';
+import { apiFetch } from '../services/networkConfig';
 
 export const QRScannerInput = ({ onScan }: { onScan: (qrCode: string, extractedCode: string) => void }) => {
     const [scanned, setScanned] = useState('');
@@ -63,24 +64,75 @@ export const ScrapBoxMount = ({ currentUser, onUpdate }: any) => {
 
     const formatCurrency = (val: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(val || 0);
 
+    const [showCreateModal, setShowCreateModal] = useState(false);
+    const [newBoxType, setNewBoxType] = useState('REAR');
+
+    // Modal de Pré-Impressão
+    const [showLabelModal, setShowLabelModal] = useState(false);
+    const [labelPara, setLabelPara] = useState('');
+    const [labelStatus, setLabelStatus] = useState('SCRAP');
+    const [selectedBox, setSelectedBox] = useState<any>(null);
+
     const handleCreateBox = async () => {
-        const type = prompt("Digite o Tipo da Caixa\n(REAR, FRONT, BATERIA, MIUDEZA(S)):");
-        if (type && type.trim() !== '') {
-            await createBox(type.toUpperCase());
+        setShowCreateModal(true);
+    };
+
+    const handleConfirmCreate = async () => {
+        if (!newBoxType) return;
+        await createBox(newBoxType);
+        setShowCreateModal(false);
+        setNewBoxType('REAR');
+        loadBoxes();
+    };
+
+    const handleRemoveScrap = async (boxId: number, scrapId: any) => {
+        if (!confirm('Remover este scrap da caixa? Ele ficará disponível para ser bipado novamente.')) return;
+        try {
+            await apiFetch(`/boxes/${boxId}/scraps/${scrapId}`, { method: 'DELETE' });
             loadBoxes();
+            if (onUpdate) onUpdate();
+        } catch (e: any) {
+            alert(e.message || 'Erro ao remover scrap.');
         }
     };
 
-    const handleGenerateIdent = async (box: any) => {
-        const extra = { type: box.type, volumes: '1', dynamicParam: '-' };
+    const handleGenerateIdent = (box: any) => {
+        setSelectedBox(box);
+        setShowLabelModal(true);
+    };
+
+    const confirmGenerateIdent = async () => {
+        if (!selectedBox) return;
+        const box = selectedBox;
+        setLoading(true);
+
+        const extra = {
+            type: box.type,
+            volumes: '1',
+            dynamicParam: '-',
+            para: labelPara,
+            statusMaterial: labelStatus,
+            userName: currentUser?.name || 'Sistema'
+        };
+
         if (box.type === 'BATERIA' || box.type === 'BATERIA RMA' || box.type === 'BATERIA SCRAP') {
             extra.volumes = prompt('Quantidade de volumes da bateria:') || '1';
         }
-        await generateBoxLabels(box.id, box.scraps, extra);
-        await closeBox(box.id);
-        alert('Placa de identificação gerada e caixa vinculada ao status IDENTIFICADA.');
-        loadBoxes();
-        if (onUpdate) onUpdate();
+
+        try {
+            await generateBoxLabels(box.id, box.scraps, extra);
+            await closeBox(box.id);
+            alert('Placa de identificação gerada e caixa vinculada ao status IDENTIFICADA.');
+            setShowLabelModal(false);
+            setLabelPara('');
+            setLabelStatus('SCRAP');
+            setSelectedBox(null);
+            loadBoxes();
+            if (onUpdate) onUpdate();
+        } catch (e: any) {
+            alert(e.message || 'Erro ao gerar placa.');
+            setLoading(false);
+        }
     };
 
     const handleBindQR = async (boxId: number, qr: string) => {
@@ -101,6 +153,71 @@ export const ScrapBoxMount = ({ currentUser, onUpdate }: any) => {
                 <h2 className="text-xl font-bold">Montar Caixas (Abertas)</h2>
                 <Button onClick={handleCreateBox}><Plus size={16} /> Nova Caixa</Button>
             </div>
+
+            {/* MODAL CRIAR CAIXA */}
+            {showCreateModal && (
+                <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={e => { if (e.target === e.currentTarget) setShowCreateModal(false); }}>
+                    <Card className="w-full max-w-sm space-y-4">
+                        <div className="flex justify-between items-center border-b border-slate-100 dark:border-zinc-800 pb-3">
+                            <h3 className="font-bold text-lg">Nova Caixa</h3>
+                            <button onClick={() => setShowCreateModal(false)} className="text-slate-400 hover:text-slate-700 dark:hover:text-zinc-200 bg-slate-100 dark:bg-zinc-800 rounded-full w-8 h-8 flex items-center justify-center"><X size={16} /></button>
+                        </div>
+                        <div className="flex flex-col gap-2">
+                            <label className="text-sm font-bold text-slate-700 dark:text-zinc-300">Tipo da Caixa</label>
+                            <select
+                                className="w-full bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 rounded-xl px-4 py-3 text-slate-900 dark:text-zinc-100 font-medium"
+                                value={newBoxType}
+                                onChange={e => setNewBoxType(e.target.value)}
+                            >
+                                <option value="REAR">REAR</option>
+                                <option value="FRONT/OCTA">FRONT/OCTA</option>
+                                <option value="BATERIA">BATERIA</option>
+                                <option value="MIUDEZA(S)">MIUDEZA(S)</option>
+                            </select>
+                            <p className="text-xs text-slate-500 dark:text-zinc-500 mt-1">Somente scraps do mesmo tipo poderão ser bipados nesta caixa.</p>
+                        </div>
+                        <div className="flex gap-2 pt-2">
+                            <Button variant="secondary" className="flex-1" onClick={() => setShowCreateModal(false)}>Cancelar</Button>
+                            <Button className="flex-1" onClick={handleConfirmCreate}>Criar Caixa</Button>
+                        </div>
+                    </Card>
+                </div>
+            )}
+
+            {/* MODAL PRÉ-IMPRESSÃO (PLACA DE IDENTIFICAÇÃO) */}
+            {showLabelModal && (
+                <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={e => { if (e.target === e.currentTarget) setShowLabelModal(false); }}>
+                    <Card className="w-full max-w-sm space-y-4">
+                        <div className="flex justify-between items-center border-b border-slate-100 dark:border-zinc-800 pb-3">
+                            <h3 className="font-bold text-lg">Gerar Placa de Identificação</h3>
+                            <button onClick={() => setShowLabelModal(false)} className="text-slate-400 hover:text-slate-700 dark:hover:text-zinc-200 bg-slate-100 dark:bg-zinc-800 rounded-full w-8 h-8 flex items-center justify-center"><X size={16} /></button>
+                        </div>
+                        <div className="flex flex-col gap-4">
+                            <Input
+                                label="PARA (Destinatário/Setor)"
+                                value={labelPara}
+                                onChange={e => setLabelPara(e.target.value)}
+                                placeholder="Ex: Qualidade, Descarte..."
+                            />
+                            <div className="flex flex-col gap-2">
+                                <label className="text-sm font-bold text-slate-700 dark:text-zinc-300">Status do Material</label>
+                                <select
+                                    className="w-full bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 rounded-xl px-4 py-3 text-slate-900 dark:text-zinc-100 font-medium"
+                                    value={labelStatus}
+                                    onChange={e => setLabelStatus(e.target.value)}
+                                >
+                                    <option value="SCRAP">SCRAP</option>
+                                    <option value="RMA">RMA</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div className="flex gap-2 pt-2 mt-2">
+                            <Button variant="secondary" className="flex-1" onClick={() => setShowLabelModal(false)}>Cancelar</Button>
+                            <Button className="flex-1" onClick={confirmGenerateIdent}>Confirmar</Button>
+                        </div>
+                    </Card>
+                </div>
+            )}
 
             {boxes.length === 0 && (
                 <Card className="text-center p-8 bg-zinc-50 dark:bg-zinc-900 border-dashed">
@@ -138,22 +255,32 @@ export const ScrapBoxMount = ({ currentUser, onUpdate }: any) => {
                                             <th className="px-4 py-3">Modelo</th>
                                             <th className="px-4 py-3">Item</th>
                                             <th className="px-4 py-3">Qtd</th>
-                                            <th className="px-4 py-3 text-right">Valor ToTal</th>
+                                            <th className="px-4 py-3 text-right">Valor Total</th>
+                                            <th className="px-4 py-3"></th>
                                         </tr>
                                     </thead>
                                     <tbody className="divide-y divide-zinc-200 dark:divide-zinc-800">
                                         {box.scraps && box.scraps.length > 0 ? box.scraps.map((s: any) => (
-                                            <tr key={s.id}>
+                                            <tr key={s.id} className="hover:bg-red-50/30 dark:hover:bg-red-900/10 transition-colors">
                                                 <td className="px-4 py-2 font-mono text-zinc-600 dark:text-zinc-400">{s.code || '-'}</td>
                                                 <td className="px-4 py-2">{new Date(s.date).toLocaleDateString()}</td>
                                                 <td className="px-4 py-2">{s.model}</td>
                                                 <td className="px-4 py-2">{s.item}</td>
                                                 <td className="px-4 py-2">{s.qty}</td>
                                                 <td className="px-4 py-2 text-right font-mono text-red-500">{formatCurrency(s.totalValue)}</td>
+                                                <td className="px-4 py-2 text-right">
+                                                    <button
+                                                        onClick={() => handleRemoveScrap(box.id, s.id)}
+                                                        title="Remover da caixa"
+                                                        className="text-red-400 hover:text-red-600 dark:hover:text-red-400 transition-colors p-1 rounded hover:bg-red-50 dark:hover:bg-red-900/20"
+                                                    >
+                                                        <Trash2 size={15} />
+                                                    </button>
+                                                </td>
                                             </tr>
                                         )) : (
                                             <tr>
-                                                <td colSpan={6} className="px-4 py-6 text-center text-zinc-400">Nenhum scrap bipado para esta caixa.</td>
+                                                <td colSpan={7} className="px-4 py-6 text-center text-zinc-400">Nenhum scrap bipado para esta caixa.</td>
                                             </tr>
                                         )}
                                     </tbody>
@@ -172,6 +299,14 @@ export const ScrapBoxMount = ({ currentUser, onUpdate }: any) => {
                                     </div>
                                 </div>
                                 <div className="flex gap-2 w-full md:w-auto">
+                                    <Button variant="ghost" onClick={async () => {
+                                        if (!confirm(`Excluir caixa #${box.id} permanentemente? Os scraps serão desvinculados.`)) return;
+                                        try {
+                                            await deleteBox(box.id);
+                                            loadBoxes();
+                                            if (onUpdate) onUpdate();
+                                        } catch (e: any) { alert(e.message || 'Erro ao excluir caixa.'); }
+                                    }} className="w-full md:w-auto text-red-500 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-900/20">Excluir Caixa</Button>
                                     <Button variant="ghost" onClick={() => { }} className="w-full md:w-auto">Continuar Depois</Button>
                                     <Button onClick={() => handleGenerateIdent(box)} className="w-full md:w-auto min-w-[200px]" disabled={totalItens === 0}>Gerar Identificação e Fechar</Button>
                                 </div>
@@ -250,9 +385,21 @@ export const ScrapBoxIdentified = ({ currentUser, onUpdate }: any) => {
                                         <p className="text-xs text-zinc-400 mt-2">Fechada em: {new Date(box.closedAt).toLocaleDateString()}</p>
                                     </div>
                                 </div>
-                                <Button onClick={() => handleAssociate(box.id)} className="w-full mt-auto" variant="outline">
-                                    <FileText size={16} className="mr-2" /> Associar N.F.
-                                </Button>
+                                <div className="flex flex-col gap-2">
+                                    <Button onClick={() => handleAssociate(box.id)} className="w-full mt-auto" variant="outline">
+                                        <FileText size={16} className="mr-2" /> Associar N.F.
+                                    </Button>
+                                    <Button onClick={async () => {
+                                        if (!confirm(`Voltar caixa #${box.id} para edição? A placa será invalidada.`)) return;
+                                        try {
+                                            await reopenBox(box.id);
+                                            loadBoxes();
+                                            if (onUpdate) onUpdate();
+                                        } catch (e: any) { alert(e.message || 'Erro ao reabrir caixa.'); }
+                                    }} className="w-full" variant="ghost">
+                                        Voltar para Edição
+                                    </Button>
+                                </div>
                             </Card>
                         )
                     })}

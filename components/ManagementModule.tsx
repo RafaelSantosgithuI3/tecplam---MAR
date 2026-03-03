@@ -15,7 +15,7 @@ interface ManagementModuleProps {
     onBack: () => void;
 }
 
-type Tab = 'LINES' | 'ROLES' | 'MODELS' | 'STATIONS' | 'STATIONS_LAYOUT' | 'MATERIALS';
+type Tab = 'LINES' | 'ROLES' | 'MODELS' | 'STATIONS' | 'STATIONS_LAYOUT' | 'MATERIALS' | 'DESLIGAMENTO';
 
 export const ManagementModule: React.FC<ManagementModuleProps> = ({ onBack }) => {
     const [tab, setTab] = useState<Tab>('LINES');
@@ -34,6 +34,11 @@ export const ManagementModule: React.FC<ManagementModuleProps> = ({ onBack }) =>
     const [newSku, setNewSku] = useState('');
     const [isEditing, setIsEditing] = useState<ConfigModel | null>(null);
     const [search, setSearch] = useState('');
+
+    // DESLIGAMENTO state
+    const [deactivateSearch, setDeactivateSearch] = useState('');
+    const [deactivatePreview, setDeactivatePreview] = useState<any>(null);
+    const [allEmployees, setAllEmployees] = useState<any[]>([]);
 
     useEffect(() => {
         loadData();
@@ -54,6 +59,12 @@ export const ManagementModule: React.FC<ManagementModuleProps> = ({ onBack }) =>
                     setSelectedLayoutModel(_models[0].name);
                 }
             }
+        }
+        if (tab === 'DESLIGAMENTO') {
+            try {
+                const emps = await apiFetch('/employees');
+                setAllEmployees(emps || []);
+            } catch (e) { setAllEmployees([]); }
         }
     };
 
@@ -326,6 +337,92 @@ export const ManagementModule: React.FC<ManagementModuleProps> = ({ onBack }) =>
         );
     };
 
+    const handleSearchDeactivate = () => {
+        const found = allEmployees.find(e =>
+            e.matricula?.includes(deactivateSearch) ||
+            e.fullName?.toLowerCase().includes(deactivateSearch.toLowerCase())
+        );
+        if (found) setDeactivatePreview(found);
+        else alert('Colaborador não encontrado.');
+    };
+
+    const handleDeactivate = async () => {
+        if (!deactivatePreview) return;
+        if (!window.confirm(`TEM CERTEZA QUE DESEJA DESLIGAR ${deactivatePreview.fullName}? O acesso ao sistema será bloqueado imediatamente.`)) return;
+        try {
+            await apiFetch(`/employees/${deactivatePreview.matricula}/deactivate`, { method: 'PUT' });
+            alert('Colaborador desligado com sucesso! Acesso bloqueado.');
+            setDeactivatePreview(null);
+            setDeactivateSearch('');
+            loadData();
+        } catch (e) {
+            alert('Erro ao desligar o colaborador.');
+        }
+    };
+
+    const renderDesligamento = () => (
+        <Card className="flex flex-col gap-4">
+            <h3 className="font-bold text-red-600 dark:text-red-400 flex items-center gap-2">
+                <Shield size={18} /> Processo de Desligamento
+            </h3>
+            <p className="text-sm text-slate-500">
+                Localize o colaborador pela matrícula ou nome. Ao confirmar, o status do Employee será marcado como INATIVO e o login do usuário será bloqueado imediatamente.
+            </p>
+            <div className="flex gap-2 items-end">
+                <div className="flex-1">
+                    <input
+                        className="w-full bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 rounded-xl px-4 py-3 text-slate-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-500"
+                        placeholder="Matrícula ou Nome..."
+                        value={deactivateSearch}
+                        onChange={e => setDeactivateSearch(e.target.value)}
+                        onKeyDown={e => e.key === 'Enter' && handleSearchDeactivate()}
+                    />
+                </div>
+                <Button onClick={handleSearchDeactivate}><Search size={16} /> Buscar</Button>
+            </div>
+            {deactivatePreview && (
+                <div className="p-4 bg-red-50 dark:bg-red-900/10 rounded-xl flex items-center justify-between border border-red-200 dark:border-red-900/40">
+                    <div className="flex flex-col gap-1">
+                        <p className="font-bold text-slate-800 dark:text-zinc-100">{deactivatePreview.fullName}</p>
+                        <p className="text-sm text-slate-500">Matrícula: <span className="font-mono font-bold">{deactivatePreview.matricula}</span></p>
+                        <p className="text-sm text-slate-500">Função: {deactivatePreview.role}</p>
+                        <p className="text-sm text-slate-500">Status Atual: <span className={`font-bold ${deactivatePreview.status === 'INATIVO' ? 'text-red-500' : 'text-emerald-500'}`}>{deactivatePreview.status || 'ATIVO'}</span></p>
+                    </div>
+                    <Button variant="danger" onClick={handleDeactivate}>Desligar Colaborador</Button>
+                </div>
+            )}
+            {allEmployees.length > 0 && (
+                <div className="mt-2">
+                    <p className="text-xs font-bold text-slate-500 uppercase tracking-wide mb-2">Colaboradores Inativos</p>
+                    <div className="bg-white dark:bg-zinc-900 rounded-xl border border-slate-200 dark:border-zinc-800 overflow-hidden text-sm max-h-64 overflow-y-auto">
+                        {allEmployees.filter(e => e.status === 'INATIVO').length === 0 ? (
+                            <p className="p-4 text-slate-400">Nenhum colaborador desligado.</p>
+                        ) : (
+                            <table className="w-full text-left">
+                                <thead className="bg-slate-50 dark:bg-zinc-950 text-slate-500">
+                                    <tr>
+                                        <th className="p-3">Matrícula</th>
+                                        <th className="p-3">Nome</th>
+                                        <th className="p-3">Função</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-slate-200 dark:divide-zinc-800">
+                                    {allEmployees.filter(e => e.status === 'INATIVO').map(e => (
+                                        <tr key={e.matricula} className="bg-red-50/40 dark:bg-red-900/10">
+                                            <td className="p-3 font-mono text-xs">{e.matricula}</td>
+                                            <td className="p-3">{e.fullName}</td>
+                                            <td className="p-3 text-slate-500">{e.role}</td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        )}
+                    </div>
+                </div>
+            )}
+        </Card>
+    );
+
     return (
         <div className="w-full max-w-7xl mx-auto space-y-6">
             <header className="flex flex-col gap-4 mb-4 md:mb-8 pb-4 md:pb-6 border-b border-zinc-200 dark:border-zinc-800">
@@ -342,6 +439,7 @@ export const ManagementModule: React.FC<ManagementModuleProps> = ({ onBack }) =>
                     <Button variant={tab === 'STATIONS' ? 'primary' : 'secondary'} onClick={() => setTab('STATIONS')}><List size={16} /> Postos (Antigo)</Button>
                     <Button variant={tab === 'STATIONS_LAYOUT' ? 'primary' : 'secondary'} onClick={() => setTab('STATIONS_LAYOUT')}><List size={16} /> Postos (Layout)</Button>
                     <Button variant={tab === 'MATERIALS' ? 'primary' : 'secondary'} onClick={() => setTab('MATERIALS')}><Plus size={16} /> Itens de Scrap</Button>
+                    <Button variant={tab === 'DESLIGAMENTO' ? 'primary' : 'secondary'} onClick={() => setTab('DESLIGAMENTO')}><Shield size={16} /> Desligamento</Button>
                 </div>
             </header>
 
@@ -351,6 +449,7 @@ export const ManagementModule: React.FC<ManagementModuleProps> = ({ onBack }) =>
             {tab === 'STATIONS' && renderStations()}
             {tab === 'STATIONS_LAYOUT' && renderStationsLayout()}
             {tab === 'MATERIALS' && <MaterialsManager materials={materials} setMaterials={setMaterials} onRefresh={loadData} />}
+            {tab === 'DESLIGAMENTO' && renderDesligamento()}
         </div>
     );
 };

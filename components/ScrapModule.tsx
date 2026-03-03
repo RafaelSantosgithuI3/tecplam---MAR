@@ -45,7 +45,7 @@ interface ScrapModuleProps {
     initialTab?: Tab;
 }
 
-type Tab = 'FORM' | 'PENDING' | 'HISTORY' | 'OPERATIONAL' | 'MANAGEMENT_ADVANCED' | 'EDIT_DELETE' | 'BOX_MOUNT' | 'BOX_IDENTIFIED' | 'NEW_ADVANCED';
+type Tab = 'FORM' | 'PENDING' | 'HISTORY' | 'OPERATIONAL' | 'MANAGEMENT_ADVANCED' | 'EDIT_DELETE' | 'BOX_MOUNT' | 'BOX_IDENTIFIED' | 'NEW_ADVANCED' | 'CONSULTA';
 
 export const ScrapModule: React.FC<ScrapModuleProps> = ({ currentUser, onBack, initialTab }) => {
     const [activeTab, setActiveTab] = useState<Tab>(initialTab || 'FORM');
@@ -160,6 +160,9 @@ export const ScrapModule: React.FC<ScrapModuleProps> = ({ currentUser, onBack, i
                     <Button variant={activeTab === 'NEW_ADVANCED' ? 'primary' : 'ghost'} onClick={() => setActiveTab('NEW_ADVANCED')} size="sm">
                         <LayoutDashboard size={16} /> Gestão Avançada
                     </Button>
+                    <Button variant={activeTab === 'CONSULTA' ? 'primary' : 'ghost'} onClick={() => setActiveTab('CONSULTA')} size="sm">
+                        <Search size={16} /> Consulta
+                    </Button>
                 </div>
             </div>
 
@@ -182,6 +185,13 @@ export const ScrapModule: React.FC<ScrapModuleProps> = ({ currentUser, onBack, i
                         currentUser={currentUser}
                         onUpdate={refreshScraps}
                         users={users}
+                        lines={lines}
+                        models={models}
+                        categories={SCRAP_ITEMS}
+                        statusOptions={SCRAP_STATUS}
+                        rootCauseOptions={CAUSA_RAIZ_OPTIONS}
+                        materials={materials}
+                        stations={stations}
                     />
                 )}
                 {activeTab === 'HISTORY' && (
@@ -215,6 +225,9 @@ export const ScrapModule: React.FC<ScrapModuleProps> = ({ currentUser, onBack, i
                 )}
                 {activeTab === 'NEW_ADVANCED' && (
                     <NewAdvancedDashboard scraps={scraps} users={users} />
+                )}
+                {activeTab === 'CONSULTA' && (
+                    <ScrapConsulta scraps={scraps} users={users} />
                 )}
             </div>
         </div>
@@ -340,13 +353,25 @@ const ScrapForm = ({ users, models, stations, lines, materials, onSuccess, curre
             responsible: formData.responsible || currentUser.name
         };
 
-        await saveScrap(payload);
-        alert("Scrap lançado com sucesso!");
-        setFormData(initialState);
-        onSuccess();
+        try {
+            await saveScrap(payload);
+            alert("Scrap lançado com sucesso!");
+            setFormData(initialState);
+            onSuccess();
+        } catch (e: any) {
+            const msg = e?.message || e?.error || "Erro ao salvar scrap.";
+            alert(msg);
+        }
     };
 
-    const pqcUsers = users.filter((u: User) => (u.role || '').toUpperCase().includes('PQC'));
+    const normalizeStr = (s: string) => (s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+    const pqcUsers = users.filter((u: User) => u.status !== 'INATIVO' && normalizeStr(u.role).includes('pqc'));
+    const leaderUsers = users.filter((u: User) => u.status !== 'INATIVO' && (
+        normalizeStr(u.role).includes('lider') ||
+        normalizeStr(u.role).includes('supervisor') ||
+        normalizeStr(u.role).includes('coordenador') ||
+        normalizeStr(u.role).includes('tecnico de processo')
+    ));
 
     return (
         <Card className="max-w-6xl mx-auto bg-white/50 dark:bg-zinc-900/50 border-slate-200 dark:border-zinc-800 shadow-sm">
@@ -362,7 +387,7 @@ const ScrapForm = ({ users, models, stations, lines, materials, onSuccess, curre
                             onChange={e => handleLeaderChange(e.target.value)}
                         >
                             <option value="" disabled>Selecione...</option>
-                            {users.filter((u: User) => u.role.includes('Líder') || u.role.includes('Supervisor') || u.role.includes('Coordenador') || u.role.includes('Técnico de processo')).map((u: User) => (
+                            {leaderUsers.map((u: User) => (
                                 <option key={u.matricula} value={u.name}>{u.name}</option>
                             ))}
                         </select>
@@ -552,33 +577,14 @@ const ScrapForm = ({ users, models, stations, lines, materials, onSuccess, curre
     );
 };
 
-const ScrapPending = ({ scraps, currentUser, onUpdate, users }: any) => {
+const ScrapPending = ({ scraps, currentUser, onUpdate, users, lines, models, categories, statusOptions, rootCauseOptions, materials, stations }: any) => {
     const pending = scraps.filter((s: ScrapData) => {
         const isRelated = s.leaderName === currentUser.name || currentUser.isAdmin || currentUser.role.includes('Admin') || currentUser.role.includes('Supervisor') || currentUser.role.includes('Diretor');
         const noCountermeasure = s.countermeasure == null || s.countermeasure.trim() === '';
         return isRelated && noCountermeasure && isCriticalItem(s.item);
     });
 
-    const [selected, setSelected] = useState<ScrapData | null>(null);
-    const [cm, setCm] = useState('');
-    const [reason, setReason] = useState('');
-    const [responsible, setResponsible] = useState('');
-
-    const openModal = (s: ScrapData) => {
-        setSelected(s);
-        setCm(s.countermeasure || '');
-        setReason(s.reason || '');
-        setResponsible(s.responsible || '');
-    };
-
-    const handleSave = async () => {
-        if (selected && selected.id) {
-            if (!cm.trim()) { alert("Contra Medida é obrigatória."); return; }
-            await updateScrap(selected.id, { countermeasure: cm, reason: reason, responsible: responsible });
-            await onUpdate();
-            setSelected(null);
-        }
-    }
+    const [editingScrap, setEditingScrap] = useState<ScrapData | null>(null);
 
     return (
         <div className="space-y-4">
@@ -613,7 +619,7 @@ const ScrapPending = ({ scraps, currentUser, onUpdate, users }: any) => {
                                     <td className="p-4">{s.qty}</td>
                                     <td className="p-4 font-mono text-red-400">{formatCurrency(s.totalValue)}</td>
                                     <td className="p-4 text-right">
-                                        <Button size="sm" onClick={() => openModal(s)} variant="ghost"> <AlertTriangle size={14} className="text-yellow-500 mr-2" /> Contra Medida</Button>
+                                        <Button size="sm" onClick={() => setEditingScrap(s)} variant="ghost"> <AlertTriangle size={14} className="text-yellow-500 mr-2" /> Tratar</Button>
                                     </td>
                                 </tr>
                             ))}
@@ -622,110 +628,28 @@ const ScrapPending = ({ scraps, currentUser, onUpdate, users }: any) => {
                 </div>
             )}
 
-            {selected && (
-                <div className="fixed inset-0 bg-black/80 flex items-center justify-center p-4 z-50 backdrop-blur-sm">
-                    <Card className="max-w-6xl w-full max-h-[90vh] overflow-y-auto bg-white dark:bg-zinc-900 border-slate-200 dark:border-zinc-700">
-                        <div className="flex justify-between items-center mb-6">
-                            <h3 className="font-bold text-xl">Resolver Pendência de Scrap</h3>
-                            <button onClick={() => setSelected(null)}><X size={24} /></button>
-                        </div>
-                        {/* Info Header */}
-                        <div className="bg-blue-50 dark:bg-blue-900/10 border border-blue-100 dark:border-blue-900/30 p-3 rounded-lg mb-6 flex gap-6 items-center shadow-sm">
-                            <div className="flex items-center gap-3">
-                                <div className="bg-blue-100 dark:bg-blue-900/30 p-2 rounded-full text-blue-600 dark:text-blue-400">
-                                    <FileText size={18} />
-                                </div>
-                                <div>
-                                    <span className="text-[10px] font-bold text-blue-600 dark:text-blue-400 uppercase block tracking-wider mb-0.5">Registrado Por</span>
-                                    <span className="text-sm font-bold text-slate-800 dark:text-zinc-100">
-                                        {users.find((u: User) => u.matricula === selected.userId)?.name || selected.userId || 'Sistema'}
-                                    </span>
-                                </div>
-                            </div>
-                            <div className="h-8 w-px bg-blue-200 dark:bg-blue-800 mx-2"></div>
-                            <div>
-                                <span className="text-[10px] font-bold text-blue-600 dark:text-blue-400 uppercase block tracking-wider mb-0.5">Horário</span>
-                                <span className="text-sm font-bold text-slate-800 dark:text-zinc-100 font-mono bg-white dark:bg-zinc-950 px-2 py-0.5 rounded border border-blue-100 dark:border-blue-900/30">
-                                    {selected.time}
-                                </span>
-                            </div>
-                        </div>
-
-                        <div className="space-y-6">
-                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                                <Input label="Data" value={formatDateDisplay(selected.date)} readOnly className="opacity-70 bg-slate-50 dark:bg-zinc-900/50" />
-                                <Input label="Semana" value={selected.week} readOnly className="opacity-70 bg-slate-50 dark:bg-zinc-900/50" />
-                                <Input label="Líder" value={selected.leaderName} readOnly className="opacity-70 bg-slate-50 dark:bg-zinc-900/50" />
-
-                                {/* Highlighted & Editable Responsible Input */}
-                                <div className="relative">
-                                    <label className="block text-xs font-bold text-blue-600 dark:text-blue-400 mb-1.5 uppercase flex items-center gap-2">
-                                        <Edit3 size={12} /> Responsável (Falha/Estação)
-                                    </label>
-                                    <input
-                                        className="w-full bg-blue-50/50 dark:bg-blue-900/10 border-2 border-blue-400/50 dark:border-blue-500/50 rounded-lg p-2.5 text-sm outline-none focus:ring-2 focus:ring-blue-500 font-bold text-slate-900 dark:text-zinc-100 transition-all placeholder-blue-300 dark:placeholder-blue-700"
-                                        value={responsible}
-                                        onChange={e => setResponsible(e.target.value)}
-                                        placeholder="Edite o responsável..."
-                                    />
-                                </div>
-                            </div>
-                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                                <Input label="Linha" value={selected.line} readOnly />
-                                <Input label="PQC" value={selected.pqc} readOnly />
-                                <Input label="Turno" value={selected.shift} readOnly />
-                                <Input label="Modelo" value={selected.model} readOnly />
-                            </div>
-                            <hr className="border-slate-200 dark:border-zinc-800" />
-                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                                <Input label="Cód. Matéria Prima" value={selected.code} readOnly />
-                                <Input label="Modelo Usado" value={selected.usedModel} readOnly />
-                                <div className="lg:col-span-2"><Input label="Descrição" value={selected.description} readOnly /></div>
-                            </div>
-                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                                <Input label="Quantidade" value={selected.qty} readOnly />
-                                <Input label="Item (Categoria)" value={selected.item} readOnly />
-                                <Input label="Status" value={selected.status} readOnly />
-                                <Input label="Valor UN" value={formatCurrency(selected.unitValue)} readOnly />
-                            </div>
-                            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                                <div className="bg-red-900/10 p-4 rounded-xl border border-red-900/30 flex flex-col justify-center">
-                                    <label className="text-xs font-bold text-red-400 uppercase">Valor Total</label>
-                                    <span className="text-2xl font-bold text-red-500">{formatCurrency(selected.totalValue)}</span>
-                                </div>
-                                <Input label="Causa Raiz" value={selected.rootCause} readOnly />
-                                <Input label="Estação" value={selected.station} readOnly />
-                            </div>
-                        </div>
-                        <div className="mt-8 pt-6 border-t border-zinc-700 grid grid-cols-1 lg:grid-cols-2 gap-6">
-                            <div>
-                                <label className="block text-xs font-medium text-slate-500 dark:text-zinc-400 mb-1.5 uppercase">Motivo Detalhado (Ajuste Opcional)</label>
-                                <textarea
-                                    className="w-full bg-slate-50 dark:bg-zinc-950 border border-slate-300 dark:border-zinc-800 rounded-lg p-3 text-sm outline-none focus:ring-2 focus:ring-blue-600 min-h-[120px] text-slate-900 dark:text-zinc-100"
-                                    value={reason}
-                                    onChange={e => setReason(e.target.value)}
-                                />
-                            </div>
-                            <div>
-                                <label className="block text-xs font-medium text-green-700 dark:text-green-400 mb-1.5 uppercase font-bold">Contra Medida (Obrigatório)</label>
-                                <textarea
-                                    className="w-full bg-slate-50 dark:bg-zinc-950 border-2 border-green-200 dark:border-green-900/50 rounded-lg p-3 text-sm outline-none focus:ring-2 focus:ring-green-500 min-h-[120px] text-slate-900 dark:text-zinc-100"
-                                    value={cm}
-                                    onChange={e => setCm(e.target.value)}
-                                    placeholder="Descreva a ação tomada..."
-                                    autoFocus
-                                />
-                            </div>
-                        </div>
-                        <div className="flex justify-end pt-6">
-                            <Button onClick={handleSave} size="lg"><Save size={18} /> Salvar Resolução</Button>
-                        </div>
-                    </Card>
-                </div>
+            {editingScrap && (
+                <ScrapEditModal
+                    scrap={editingScrap}
+                    users={users}
+                    lines={lines}
+                    models={models}
+                    categories={categories}
+                    statusOptions={statusOptions}
+                    rootCauseOptions={rootCauseOptions}
+                    materials={materials}
+                    stations={stations}
+                    currentUser={currentUser}
+                    onClose={() => setEditingScrap(null)}
+                    onSave={async () => {
+                        await onUpdate();
+                        setEditingScrap(null);
+                    }}
+                />
             )}
         </div>
     );
-}
+};
 
 const ScrapHistory = ({ scraps, currentUser, users }: any) => {
     const [filters, setFilters] = useState({
@@ -1208,6 +1132,8 @@ export const ScrapDetailModal: React.FC<ScrapDetailModalProps> = ({ isOpen, scra
                             <div className="md:col-span-2">
                                 <DetailItem label="Descrição" value={scrap.description || '-'} />
                             </div>
+                            <DetailItem label="QR Code" value={scrap.qrCode || '-'} />
+                            <DetailItem label="Modelo Usado" value={scrap.usedModel || '-'} />
                             <DetailItem label="Modelo Usado" value={scrap.usedModel || '-'} />
                         </div>
                     </div>
@@ -1252,9 +1178,9 @@ export const ScrapDetailModal: React.FC<ScrapDetailModalProps> = ({ isOpen, scra
 
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                             <div>
-                                <label className="block text-xs font-bold text-slate-500 dark:text-zinc-500 mb-2 uppercase flex items-center gap-2"><FileText size={14} /> Motivo Detalhado</label>
+                                <label className="flex text-xs font-bold text-slate-500 dark:text-zinc-500 mb-2 uppercase items-center gap-2"><FileText size={14} /> Motivo Detalhado</label>
                                 <div className="bg-slate-100 dark:bg-zinc-950 p-4 rounded-lg border border-slate-200 dark:border-zinc-800 text-sm min-h-[100px] text-slate-700 dark:text-zinc-300 leading-relaxed shadow-inner">
-                                    {scrap.reason}
+                                    {scrap.reason || <span className="italic text-slate-400">Não informado.</span>}
                                 </div>
                             </div>
                             <div>
@@ -1263,6 +1189,14 @@ export const ScrapDetailModal: React.FC<ScrapDetailModalProps> = ({ isOpen, scra
                                     {scrap.countermeasure || 'Nenhuma contra medida registrada.'}
                                 </div>
                             </div>
+                            {scrap.immediateAction && (
+                                <div className="md:col-span-2">
+                                    <label className="block text-xs font-bold text-yellow-600 dark:text-yellow-500 mb-2 uppercase flex items-center gap-2"><AlertTriangle size={14} /> Ação Imediata</label>
+                                    <div className="bg-yellow-50 dark:bg-yellow-900/10 p-4 rounded-lg border border-yellow-200 dark:border-yellow-900/30 text-sm text-slate-800 dark:text-zinc-200 leading-relaxed shadow-inner">
+                                        {scrap.immediateAction}
+                                    </div>
+                                </div>
+                            )}
                         </div>
                     </div>
                 </div>
@@ -1271,8 +1205,8 @@ export const ScrapDetailModal: React.FC<ScrapDetailModalProps> = ({ isOpen, scra
                         Fechar Visualização
                     </Button>
                 </div>
-            </Card>
-        </div>
+            </Card >
+        </div >
     );
 };
 
@@ -1906,6 +1840,151 @@ const NewAdvancedDashboard = ({ scraps, users }: { scraps: ScrapData[], users: U
                     </div>
                 </Card>
             </div>
+        </div>
+    );
+};
+
+// --- CONSULTA POR QR CODE ---
+export const ScrapConsulta = ({ scraps, users }: { scraps: ScrapData[], users: User[] }) => {
+    const [qrInput, setQrInput] = useState('');
+    const [result, setResult] = useState<ScrapData | null | 'NOT_FOUND'>(null);
+
+    const handleSearch = () => {
+        const q = qrInput.trim();
+        if (!q) return;
+        const found = scraps.find(s => s.qrCode === q || String(s.id) === q);
+        setResult(found || 'NOT_FOUND');
+    };
+
+    const registeredBy = result && result !== 'NOT_FOUND'
+        ? users.find(u => u.matricula === result.userId)?.name || result.userId
+        : null;
+
+    return (
+        <div className="space-y-6 max-w-4xl mx-auto">
+            <Card className="flex gap-2 items-end">
+                <div className="flex-1">
+                    <label className="block text-xs uppercase font-bold text-blue-600 dark:text-blue-400 mb-1.5">QR Code / ID do Scrap</label>
+                    <input
+                        type="text"
+                        className="w-full bg-blue-50/50 dark:bg-blue-900/10 border-2 border-blue-400/50 dark:border-blue-500/50 rounded-lg p-2.5 text-sm outline-none focus:ring-2 focus:ring-blue-500 font-mono text-slate-900 dark:text-zinc-100 transition-all"
+                        placeholder="Bipe ou digite o QR Code..."
+                        value={qrInput}
+                        onChange={e => setQrInput(e.target.value)}
+                        onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); handleSearch(); } }}
+                        autoFocus
+                    />
+                </div>
+                <Button onClick={handleSearch}><Search size={16} /> Buscar</Button>
+            </Card>
+
+            {result === 'NOT_FOUND' && (
+                <Card className="text-center p-10 border-dashed border-red-300 dark:border-red-800">
+                    <AlertTriangle className="mx-auto text-red-400 mb-3" size={32} />
+                    <p className="font-bold text-red-500">Nenhum scrap encontrado para este QR Code.</p>
+                </Card>
+            )}
+
+            {result && result !== 'NOT_FOUND' && (
+                <Card className="space-y-6 bg-white dark:bg-zinc-900 border-slate-200 dark:border-zinc-700 shadow-2xl">
+                    {/* Header */}
+                    <div className="flex justify-between items-start border-b border-slate-100 dark:border-zinc-800 pb-4">
+                        <div>
+                            <h3 className="font-bold text-xl text-slate-900 dark:text-white">Detalhes do Apontamento</h3>
+                            <div className="flex gap-2 mt-1">
+                                <span className="text-xs font-mono text-slate-500 bg-slate-100 dark:bg-zinc-800 px-2 py-0.5 rounded">ID: {result.id || 'N/A'}</span>
+                                <span className={`text-xs font-bold px-2 py-0.5 rounded uppercase ${!result.countermeasure ? 'bg-red-100 text-red-600 dark:bg-red-900/30 dark:text-red-400' : 'bg-green-100 text-green-600 dark:bg-green-900/30 dark:text-green-400'}`}>
+                                    {result.status}
+                                </span>
+                                {result.qrCode && <span className="text-xs font-mono text-slate-500 bg-slate-100 dark:bg-zinc-800 px-2 py-0.5 rounded truncate max-w-[200px]">{result.qrCode}</span>}
+                            </div>
+                        </div>
+                    </div>
+
+                    <div className="space-y-6">
+                        {/* Bloco 1 */}
+                        <div className="bg-slate-50/50 dark:bg-zinc-950/50 p-4 rounded-xl border border-slate-200/50 dark:border-zinc-800/50">
+                            <h4 className="text-xs font-bold text-blue-500 uppercase mb-3 flex items-center gap-2"><LayoutDashboard size={14} /> Contexto Operacional</h4>
+                            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                                <DetailItem label="Data" value={formatDateDisplay(result.date)} />
+                                <DetailItem label="Semana" value={result.week} />
+                                <DetailItem label="Líder" value={result.leaderName} />
+                                <DetailItem label="Linha" value={result.line} />
+                                <DetailItem label="Turno" value={result.shift} />
+                            </div>
+                        </div>
+
+                        {/* Bloco 2 */}
+                        <div className="bg-slate-50/50 dark:bg-zinc-950/50 p-4 rounded-xl border border-slate-200/50 dark:border-zinc-800/50">
+                            <h4 className="text-xs font-bold text-purple-500 uppercase mb-3 flex items-center gap-2"><Settings size={14} /> Dados do Material</h4>
+                            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                                <DetailItem label="Modelo (Produto)" value={result.model} />
+                                <DetailItem label="Cód. Matéria Prima" value={result.code || '-'} />
+                                <div className="md:col-span-2"><DetailItem label="Descrição" value={result.description || '-'} /></div>
+                                <DetailItem label="Modelo Usado" value={result.usedModel || '-'} />
+                            </div>
+                        </div>
+
+                        {/* Bloco 3 */}
+                        <div className="bg-slate-50/50 dark:bg-zinc-950/50 p-4 rounded-xl border border-slate-200/50 dark:border-zinc-800/50">
+                            <h4 className="text-xs font-bold text-red-500 uppercase mb-3 flex items-center gap-2"><BarChart3 size={14} /> Quantidades e Custos</h4>
+                            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 items-end">
+                                <DetailItem label="Quantidade" value={result.qty} className="text-lg font-bold" />
+                                <DetailItem label="Item / Categoria" value={result.item} />
+                                <DetailItem label="Valor Unitário" value={formatCurrency(result.unitValue)} />
+                                <div className="bg-white dark:bg-zinc-900 p-2.5 rounded border border-slate-100 dark:border-zinc-800 shadow-sm border-l-4 border-l-red-500">
+                                    <label className="block text-[10px] font-bold text-slate-400 dark:text-zinc-500 uppercase mb-1 tracking-wider">Valor Total</label>
+                                    <div className="text-xl font-bold text-red-600 dark:text-red-400 truncate">{formatCurrency(result.totalValue)}</div>
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Bloco 4 */}
+                        <div className="bg-slate-50/50 dark:bg-zinc-950/50 p-4 rounded-xl border border-slate-200/50 dark:border-zinc-800/50">
+                            <h4 className="text-xs font-bold text-orange-500 uppercase mb-3 flex items-center gap-2"><Shield size={14} /> Rastreabilidade</h4>
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                <DetailItem label="Causa Raiz" value={result.rootCause || '-'} />
+                                <DetailItem label="Estação / Posto" value={result.station || '-'} />
+                                <DetailItem label="Responsável da Falha" value={result.responsible || '-'} />
+                            </div>
+                        </div>
+
+                        {/* Bloco 5 */}
+                        <div className="space-y-4 pt-2">
+                            <div className="bg-blue-50 dark:bg-blue-900/10 p-3 rounded border border-blue-100 dark:border-blue-900/30 flex items-center justify-between">
+                                <div className="flex gap-3 items-center">
+                                    <span className="bg-blue-200 dark:bg-blue-800 text-blue-700 dark:text-blue-200 text-xs font-bold px-2 py-0.5 rounded uppercase">Registrado Por</span>
+                                    <span className="text-sm font-bold text-slate-900 dark:text-zinc-100">{registeredBy}</span>
+                                </div>
+                                <span className="text-xs font-mono text-slate-500">{result.time}</span>
+                            </div>
+
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div>
+                                    <label className="block text-xs font-bold text-slate-500 dark:text-zinc-500 mb-2 uppercase">Motivo Detalhado</label>
+                                    <div className="bg-slate-100 dark:bg-zinc-950 p-4 rounded-lg border border-slate-200 dark:border-zinc-800 text-sm min-h-[80px] text-slate-700 dark:text-zinc-300 leading-relaxed">
+                                        {result.reason || <span className="italic text-slate-400">Não informado.</span>}
+                                    </div>
+                                </div>
+                                <div>
+                                    <label className="block text-xs font-bold text-green-600 dark:text-green-500 mb-2 uppercase">Contra Medida</label>
+                                    <div className={`p-4 rounded-lg border text-sm min-h-[80px] leading-relaxed ${result.countermeasure ? 'bg-green-50 dark:bg-green-900/10 border-green-200 dark:border-green-900/30 text-slate-800 dark:text-zinc-200' : 'bg-slate-50 dark:bg-zinc-950 border-slate-200 dark:border-zinc-800 text-slate-400 italic'}`}>
+                                        {result.countermeasure || 'Nenhuma contra medida registrada.'}
+                                    </div>
+                                </div>
+                                {result.immediateAction && (
+                                    <div className="md:col-span-2">
+                                        <label className="block text-xs font-bold text-yellow-600 dark:text-yellow-500 mb-2 uppercase">Ação Imediata</label>
+                                        <div className="bg-yellow-50 dark:bg-yellow-900/10 p-4 rounded-lg border border-yellow-200 dark:border-yellow-900/30 text-sm text-slate-800 dark:text-zinc-200 leading-relaxed">
+                                            {result.immediateAction}
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    </div>
+                </Card>
+            )}
         </div>
     );
 };

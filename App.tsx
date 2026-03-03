@@ -10,6 +10,7 @@ import { User, ChecklistData, ChecklistItem, ChecklistLog, MeetingLog, Checklist
 import { getMaterials } from './services/materialService';
 import { ManagementModule } from './components/ManagementModule';
 import { PeopleManagementModule } from './components/PeopleManagementModule';
+import { PeopleManagementManagersModule } from './components/PeopleManagementManagersModule';
 import { PreparationModule } from './components/PreparationModule';
 import { MaterialsManager } from './components/MaterialsManager';
 import {
@@ -36,7 +37,7 @@ import {
 } from 'lucide-react';
 import jsQR from 'jsqr';
 
-type ViewState = 'SETUP' | 'LOGIN' | 'REGISTER' | 'RECOVER' | 'MENU' | 'CHECKLIST_MENU' | 'AUDIT_MENU' | 'DASHBOARD' | 'ADMIN' | 'SUCCESS' | 'PERSONAL' | 'PROFILE' | 'MEETING_MENU' | 'MEETING_FORM' | 'MEETING_HISTORY' | 'MAINTENANCE_QR' | 'LINE_STOP_DASHBOARD' | 'MANAGEMENT' | 'PEOPLE_MANAGEMENT' | 'SCRAP' | 'IQC' | 'PREPARATION';
+type ViewState = 'SETUP' | 'LOGIN' | 'REGISTER' | 'RECOVER' | 'MENU' | 'CHECKLIST_MENU' | 'AUDIT_MENU' | 'DASHBOARD' | 'ADMIN' | 'SUCCESS' | 'PERSONAL' | 'PROFILE' | 'MEETING_MENU' | 'MEETING_FORM' | 'MEETING_HISTORY' | 'MAINTENANCE_QR' | 'LINE_STOP_DASHBOARD' | 'MANAGEMENT' | 'PEOPLE_MANAGEMENT' | 'PEOPLE_MANAGEMENT_MANAGERS' | 'SCRAP' | 'IQC' | 'PREPARATION';
 
 interface LineStatus {
     status: 'OK' | 'NG' | 'PENDING';
@@ -64,7 +65,8 @@ const MODULE_NAMES: Record<string, string> = {
     AUDIT: 'Auditoria',
     ADMIN: 'Administração',
     MANAGEMENT: 'Gestão de Processos',
-    PEOPLE_MANAGEMENT: 'Gestão de Pessoas',
+    PEOPLE_MANAGEMENT: 'Gestão de Pessoas (Líder)',
+    PEOPLE_MANAGEMENT_MANAGERS: 'Gestão de Pessoas (Gestores)',
     SCRAP: 'Gestão de SCRAP',
     IQC: 'Controle de SCRAP',
     PREPARATION: 'Preparação de Linhas'
@@ -278,6 +280,7 @@ const App = () => {
             [PERMISSIONS.VIEW_AUDIT]: 'AUDIT',
             [PERMISSIONS.VIEW_MANAGEMENT]: 'MANAGEMENT',
             [PERMISSIONS.VIEW_PEOPLE_MANAGEMENT]: 'PEOPLE_MANAGEMENT',
+            [PERMISSIONS.VIEW_PEOPLE_MANAGEMENT_MANAGERS]: 'PEOPLE_MANAGEMENT_MANAGERS',
             [PERMISSIONS.VIEW_ADMIN]: 'ADMIN',
             [PERMISSIONS.VIEW_SCRAP]: 'SCRAP',
             [PERMISSIONS.VIEW_IQC]: 'IQC'
@@ -1446,7 +1449,13 @@ const App = () => {
 
                     {hasAccess(PERMISSIONS.VIEW_PEOPLE_MANAGEMENT) && (
                         <button onClick={() => setView('PEOPLE_MANAGEMENT')} className={navItemClass(view === 'PEOPLE_MANAGEMENT')}>
-                            <UserIcon size={18} /> Gestão de Pessoas
+                            <UserIcon size={18} /> Gestão de Pessoas (Líder)
+                        </button>
+                    )}
+
+                    {hasAccess(PERMISSIONS.VIEW_PEOPLE_MANAGEMENT_MANAGERS) && (
+                        <button onClick={() => setView('PEOPLE_MANAGEMENT_MANAGERS')} className={navItemClass(view === 'PEOPLE_MANAGEMENT_MANAGERS')}>
+                            <Users size={18} /> Gestão de Pessoas (Gestores)
                         </button>
                     )}
 
@@ -1771,8 +1780,20 @@ const App = () => {
                             <div className="flex items-center gap-4">
                                 <div className="w-12 h-12 bg-cyan-600/10 dark:bg-cyan-600/20 text-cyan-600 dark:text-cyan-500 rounded-xl flex items-center justify-center group-hover:scale-110 transition-transform"><UserIcon size={24} /></div>
                                 <div>
-                                    <h3 className="font-bold text-xl text-slate-900 dark:text-zinc-100">Gestão de Pessoas</h3>
+                                    <h3 className="font-bold text-xl text-slate-900 dark:text-zinc-100">Gestão de Pessoas (Líder)</h3>
                                     <p className="text-xs text-slate-500 dark:text-zinc-500 mt-1">Colaboradores & Layout</p>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {hasAccess(PERMISSIONS.VIEW_PEOPLE_MANAGEMENT_MANAGERS) && (
+                        <div onClick={() => setView('PEOPLE_MANAGEMENT_MANAGERS')} className="group bg-white dark:bg-zinc-900 p-6 rounded-2xl border border-slate-200 dark:border-zinc-800 hover:border-violet-600/50 hover:bg-slate-50 dark:hover:bg-zinc-800 transition-all cursor-pointer relative overflow-hidden h-40 flex flex-col justify-center shadow-sm">
+                            <div className="flex items-center gap-4">
+                                <div className="w-12 h-12 bg-violet-600/10 dark:bg-violet-600/20 text-violet-600 dark:text-violet-500 rounded-xl flex items-center justify-center group-hover:scale-110 transition-transform"><Users size={24} /></div>
+                                <div>
+                                    <h3 className="font-bold text-xl text-slate-900 dark:text-zinc-100">Gestão de Pessoas (Gestores)</h3>
+                                    <p className="text-xs text-slate-500 dark:text-zinc-500 mt-1">Visão de qualquer líder</p>
                                 </div>
                             </div>
                         </div>
@@ -2113,7 +2134,7 @@ const App = () => {
                                     <thead>
                                         <tr className="bg-slate-50 dark:bg-zinc-950 text-slate-500 dark:text-zinc-400 border-b border-slate-200 dark:border-zinc-800">
                                             <th className="p-3 text-left">Cargo</th>
-                                            {['CHECKLIST', 'LINE_STOP', 'MEETING', 'MAINTENANCE', 'AUDIT', 'ADMIN', 'MANAGEMENT', 'PEOPLE_MANAGEMENT', 'SCRAP', 'IQC', 'PREPARATION'].map(mod => (
+                                            {['CHECKLIST', 'LINE_STOP', 'MEETING', 'MAINTENANCE', 'AUDIT', 'ADMIN', 'MANAGEMENT', 'PEOPLE_MANAGEMENT', 'PEOPLE_MANAGEMENT_MANAGERS', 'SCRAP', 'IQC', 'PREPARATION'].map(mod => (
                                                 <th key={mod} className="p-3">{mod}</th>
                                             ))}
                                         </tr>
@@ -2122,7 +2143,7 @@ const App = () => {
                                         {availableRoles.map(role => (
                                             <tr key={role.id} className="hover:bg-slate-50 dark:hover:bg-zinc-900/50 transition-colors">
                                                 <td className="p-3 text-left font-bold text-slate-900 dark:text-white">{role.name}</td>
-                                                {['CHECKLIST', 'LINE_STOP', 'MEETING', 'MAINTENANCE', 'AUDIT', 'ADMIN', 'MANAGEMENT', 'PEOPLE_MANAGEMENT', 'SCRAP', 'IQC', 'PREPARATION'].map(mod => {
+                                                {['CHECKLIST', 'LINE_STOP', 'MEETING', 'MAINTENANCE', 'AUDIT', 'ADMIN', 'MANAGEMENT', 'PEOPLE_MANAGEMENT', 'PEOPLE_MANAGEMENT_MANAGERS', 'SCRAP', 'IQC', 'PREPARATION'].map(mod => {
                                                     const perm = permissions.find(p => p.role === role.name && p.module === (mod as any));
                                                     const isAllowed = perm ? perm.allowed : (['CHECKLIST', 'MEETING', 'MAINTENANCE', 'LINE_STOP'].includes(mod));
                                                     return (
@@ -2210,11 +2231,21 @@ const App = () => {
         );
     }
 
-    // --- PEOPLE MANAGEMENT MODULE ---
+    // --- PEOPLE MANAGEMENT MODULE (LÍDER) ---
     if (view === 'PEOPLE_MANAGEMENT') {
         return (
             <Layout sidebar={<SidebarContent />} onToggleTheme={toggleTheme} isDark={isDark}>
                 <PeopleManagementModule currentUser={currentUser!} onBack={() => setView('MENU')} />
+            </Layout>
+        );
+    }
+
+    // --- PEOPLE MANAGEMENT MODULE (GESTORES) ---
+    if (view === 'PEOPLE_MANAGEMENT_MANAGERS') {
+        if (!hasAccess(PERMISSIONS.VIEW_PEOPLE_MANAGEMENT_MANAGERS)) { setView('MENU'); return null; }
+        return (
+            <Layout sidebar={<SidebarContent />} onToggleTheme={toggleTheme} isDark={isDark}>
+                <PeopleManagementManagersModule currentUser={currentUser!} onBack={() => setView('MENU')} />
             </Layout>
         );
     }

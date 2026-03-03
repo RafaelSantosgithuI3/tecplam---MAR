@@ -9,6 +9,7 @@ export interface User {
   email?: string; // Optional
   password?: string; // Stored securely in real app, simulated here
   isAdmin?: boolean; // Novo campo para controle explícito de admin
+  status?: string; // 'ATIVO' | 'INATIVO'
   permissions?: string[]; // Array de strings, ex: ['VIEW_SCRAP', 'EDIT_PREPARATION']
 }
 
@@ -25,7 +26,8 @@ export const PERMISSIONS = {
   VIEW_MAINTENANCE: 'view_maintenance',
   VIEW_MEETING: 'view_meeting',
   VIEW_CHECKLIST: 'view_checklist',
-  VIEW_PEOPLE_MANAGEMENT: 'view_people_management'
+  VIEW_PEOPLE_MANAGEMENT: 'view_people_management',
+  VIEW_PEOPLE_MANAGEMENT_MANAGERS: 'view_people_management_managers'
 };
 
 export interface ConfigItem {
@@ -119,7 +121,7 @@ export interface MeetingLog {
 
 export interface Permission {
   role: string;
-  module: 'CHECKLIST' | 'MEETING' | 'MAINTENANCE' | 'AUDIT' | 'ADMIN' | 'LINE_STOP' | 'MANAGEMENT' | 'PEOPLE_MANAGEMENT' | 'SCRAP' | 'IQC' | 'PREPARATION';
+  module: 'CHECKLIST' | 'MEETING' | 'MAINTENANCE' | 'AUDIT' | 'ADMIN' | 'LINE_STOP' | 'MANAGEMENT' | 'PEOPLE_MANAGEMENT' | 'PEOPLE_MANAGEMENT_MANAGERS' | 'SCRAP' | 'IQC' | 'PREPARATION';
   allowed: boolean;
 }
 
@@ -217,4 +219,36 @@ export interface LeaderStatus {
     status: 'OK' | 'NG' | 'PENDING';
     logId?: string;
   }[];
+}
+
+export interface EmployeeData {
+  matricula: string;
+  photo?: string;
+  fullName: string;
+  shift: string;
+  role: string;
+  sector: string;
+  superiorId?: string;
+  idlSt?: string;
+  type?: string;
+  status: string;
+  address?: string;
+  addressNum?: string;
+  whatsapp?: string;
+  gloveSize?: string;
+  gloveType?: string;
+  gloveExchanges?: number;
+  misses?: number;
+  rank?: number;
+}
+
+export interface Workstation {
+  id: string;
+  name: string;
+  modelName?: string;
+}
+
+export interface ConfigRole {
+  id: string;
+  name: string;
 }

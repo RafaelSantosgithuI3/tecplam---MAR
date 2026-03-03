@@ -16,7 +16,7 @@ import { getLines, getModels, getWeekNumber } from '../services/storageService';
 import { exportExecutiveReport, exportInvoiceReport } from '../services/excelService';
 
 // Import shared components
-import { ScrapOperational } from './ScrapModule';
+import { ScrapOperational, ScrapConsulta } from './ScrapModule';
 import { ScrapBoxMount, ScrapBoxIdentified } from './ScrapBoxViews';
 
 const formatCurrency = (val: number | undefined) => {
@@ -29,7 +29,7 @@ const formatDateDisplay = (dateString: string | undefined) => {
     return `${day}/${month}/${year}`;
 };
 
-type IQCTab = 'MONITORING' | 'BATCH_PROCESS' | 'HISTORY_SENT' | 'DASHBOARD' | 'BOX_MOUNT' | 'BOX_IDENTIFIED';
+type IQCTab = 'MONITORING' | 'BATCH_PROCESS' | 'HISTORY_SENT' | 'DASHBOARD' | 'BOX_MOUNT' | 'BOX_IDENTIFIED' | 'CONSULTA';
 
 export const IQCModule = ({ currentUser, onBack }: { currentUser: User, onBack: () => void }) => {
     const [activeTab, setActiveTab] = useState<IQCTab>('MONITORING');
@@ -96,6 +96,9 @@ export const IQCModule = ({ currentUser, onBack }: { currentUser: User, onBack: 
                     <Button variant={activeTab === 'BOX_IDENTIFIED' ? 'primary' : 'ghost'} onClick={() => setActiveTab('BOX_IDENTIFIED')} size="sm">
                         <QrCode size={16} /> Associar NF
                     </Button>
+                    <Button variant={activeTab === 'CONSULTA' ? 'primary' : 'ghost'} onClick={() => setActiveTab('CONSULTA')} size="sm">
+                        <FileText size={16} /> Consulta
+                    </Button>
                 </div>
             </div>
 
@@ -123,6 +126,10 @@ export const IQCModule = ({ currentUser, onBack }: { currentUser: User, onBack: 
 
                 {activeTab === 'BOX_IDENTIFIED' && (
                     <ScrapBoxIdentified currentUser={currentUser} onUpdate={refreshData} />
+                )}
+
+                {activeTab === 'CONSULTA' && (
+                    <ScrapConsulta scraps={scraps} users={users} />
                 )}
             </div>
         </div>

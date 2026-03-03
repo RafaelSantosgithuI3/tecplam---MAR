@@ -66,6 +66,20 @@ app.post('/api/login', async (req, res) => {
 
         if (!user) return res.status(401).json({ error: "Usuário não encontrado" });
 
+        // Trava de segurança: bloqueia login de colaboradores desligados
+        if (user.status === 'INATIVO') {
+            return res.status(403).json({ error: "Acesso bloqueado: Colaborador desligado" });
+        }
+
+        // Double-check via tabela Employee
+        const employee = await prisma.employee.findUnique({
+            where: { matricula: String(matricula) },
+            select: { status: true }
+        });
+        if (employee && employee.status === 'INATIVO') {
+            return res.status(403).json({ error: "Acesso bloqueado: Colaborador desligado" });
+        }
+
         const match = await bcrypt.compare(password, user.password);
         if (!match) return res.status(401).json({ error: "Senha incorreta" });
 
@@ -78,6 +92,7 @@ app.post('/api/login', async (req, res) => {
         res.status(500).json({ error: e.message });
     }
 });
+
 
 app.post('/api/register', async (req, res) => {
     const { matricula, name, role, shift, email, password } = req.body;
@@ -161,15 +176,21 @@ app.put('/api/users', async (req, res) => {
 
 app.get('/api/users', async (req, res) => {
     try {
-        const users = await prisma.user.findMany();
-        const safeUsers = users.map(u => ({
-            ...u,
-            password: '******',
-            isAdmin: !!u.isAdmin
-        }));
+        const users = await prisma.user.findMany({
+            select: {
+                matricula: true,
+                name: true,
+                role: true,
+                shift: true,
+                email: true,
+                isAdmin: true,
+                status: true
+            }
+        });
+        const safeUsers = users.map(u => ({ ...u, isAdmin: !!u.isAdmin }));
         res.json(safeUsers);
     } catch (e) {
-        res.status(500).json({ error: e.message });
+        res.status(500).json({ error: "Erro interno ao listar usuários" });
     }
 });
 
@@ -796,12 +817,42 @@ app.post('/api/boxes/:id/scraps', async (req, res) => {
 
         if (!qrCode) return res.status(400).json({ error: "QR Code obrigatório" });
 
+        // Encontra a caixa para checar o tipo
+        const box = await prisma.scrapBox.findUnique({ where: { id: parseInt(id) } });
+        if (!box) return res.status(404).json({ error: "Caixa não encontrada." });
+        if (box.status !== 'OPEN') return res.status(400).json({ error: "Caixa não está aberta." });
+
         // Encontra o scrap para vincular
         const scrap = await prisma.scrapLog.findFirst({
             where: { qrCode: String(qrCode), boxId: null }
         });
 
         if (!scrap) return res.status(404).json({ error: "Scrap não encontrado com este QR Code ou já vinculado a uma caixa." });
+
+        // ---- VALIDAÇÃO DE CATEGORIA ----
+        const itemUp = (scrap.item || '').toUpperCase();
+        const boxType = (box.type || '').toUpperCase();
+        let categoryMatch = false;
+        if (boxType === 'REAR') {
+            categoryMatch = itemUp.includes('REAR');
+        } else if (boxType === 'FRONT/OCTA' || boxType === 'FRONT' || boxType === 'OCTA') {
+            categoryMatch = itemUp.includes('FRONT') || itemUp.includes('OCTA');
+        } else if (boxType === 'BATERIA') {
+            categoryMatch = itemUp.includes('BATERIA') || itemUp.includes('BATTERY');
+        } else if (boxType.includes('MIUDEZA')) {
+            // Miudezas aceita tudo que não é REAR, FRONT, OCTA nem BATERIA
+            const isMainCategory = itemUp.includes('REAR') || itemUp.includes('FRONT') || itemUp.includes('OCTA') || itemUp.includes('BATERIA');
+            categoryMatch = !isMainCategory;
+        } else {
+            categoryMatch = true; // tipo desconhecido: aceita qualquer item
+        }
+
+        if (!categoryMatch) {
+            return res.status(400).json({
+                error: `Item '${scrap.item}' não pertence à categoria '${box.type}'. Verifique a caixa correta.`
+            });
+        }
+        // ---- FIM VALIDAÇÃO ----
 
         const updatedScrap = await prisma.scrapLog.update({
             where: { id: scrap.id },
@@ -811,9 +862,7 @@ app.post('/api/boxes/:id/scraps', async (req, res) => {
         // Update Cache Manually (Write-Through)
         if (SCRAP_CACHE) {
             const index = SCRAP_CACHE.findIndex(s => s.id === scrap.id);
-            if (index !== -1) {
-                SCRAP_CACHE[index] = updatedScrap;
-            }
+            if (index !== -1) SCRAP_CACHE[index] = updatedScrap;
         }
 
         res.json({ message: "Scrap vinculado com sucesso", scrap: updatedScrap });
@@ -821,6 +870,32 @@ app.post('/api/boxes/:id/scraps', async (req, res) => {
         res.status(500).json({ error: e.message });
     }
 });
+
+app.delete('/api/boxes/:boxId/scraps/:scrapId', async (req, res) => {
+    try {
+        const { boxId, scrapId } = req.params;
+
+        const scrap = await prisma.scrapLog.findUnique({ where: { id: parseInt(scrapId) } });
+        if (!scrap) return res.status(404).json({ error: "Scrap não encontrado." });
+        if (scrap.boxId !== parseInt(boxId)) return res.status(400).json({ error: "Scrap não pertence a esta caixa." });
+
+        const updated = await prisma.scrapLog.update({
+            where: { id: parseInt(scrapId) },
+            data: { boxId: null }
+        });
+
+        // Atualiza cache
+        if (SCRAP_CACHE) {
+            const idx = SCRAP_CACHE.findIndex(s => s.id === updated.id);
+            if (idx !== -1) SCRAP_CACHE[idx] = updated;
+        }
+
+        res.json({ message: "Scrap desvinculado com sucesso.", scrap: updated });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
 
 // --- SCRAP ---
 
@@ -838,6 +913,13 @@ app.get('/api/scraps', async (req, res) => {
 app.post('/api/scraps', async (req, res) => {
     try {
         const { id, ...rest } = req.body; // Remove ID to let DB autoincrement
+
+        // ---- VALIDAÇÃO QR CODE ÚNICO ----
+        if (rest.qrCode) {
+            const existing = await prisma.scrapLog.findFirst({ where: { qrCode: String(rest.qrCode) } });
+            if (existing) return res.status(400).json({ error: "Esta etiqueta já está atrelada a outro scrap." });
+        }
+        // ---- FIM VALIDAÇÃO ----
 
         // Logic: Find Plant from Material
         // Logic: Find Plant from Material (Always prioritize DB)
@@ -1144,10 +1226,25 @@ function getLocalIp() {
 
 app.get('/api/employees', async (req, res) => {
     try {
-        const employees = await prisma.employee.findMany();
+        const employees = await prisma.employee.findMany({
+            select: {
+                matricula: true,
+                fullName: true,
+                shift: true,
+                role: true,
+                sector: true,
+                superiorId: true,
+                idlSt: true,
+                type: true,
+                status: true,
+                gloveSize: true,
+                gloveType: true,
+                gloveExchanges: true
+            }
+        });
         res.json(employees);
     } catch (e) {
-        res.status(500).json({ error: e.message });
+        res.status(500).json({ error: "Erro interno no servidor ao buscar colaboradores" });
     }
 });
 
@@ -1381,6 +1478,8 @@ loadScrapCache().then(() => {
             if (status) data.status = status;
             if (nfNumber) data.nfNumber = nfNumber;
             if (status === 'IDENTIFIED') data.closedAt = new Date();
+            // Reversão: ao voltar para OPEN, limpar closedAt e nfNumber
+            if (status === 'OPEN') { data.closedAt = null; data.nfNumber = null; }
 
             const updatedBox = await prisma.scrapBox.update({
                 where: { id: boxId },
@@ -1389,6 +1488,18 @@ loadScrapCache().then(() => {
             res.json(updatedBox);
         } catch (e) {
             res.status(500).json({ error: "Erro ao atualizar caixa: " + e.message });
+        }
+    });
+
+    app.delete('/api/boxes/:id', async (req, res) => {
+        try {
+            const boxId = parseInt(req.params.id);
+            // Desvincular scraps antes de excluir
+            await prisma.scrapLog.updateMany({ where: { boxId }, data: { boxId: null } });
+            await prisma.scrapBox.delete({ where: { id: boxId } });
+            res.json({ success: true });
+        } catch (e) {
+            res.status(500).json({ error: "Erro ao excluir caixa: " + e.message });
         }
     });
 

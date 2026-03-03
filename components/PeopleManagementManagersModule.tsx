@@ -1,53 +1,81 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { Button } from './Button';
 import { Card } from './Card';
 import { Input } from './Input';
 import { Shield, Plus, Search, User as UserIcon, List, ArrowLeft, CheckCircle, Clock, Save, Download, HandMetal } from 'lucide-react';
 import { apiFetch } from '../services/networkConfig';
-import ExcelJS from 'exceljs';
-import { saveAs } from 'file-saver';
 import { exportLeaderLayout, exportModelLayout, exportGloveControl } from '../services/excelService';
 
-interface PeopleManagementModuleProps {
+import { EmployeeData, User, ConfigModel, Workstation, ConfigRole } from '../types';
+
+interface Props {
     onBack: () => void;
-    currentUser: any;
+    currentUser: User;
 }
 
 type Tab = 'CADASTRO' | 'CONSULTA' | 'PRESENCA' | 'LAYOUT' | 'LUVAS' | 'EDICAO';
 
-export const PeopleManagementModule: React.FC<PeopleManagementModuleProps> = ({ onBack, currentUser }) => {
-    const [tab, setTab] = useState<Tab>('CADASTRO');
-    const [employees, setEmployees] = useState<any[]>([]);
-    const [leaders, setLeaders] = useState<any[]>([]);
-    const [models, setModels] = useState<any[]>([]);
-    const [workstations, setWorkstations] = useState<any[]>([]);
-    const [configRoles, setConfigRoles] = useState<any[]>([]);
+export const PeopleManagementManagersModule: React.FC<Props> = ({ onBack, currentUser }) => {
+    const [tab, setTab] = useState<Tab>('PRESENCA');
+    const [employees, setEmployees] = useState<EmployeeData[]>([]);
+    const [leaders, setLeaders] = useState<User[]>([]);
+    const [models, setModels] = useState<ConfigModel[]>([]);
+    const [workstations, setWorkstations] = useState<Workstation[]>([]);
+    const [configRoles, setConfigRoles] = useState<ConfigRole[]>([]);
+
+    // --- FILTRO GLOBAL DE LÍDER ---
+    const [selectedLeaderId, setSelectedLeaderId] = useState<string>('');
+
+    const loadBaseData = useCallback(async () => {
+        try {
+            const [usersList, empList, modsList, wksList, rolesList] = await Promise.all([
+                apiFetch('/users'),
+                apiFetch('/employees'),
+                apiFetch('/config/models'),
+                apiFetch('/workstations'),
+                apiFetch('/config/roles')
+            ]);
+
+            if (Array.isArray(usersList)) {
+                const liderList = usersList.filter((u: User) => u.role && (u.role.toLowerCase().includes('lider') || u.role.toLowerCase().includes('líder') || u.role.toLowerCase().includes('supervisor')));
+                setLeaders(liderList);
+            }
+            if (Array.isArray(empList)) setEmployees(empList);
+            if (Array.isArray(modsList)) setModels(modsList);
+            if (Array.isArray(wksList)) setWorkstations(wksList);
+            if (Array.isArray(rolesList)) setConfigRoles(rolesList);
+        } catch (e: any) {
+            alert('Erro ao carregar dados base: ' + (e.message || 'Falha de conexão.'));
+        }
+    }, []);
 
     useEffect(() => {
         loadBaseData();
-    }, []);
+    }, [loadBaseData]);
 
-    const loadBaseData = async () => {
-        try {
-            const users = await apiFetch('/users');
-            if (Array.isArray(users)) {
-                setLeaders(users.filter(u => u.role && (u.role.toLowerCase().includes('lider') || u.role.toLowerCase().includes('líder') || u.role.toLowerCase().includes('supervisor'))));
-            }
-            const emp = await apiFetch('/employees');
-            if (Array.isArray(emp)) setEmployees(emp);
+    // ── Leader selector component ──
+    const LeaderFilter = () => (
+        <div className="flex flex-col gap-1">
+            <label className="text-xs font-bold text-slate-500 dark:text-zinc-400 uppercase tracking-wide">Visualizando equipe do líder</label>
+            <select
+                className="bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 rounded-xl px-4 py-2.5 text-slate-900 dark:text-zinc-100 text-sm focus:outline-none focus:ring-2 focus:ring-cyan-500/20 focus:border-cyan-500"
+                value={selectedLeaderId}
+                onChange={e => setSelectedLeaderId(e.target.value)}
+            >
+                <option value="">— Selecione um líder —</option>
+                {leaders.map(l => (
+                    <option key={l.matricula} value={l.matricula}>{l.name} ({l.matricula})</option>
+                ))}
+            </select>
+        </div>
+    );
 
-            const mods = await apiFetch('/config/models');
-            if (Array.isArray(mods)) setModels(mods);
-
-            const wks = await apiFetch('/workstations');
-            if (Array.isArray(wks)) setWorkstations(wks);
-
-            const fetchedRoles = await apiFetch('/config/roles');
-            if (Array.isArray(fetchedRoles)) setConfigRoles(fetchedRoles);
-        } catch (e) {
-            console.error('Erro ao carregar dados base', e);
-        }
-    };
+    // ── Helper: subordinados do líder selecionado ──
+    const subordinados = useMemo(() => {
+        return selectedLeaderId
+            ? employees.filter((e) => e.superiorId === selectedLeaderId)
+            : [];
+    }, [employees, selectedLeaderId]);
 
     // TAB 1: CADASTRO
     const [formData, setFormData] = useState({
@@ -73,51 +101,30 @@ export const PeopleManagementModule: React.FC<PeopleManagementModuleProps> = ({ 
                 method: isEdit ? 'PUT' : 'POST',
                 body: JSON.stringify({ ...formData, isEdit })
             });
-            alert('Salvo!');
-            setFormData({
-                matricula: '', photo: '', fullName: '', shift: '', role: '', sector: '',
-                superiorId: '', idlSt: '', type: '', status: '', address: '', addressNum: '', whatsapp: ''
-            });
+            alert('Colaborador salvo com sucesso!');
+            setFormData({ matricula: '', photo: '', fullName: '', shift: '', role: '', sector: '', superiorId: '', idlSt: '', type: '', status: '', address: '', addressNum: '', whatsapp: '' });
             setIsEdit(false);
             loadBaseData();
-        } catch (e) {
-            alert('Erro ao salvar (Matrícula duplicada?)');
+        } catch (e: any) {
+            alert('Erro ao salvar colaborador: ' + (e.message || 'Dados inválidos.'));
         }
     };
 
     const handleMatriculaBlur = async () => {
         const mat = formData.matricula?.trim();
-        if (!mat) {
-            setIsEdit(false);
-            return;
-        }
+        if (!mat) { setIsEdit(false); return; }
         try {
             const user = await apiFetch(`/employees/search/${mat}`);
             if (user && user.matricula) {
-                setFormData(prev => ({
-                    ...prev,
-                    ...user, // Populate all fields from fetched user
-                    photo: user.photo || prev.photo, // Keep existing photo if not in fetched user
-                    superiorId: user.superiorId || '' // Ensure superiorId is set or empty
-                }));
+                setFormData(prev => ({ ...prev, ...user, photo: user.photo || prev.photo, superiorId: user.superiorId || '' }));
                 setIsEdit(true);
             } else {
                 setIsEdit(false);
-                // Clear fields if not found, except matricula
-                setFormData(prev => ({
-                    ...prev,
-                    photo: '', fullName: '', shift: '', role: '', sector: '',
-                    superiorId: '', idlSt: '', type: '', status: '', address: '', addressNum: '', whatsapp: ''
-                }));
+                setFormData(prev => ({ ...prev, photo: '', fullName: '', shift: '', role: '', sector: '', superiorId: '', idlSt: '', type: '', status: '', address: '', addressNum: '', whatsapp: '' }));
             }
-        } catch (e) {
+        } catch (e: any) {
             setIsEdit(false);
-            // Clear fields if error, except matricula
-            setFormData(prev => ({
-                ...prev,
-                photo: '', fullName: '', shift: '', role: '', sector: '',
-                superiorId: '', idlSt: '', type: '', status: '', address: '', addressNum: '', whatsapp: ''
-            }));
+            setFormData(prev => ({ ...prev, photo: '', fullName: '', shift: '', role: '', sector: '', superiorId: '', idlSt: '', type: '', status: '', address: '', addressNum: '', whatsapp: '' }));
         }
     };
 
@@ -140,7 +147,6 @@ export const PeopleManagementModule: React.FC<PeopleManagementModuleProps> = ({ 
                         <option value="2º TURNO">2º TURNO</option>
                     </select>
                 </div>
-
                 <div className="flex flex-col gap-2">
                     <label className="text-sm font-medium text-slate-700 dark:text-zinc-300">Função</label>
                     <select className="w-full bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 rounded-xl px-4 py-3 text-slate-900 dark:text-zinc-100" value={formData.role} onChange={e => setFormData({ ...formData, role: e.target.value })}>
@@ -148,7 +154,6 @@ export const PeopleManagementModule: React.FC<PeopleManagementModuleProps> = ({ 
                         {configRoles.map(r => <option key={r.name || r.id} value={r.name || r.id}>{r.name || r.id}</option>)}
                     </select>
                 </div>
-
                 <div className="flex flex-col gap-2">
                     <label className="text-sm font-medium text-slate-700 dark:text-zinc-300">Setor</label>
                     <select className="w-full bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 rounded-xl px-4 py-3 text-slate-900 dark:text-zinc-100" value={formData.sector} onChange={e => setFormData({ ...formData, sector: e.target.value })}>
@@ -156,7 +161,6 @@ export const PeopleManagementModule: React.FC<PeopleManagementModuleProps> = ({ 
                         {['PRODUÇÃO', 'LOGISTICA', 'ASG', 'MANUTENÇÃO', 'RETRABALHO', 'QUALIDADE', 'QUALIDADE RMA', 'QUALIDADE IQC', 'REPARO', 'PCP'].map(s => <option key={s} value={s}>{s}</option>)}
                     </select>
                 </div>
-
                 <div className="flex flex-col gap-2">
                     <label className="text-sm font-medium text-slate-700 dark:text-zinc-300">Superior Imediato</label>
                     <select className="w-full bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 rounded-xl px-4 py-3 text-slate-900 dark:text-zinc-100" value={formData.superiorId} onChange={e => setFormData({ ...formData, superiorId: e.target.value })}>
@@ -164,7 +168,6 @@ export const PeopleManagementModule: React.FC<PeopleManagementModuleProps> = ({ 
                         {leaders.map(l => <option key={l.matricula} value={l.matricula}>{l.name} ({l.matricula})</option>)}
                     </select>
                 </div>
-
                 <Input label="IDL-ST" value={formData.idlSt} onChange={e => setFormData({ ...formData, idlSt: e.target.value })} />
                 <Input label="Tipo" value={formData.type} onChange={e => setFormData({ ...formData, type: e.target.value })} />
                 <Input label="Status" value={formData.status} onChange={e => setFormData({ ...formData, status: e.target.value })} />
@@ -189,35 +192,27 @@ export const PeopleManagementModule: React.FC<PeopleManagementModuleProps> = ({ 
         try {
             const res = await apiFetch('/employees/search/' + encodeURIComponent(searchQuery.trim()));
             if (res && res.matricula) {
-                // Calculate rank
                 const now = new Date();
-                const currentMonth = now.getMonth();
-                const currentYear = now.getFullYear();
                 let misses = 0;
                 res.attendanceLogs?.forEach((log: any) => {
                     const d = new Date(log.date);
-                    if (d.getMonth() === currentMonth && d.getFullYear() === currentYear && (log.type === 'FALTA' || log.type === 'ATESTADO')) {
-                        misses++;
-                    }
+                    if (d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear() && (log.type === 'FALTA' || log.type === 'ATESTADO')) misses++;
                 });
-                const rank = Math.max(0, 10 - misses * 0.5);
-                setConsultResult({ ...res, misses, rank });
+                setConsultResult({ ...res, misses, rank: Math.max(0, 10 - misses * 0.5) });
             } else {
                 setConsultResult(null);
                 alert('Não encontrado');
             }
         } catch (e: any) {
             setConsultResult(null);
-            alert('Erro na busca: ' + (e.message || 'Falha no servidor. Verifique a consola.'));
+            alert('Erro na busca: ' + (e.message || 'Falha no servidor.'));
         }
     };
 
     const renderConsulta = () => (
         <div className="space-y-4">
             <Card className="flex gap-2 items-end">
-                <div className="flex-1">
-                    <Input label="Buscar Matrícula" value={searchQuery} onChange={e => setSearchQuery(e.target.value)} />
-                </div>
+                <div className="flex-1"><Input label="Buscar Matrícula" value={searchQuery} onChange={e => setSearchQuery(e.target.value)} /></div>
                 <Button onClick={handleConsult}><Search size={16} /> Buscar</Button>
             </Card>
             {consultResult && (
@@ -235,7 +230,6 @@ export const PeopleManagementModule: React.FC<PeopleManagementModuleProps> = ({ 
                             <p className="inline-block bg-slate-100 dark:bg-zinc-800 px-3 py-1 rounded-full text-sm font-medium text-slate-600 dark:text-zinc-400">
                                 Matrícula: {consultResult.matricula}
                             </p>
-
                             <div className="flex gap-3 mt-4">
                                 <div className="bg-cyan-50 dark:bg-cyan-900/20 text-cyan-700 dark:text-cyan-400 px-4 py-2 rounded-xl text-center border border-cyan-100 dark:border-cyan-900/40">
                                     <p className="text-[10px] uppercase font-bold tracking-wider mb-1">Rank do Mês</p>
@@ -251,7 +245,6 @@ export const PeopleManagementModule: React.FC<PeopleManagementModuleProps> = ({ 
                             </div>
                         </div>
                     </Card>
-
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-0">
                         <Card className="rounded-t-none md:rounded-tr-xl border-t-0 space-y-3">
                             <h3 className="font-bold text-slate-800 dark:text-zinc-100 flex items-center gap-2 pb-2 border-b border-slate-100 dark:border-zinc-800">
@@ -302,7 +295,7 @@ export const PeopleManagementModule: React.FC<PeopleManagementModuleProps> = ({ 
                     </div>
 
                     {consultResult.previousLeaders && (() => {
-                        let hist = [];
+                        let hist: string[] = [];
                         try { hist = JSON.parse(consultResult.previousLeaders); } catch (e) { }
                         if (hist.length > 0) {
                             return (
@@ -320,11 +313,9 @@ export const PeopleManagementModule: React.FC<PeopleManagementModuleProps> = ({ 
                         }
                         return null;
                     })()}
-
                     {showMissesModal && (() => {
                         const allLogs = consultResult.attendanceLogs || [];
                         const validLogs = allLogs.filter((l: any) => l.type === 'FALTA' || l.type === 'ATESTADO' || l.type === 'ATRASO');
-
                         const filteredLogs = validLogs.filter((log: any) => {
                             const d = new Date(log.date);
                             const now = new Date();
@@ -334,14 +325,12 @@ export const PeopleManagementModule: React.FC<PeopleManagementModuleProps> = ({ 
                             if (historyFilter === 'Ano') return d.getFullYear() === now.getFullYear();
                             return true;
                         });
-
                         let dynamicRank = 10;
                         filteredLogs.forEach((log: any) => {
                             if (log.type === 'FALTA') dynamicRank -= 1;
                             if (log.type === 'ATESTADO') dynamicRank -= 0.5;
                         });
                         dynamicRank = Math.max(0, dynamicRank);
-
                         return (
                             <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={(e) => { if (e.target === e.currentTarget) setShowMissesModal(false) }}>
                                 <Card className="w-full max-w-lg space-y-4 max-h-[80vh] overflow-y-auto shadow-2xl border-0 ring-1 ring-white/10 relative">
@@ -351,7 +340,6 @@ export const PeopleManagementModule: React.FC<PeopleManagementModuleProps> = ({ 
                                         </h3>
                                         <button onClick={() => setShowMissesModal(false)} className="text-slate-400 hover:text-slate-700 dark:hover:text-zinc-200 transition-colors bg-slate-100 dark:bg-zinc-800 rounded-full w-8 h-8 flex items-center justify-center">×</button>
                                     </div>
-
                                     <div className="flex justify-between items-center bg-slate-50 dark:bg-zinc-900/50 p-3 rounded-xl">
                                         <select
                                             className="bg-white dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 rounded-lg px-3 py-1.5 text-sm font-medium outline-none"
@@ -363,7 +351,6 @@ export const PeopleManagementModule: React.FC<PeopleManagementModuleProps> = ({ 
                                             <option value="Ano">Este Ano</option>
                                             <option value="Todos">Todo o Período</option>
                                         </select>
-
                                         <div className="text-right">
                                             <p className="text-[10px] uppercase font-bold text-slate-500 tracking-wider">Rank do Período</p>
                                             <p className={`text-2xl font-black ${dynamicRank >= 9 ? 'text-emerald-500' : dynamicRank >= 7 ? 'text-amber-500' : 'text-red-500'}`}>
@@ -371,7 +358,6 @@ export const PeopleManagementModule: React.FC<PeopleManagementModuleProps> = ({ 
                                             </p>
                                         </div>
                                     </div>
-
                                     <div className="space-y-3">
                                         {filteredLogs.length > 0 ? (
                                             <ul className="space-y-2">
@@ -409,24 +395,26 @@ export const PeopleManagementModule: React.FC<PeopleManagementModuleProps> = ({ 
         </div>
     );
 
-    // TAB 3: PRESENÇA
+    // TAB 3: PRESENÇA — usa selectedLeaderId
     const [attSearchQuery, setAttSearchQuery] = useState('');
     const [attSelectedEmployee, setAttSelectedEmployee] = useState<any>(null);
     const [attType, setAttType] = useState('FALTA');
     const [attDelayMinutes, setAttDelayMinutes] = useState('');
 
     const handleSearchSubordinado = () => {
-        const found = employees.find(e => e.superiorId === currentUser.matricula && (e.matricula.includes(attSearchQuery) || e.fullName.toLowerCase().includes(attSearchQuery.toLowerCase())));
+        if (!selectedLeaderId) return alert('Selecione um líder primeiro.');
+        const found = employees.find(e =>
+            e.superiorId === selectedLeaderId &&
+            (e.matricula.includes(attSearchQuery) || e.fullName.toLowerCase().includes(attSearchQuery.toLowerCase()))
+        );
         if (found) setAttSelectedEmployee(found);
-        else alert('Colaborador não encontrado ou não é seu subordinado.');
+        else alert('Colaborador não encontrado na equipe do líder selecionado.');
     };
 
     const handleSaveAttendance = async () => {
         if (!attSelectedEmployee) return;
         try {
-            const now = new Date();
-            const dateString = now.toISOString().split('T')[0]; // YYYY-MM-DD
-
+            const dateString = new Date().toISOString().split('T')[0];
             await apiFetch('/attendance', {
                 method: 'POST',
                 body: JSON.stringify({
@@ -441,44 +429,43 @@ export const PeopleManagementModule: React.FC<PeopleManagementModuleProps> = ({ 
             setAttSelectedEmployee(null);
             setAttSearchQuery('');
             setAttDelayMinutes('');
-            loadBaseData(); // Reload data to update attendance logs
+            loadBaseData();
         } catch (e) { alert('Erro ao salvar'); }
     };
 
     const renderPresenca = () => {
-        const team = employees.filter(e => e.superiorId === currentUser.matricula);
+        const team = selectedLeaderId ? employees.filter(e => e.superiorId === selectedLeaderId) : [];
         const filteredTeam = attSearchQuery
             ? team.filter(e => e.matricula.includes(attSearchQuery) || e.fullName.toLowerCase().includes(attSearchQuery.toLowerCase()))
             : team;
 
         return (
             <div className="space-y-4">
-                <Card className="flex gap-2 items-end">
-                    <div className="flex-1">
-                        <Input label="Filtrar Subordinado na Lista (Nome ou Matrícula)" value={attSearchQuery} onChange={e => setAttSearchQuery(e.target.value)} />
+                {!selectedLeaderId && (
+                    <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-900/40 rounded-xl p-4 text-amber-800 dark:text-amber-300 text-sm font-medium">
+                        ⚠️ Selecione um líder no cabeçalho para visualizar a equipe.
                     </div>
-                    <Button onClick={handleSearchSubordinado}><Search size={16} /> Buscar Externo</Button>
+                )}
+                <Card className="flex gap-2 items-end">
+                    <div className="flex-1"><Input label="Filtrar por Nome ou Matrícula" value={attSearchQuery} onChange={e => setAttSearchQuery(e.target.value)} /></div>
+                    <Button onClick={handleSearchSubordinado}><Search size={16} /> Buscar</Button>
                 </Card>
-
                 {!attSelectedEmployee ? (
                     <Card>
-                        <h3 className="font-bold text-slate-800 dark:text-zinc-100 mb-4">Sua Equipe (Clique no colaborador para realizar o apontamento)</h3>
-                        {filteredTeam.length === 0 ? (
-                            <p className="text-sm text-slate-500">Nenhum subordinado encontrado.</p>
+                        <h3 className="font-bold text-slate-800 dark:text-zinc-100 mb-4">
+                            Equipe de {leaders.find(l => l.matricula === selectedLeaderId)?.name || '...'} (Clique no colaborador para apontar)
+                        </h3>
+                        {team.length === 0 ? (
+                            <p className="text-sm text-slate-500">{selectedLeaderId ? 'Nenhum subordinado encontrado para este líder.' : 'Selecione um líder.'}</p>
                         ) : (
                             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
                                 {filteredTeam.map(emp => (
-                                    <div
-                                        key={emp.matricula}
-                                        onClick={() => setAttSelectedEmployee(emp)}
-                                        className="flex items-center gap-3 p-3 rounded-xl border border-slate-200 dark:border-zinc-800 bg-slate-50 dark:bg-zinc-900 hover:border-cyan-500 hover:bg-cyan-50 dark:hover:bg-cyan-900/20 cursor-pointer transition-all"
-                                    >
+                                    <div key={emp.matricula} onClick={() => setAttSelectedEmployee(emp)}
+                                        className="flex items-center gap-3 p-3 rounded-xl border border-slate-200 dark:border-zinc-800 bg-slate-50 dark:bg-zinc-900 hover:border-cyan-500 hover:bg-cyan-50 dark:hover:bg-cyan-900/20 cursor-pointer transition-all">
                                         {emp.photo ? (
                                             <img src={emp.photo} alt={emp.fullName} className="w-10 h-10 rounded-full object-cover shrink-0" />
                                         ) : (
-                                            <div className="w-10 h-10 rounded-full bg-slate-200 dark:bg-zinc-800 flex items-center justify-center shrink-0">
-                                                <UserIcon size={20} className="text-slate-400" />
-                                            </div>
+                                            <div className="w-10 h-10 rounded-full bg-slate-200 dark:bg-zinc-800 flex items-center justify-center shrink-0"><UserIcon size={20} className="text-slate-400" /></div>
                                         )}
                                         <div className="overflow-hidden">
                                             <p className="font-bold text-sm text-slate-800 dark:text-zinc-100 truncate">{emp.fullName}</p>
@@ -496,9 +483,7 @@ export const PeopleManagementModule: React.FC<PeopleManagementModuleProps> = ({ 
                                 {attSelectedEmployee.photo ? (
                                     <img src={attSelectedEmployee.photo} alt="Colaborador" className="w-16 h-16 object-cover rounded-full" />
                                 ) : (
-                                    <div className="w-16 h-16 rounded-full bg-slate-200 dark:bg-zinc-800 flex items-center justify-center">
-                                        <UserIcon size={32} className="text-slate-400" />
-                                    </div>
+                                    <div className="w-16 h-16 rounded-full bg-slate-200 dark:bg-zinc-800 flex items-center justify-center"><UserIcon size={32} className="text-slate-400" /></div>
                                 )}
                                 <div>
                                     <p className="font-bold text-lg text-slate-800 dark:text-zinc-100">{attSelectedEmployee.fullName}</p>
@@ -507,7 +492,6 @@ export const PeopleManagementModule: React.FC<PeopleManagementModuleProps> = ({ 
                             </div>
                             <button onClick={() => setAttSelectedEmployee(null)} className="text-sm text-slate-500 hover:text-red-500 font-bold">Trocar Colaborador</button>
                         </div>
-
                         <div className="grid grid-cols-2 gap-4 pt-4 border-t border-slate-100 dark:border-zinc-800">
                             <div className="flex flex-col gap-2">
                                 <label className="text-sm font-medium text-slate-700 dark:text-zinc-300">Tipo de Apontamento</label>
@@ -530,7 +514,7 @@ export const PeopleManagementModule: React.FC<PeopleManagementModuleProps> = ({ 
         );
     };
 
-    // TAB 4: LAYOUT DE LINHA
+    // TAB 4: LAYOUT — usa selectedLeaderId
     const [lineSearch, setLineSearch] = useState('');
     const [linePreview, setLinePreview] = useState<any>(null);
     const [selectedAlocationEmp, setSelectedAlocationEmp] = useState<any>(null);
@@ -545,15 +529,12 @@ export const PeopleManagementModule: React.FC<PeopleManagementModuleProps> = ({ 
     };
 
     const handleAddLine = async () => {
-        if (!linePreview) return;
-        if (linePreview.superiorId && linePreview.superiorId !== currentUser.matricula) {
-            if (!window.confirm('Deseja mover o colaborador para sua supervisão? Ele(a) já está vinculado a outro líder.')) return;
+        if (!linePreview || !selectedLeaderId) return alert('Selecione um líder primeiro.');
+        if (linePreview.superiorId && linePreview.superiorId !== selectedLeaderId) {
+            if (!window.confirm('Deseja mover o colaborador para a supervisão do líder selecionado? Ele(a) já está vinculado a outro líder.')) return;
         }
         try {
-            await apiFetch(`/employees/${linePreview.matricula}/transfer`, {
-                method: 'PUT',
-                body: JSON.stringify({ superiorId: currentUser.matricula })
-            });
+            await apiFetch(`/employees/${linePreview.matricula}/transfer`, { method: 'PUT', body: JSON.stringify({ superiorId: selectedLeaderId }) });
             alert('Transferido!');
             setLinePreview(null);
             setLineSearch('');
@@ -563,10 +544,7 @@ export const PeopleManagementModule: React.FC<PeopleManagementModuleProps> = ({ 
 
     const handleRemoveLine = async (matricula: string) => {
         try {
-            await apiFetch(`/employees/${matricula}/transfer`, {
-                method: 'PUT',
-                body: JSON.stringify({ superiorId: null })
-            });
+            await apiFetch(`/employees/${matricula}/transfer`, { method: 'PUT', body: JSON.stringify({ superiorId: null }) });
             loadBaseData();
         } catch (e) { }
     };
@@ -576,31 +554,25 @@ export const PeopleManagementModule: React.FC<PeopleManagementModuleProps> = ({ 
         try {
             await apiFetch(`/employees/${selectedAlocationEmp.matricula}/workstation-slots`, {
                 method: 'POST',
-                body: JSON.stringify({
-                    modelText: alocModel,
-                    orderText: alocOrder,
-                    workstationName: alocStation
-                })
+                body: JSON.stringify({ modelText: alocModel, orderText: alocOrder, workstationName: alocStation })
             });
             alert('Vinculado com sucesso!');
             setSelectedAlocationEmp(null);
-            setAlocModel('');
-            setAlocStation('');
-            setAlocOrder('');
+            setAlocModel(''); setAlocStation(''); setAlocOrder('');
             loadBaseData();
-        } catch (e) {
-            alert('Não foi possível vincular. (Todos os 6 slots podem estar cheios?)');
-        }
+        } catch (e) { alert('Não foi possível vincular.'); }
     };
-    const subordinados = employees.filter(e => e.superiorId === currentUser.matricula);
 
     const renderLayoutLinha = () => (
         <div className="space-y-6">
+            {!selectedLeaderId && (
+                <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-900/40 rounded-xl p-4 text-amber-800 dark:text-amber-300 text-sm font-medium">
+                    ⚠️ Selecione um líder no cabeçalho para gerenciar a equipe.
+                </div>
+            )}
             <Card className="flex flex-col gap-4">
                 <div className="flex gap-2 items-end">
-                    <div className="flex-1">
-                        <Input label="Pesquisar Matrícula/Nome da fábrica" value={lineSearch} onChange={e => setLineSearch(e.target.value)} />
-                    </div>
+                    <div className="flex-1"><Input label="Pesquisar Matrícula/Nome da fábrica" value={lineSearch} onChange={e => setLineSearch(e.target.value)} /></div>
                     <Button onClick={handleSearchLine}><Search size={16} /> Buscar</Button>
                 </div>
                 {linePreview && (
@@ -612,25 +584,29 @@ export const PeopleManagementModule: React.FC<PeopleManagementModuleProps> = ({ 
                                 <p className="text-sm text-slate-500">{linePreview.matricula} | {linePreview.shift}</p>
                             </div>
                         </div>
-                        <Button onClick={handleAddLine}><Plus size={16} /> Adicionar</Button>
+                        <Button onClick={handleAddLine}><Plus size={16} /> Adicionar ao Líder Selecionado</Button>
                     </div>
                 )}
             </Card>
-
             <Card>
                 <div className="flex justify-between items-center mb-4">
-                    <h3 className="font-bold text-slate-800 dark:text-zinc-100">Meu Layout de Linha</h3>
+                    <h3 className="font-bold text-slate-800 dark:text-zinc-100">
+                        Layout de {leaders.find(l => l.matricula === selectedLeaderId)?.name || 'Líder não selecionado'}
+                    </h3>
                     <div className="flex gap-2">
-                        <Button variant="secondary" onClick={() => exportLeaderLayout(currentUser, subordinados)}><List size={16} /> Imprimir (Líder)</Button>
                         <Button variant="secondary" onClick={() => {
-                            if (!alocModel) return alert('Selecione primeiro qual modelo abaixo. (Atualmente filtrado durante alocação)');
+                            const leaderObj = leaders.find(l => l.matricula === selectedLeaderId);
+                            if (leaderObj) exportLeaderLayout(leaderObj, subordinados);
+                        }}><List size={16} /> Imprimir (Líder)</Button>
+                        <Button variant="secondary" onClick={() => {
+                            if (!alocModel) return alert('Selecione um modelo para imprimir.');
                             exportModelLayout(alocModel, workstations, employees);
                         }}><List size={16} /> Imprimir (Modelo)</Button>
                     </div>
                 </div>
                 <div className="bg-white dark:bg-zinc-900 rounded-xl border border-slate-200 dark:border-zinc-800 overflow-hidden text-sm">
                     {subordinados.length === 0 ? (
-                        <p className="p-4 text-slate-500">Nenhum colaborador na sua linha.</p>
+                        <p className="p-4 text-slate-500">{selectedLeaderId ? 'Nenhum colaborador nesta linha.' : 'Selecione um líder.'}</p>
                     ) : (
                         <table className="w-full text-left">
                             <thead className="bg-slate-50 dark:bg-zinc-950 text-slate-500">
@@ -647,9 +623,7 @@ export const PeopleManagementModule: React.FC<PeopleManagementModuleProps> = ({ 
                                         <td className="p-4 font-mono">{s.matricula}</td>
                                         <td className="p-4 cursor-pointer text-cyan-600 font-medium" onClick={() => setSelectedAlocationEmp(s)}>{s.fullName}</td>
                                         <td className="p-4">{s.role}</td>
-                                        <td className="p-4 text-right">
-                                            <Button variant="danger" onClick={() => handleRemoveLine(s.matricula)}>Retirar</Button>
-                                        </td>
+                                        <td className="p-4 text-right"><Button variant="danger" onClick={() => handleRemoveLine(s.matricula)}>Retirar</Button></td>
                                     </tr>
                                 ))}
                             </tbody>
@@ -657,7 +631,6 @@ export const PeopleManagementModule: React.FC<PeopleManagementModuleProps> = ({ 
                     )}
                 </div>
             </Card>
-
             {selectedAlocationEmp && (
                 <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
                     <Card className="w-full max-w-lg space-y-4">
@@ -666,7 +639,6 @@ export const PeopleManagementModule: React.FC<PeopleManagementModuleProps> = ({ 
                             <button onClick={() => setSelectedAlocationEmp(null)} className="text-slate-500"><UserIcon size={20} /></button>
                         </div>
                         <p className="text-sm text-slate-500">Colaborador: {selectedAlocationEmp.fullName}</p>
-
                         <div className="grid grid-cols-2 gap-2 mt-4">
                             <select className="bg-slate-50 dark:bg-zinc-800 p-2 rounded" value={alocModel} onChange={e => { setAlocModel(e.target.value); setAlocStation(''); }}>
                                 <option value="">Selecione Modelo</option>
@@ -679,55 +651,50 @@ export const PeopleManagementModule: React.FC<PeopleManagementModuleProps> = ({ 
                             <Input label="Ordem (Ex: 1, 2...)" value={alocOrder} onChange={e => setAlocOrder(e.target.value)} />
                         </div>
                         <Button className="w-full mt-2" onClick={handleBindStation}>Vincular Posto</Button>
-                        <div className="flex justify-end mt-4">
-                            <Button variant="secondary" onClick={() => setSelectedAlocationEmp(null)}>Fechar</Button>
-                        </div>
+                        <div className="flex justify-end mt-4"><Button variant="secondary" onClick={() => setSelectedAlocationEmp(null)}>Fechar</Button></div>
                     </Card>
                 </div>
             )}
         </div>
     );
 
+    // TAB 5: LUVAS — usa selectedLeaderId
     const renderLuvas = () => {
-        const team = employees.filter(e => e.superiorId === currentUser.matricula);
-        const selfEmployee = employees.find(e => e.matricula === currentUser.matricula);
-        const displayList = selfEmployee ? [selfEmployee, ...team.filter(e => e.matricula !== currentUser.matricula)] : team;
+        const team = selectedLeaderId ? employees.filter(e => e.superiorId === selectedLeaderId) : [];
+        const selfEmployee = selectedLeaderId ? employees.find(e => e.matricula === selectedLeaderId) : null;
+        const displayList = selfEmployee ? [selfEmployee, ...team.filter(e => e.matricula !== selectedLeaderId)] : team;
+        const leaderObj = leaders.find(l => l.matricula === selectedLeaderId);
 
         const handleUpdateGlove = async (matricula: string, field: 'gloveSize' | 'gloveType' | 'gloveExchanges', value: string | number) => {
             const empToUpdate = employees.find(e => e.matricula === matricula);
             if (!empToUpdate) return;
-            const updatedProfile = { ...empToUpdate, [field]: value };
-
             try {
-                await apiFetch('/employees', {
-                    method: 'POST',
-                    body: JSON.stringify(updatedProfile)
-                });
-                // Update local state smoothly
+                await apiFetch('/employees', { method: 'POST', body: JSON.stringify({ ...empToUpdate, [field]: value }) });
                 setEmployees(prev => prev.map(e => e.matricula === matricula ? { ...e, [field]: value } : e));
-            } catch (e) {
-                alert('Erro ao atualizar luva');
-            }
+            } catch (e) { alert('Erro ao atualizar luva'); }
         };
 
         const generateSpreadsheet = async () => {
-            try {
-                await exportGloveControl(displayList, currentUser.name);
-            } catch (e) {
-                console.error("Erro export", e);
-                alert("Falha gerando XLSX!");
-            }
+            try { await exportGloveControl(displayList, leaderObj?.name || selectedLeaderId); }
+            catch (e) { alert('Falha gerando XLSX!'); }
         };
 
         return (
             <Card>
+                {!selectedLeaderId && (
+                    <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-900/40 rounded-xl p-4 text-amber-800 dark:text-amber-300 text-sm font-medium mb-4">
+                        ⚠️ Selecione um líder no cabeçalho para visualizar o controle de luvas.
+                    </div>
+                )}
                 <div className="flex justify-between items-center mb-4">
-                    <h3 className="font-bold text-slate-800 dark:text-zinc-100">Controle de Luvas (Sua Equipe)</h3>
+                    <h3 className="font-bold text-slate-800 dark:text-zinc-100">
+                        Controle de Luvas — Equipe de {leaderObj?.name || '...'}
+                    </h3>
                     <Button onClick={generateSpreadsheet}><Download size={16} /> Exportar Planilha</Button>
                 </div>
                 <div className="bg-white dark:bg-zinc-900 rounded-xl border border-slate-200 dark:border-zinc-800 overflow-hidden text-sm">
                     {displayList.length === 0 ? (
-                        <p className="p-4 text-slate-500">Nenhum colaborador na sua equipe.</p>
+                        <p className="p-4 text-slate-500">{selectedLeaderId ? 'Nenhum colaborador nesta equipe.' : 'Selecione um líder.'}</p>
                     ) : (
                         <table className="w-full text-left">
                             <thead className="bg-slate-50 dark:bg-zinc-950 text-slate-500">
@@ -742,46 +709,25 @@ export const PeopleManagementModule: React.FC<PeopleManagementModuleProps> = ({ 
                             </thead>
                             <tbody className="divide-y divide-slate-200 dark:divide-zinc-800">
                                 {displayList.map(s => (
-                                    <tr key={s.matricula} className={`hover:bg-slate-50 dark:hover:bg-zinc-800/50 ${s.matricula === currentUser.matricula ? 'bg-indigo-50/30 dark:bg-indigo-900/10' : ''}`}>
+                                    <tr key={s.matricula} className={`hover:bg-slate-50 dark:hover:bg-zinc-800/50 ${s.matricula === selectedLeaderId ? 'bg-indigo-50/30 dark:bg-indigo-900/10' : ''}`}>
                                         <td className="p-4 font-mono">{s.matricula}</td>
-                                        <td className="p-4">{s.fullName} {s.matricula === currentUser.matricula && <span className="text-xs text-indigo-500 font-bold ml-2">(Você)</span>}</td>
+                                        <td className="p-4">{s.fullName} {s.matricula === selectedLeaderId && <span className="text-xs text-indigo-500 font-bold ml-2">(Líder)</span>}</td>
                                         <td className="p-4">{s.role}</td>
                                         <td className="p-4">
-                                            <select
-                                                className="bg-slate-50 dark:bg-zinc-800 p-2 rounded border border-slate-200 dark:border-zinc-700 outline-none"
-                                                value={s.gloveSize || ''}
-                                                onChange={(e) => handleUpdateGlove(s.matricula, 'gloveSize', e.target.value)}
-                                            >
+                                            <select className="bg-slate-50 dark:bg-zinc-800 p-2 rounded border border-slate-200 dark:border-zinc-700 outline-none" value={s.gloveSize || ''} onChange={e => handleUpdateGlove(s.matricula, 'gloveSize', e.target.value)}>
                                                 <option value="">Vazio</option>
-                                                <option value="PP">PP</option>
-                                                <option value="P">P</option>
-                                                <option value="M">M</option>
-                                                <option value="G">G</option>
+                                                <option value="PP">PP</option><option value="P">P</option><option value="M">M</option><option value="G">G</option>
                                             </select>
                                         </td>
                                         <td className="p-4">
-                                            <select
-                                                className="bg-slate-50 dark:bg-zinc-800 p-2 rounded border border-slate-200 dark:border-zinc-700 outline-none"
-                                                value={s.gloveType || ''}
-                                                onChange={(e) => handleUpdateGlove(s.matricula, 'gloveType', e.target.value)}
-                                            >
+                                            <select className="bg-slate-50 dark:bg-zinc-800 p-2 rounded border border-slate-200 dark:border-zinc-700 outline-none" value={s.gloveType || ''} onChange={e => handleUpdateGlove(s.matricula, 'gloveType', e.target.value)}>
                                                 <option value="">Vazio</option>
-                                                <option value="Palma">Palma</option>
-                                                <option value="Dedinho">Dedinho</option>
+                                                <option value="Palma">Palma</option><option value="Dedinho">Dedinho</option>
                                             </select>
                                         </td>
                                         <td className="p-4">
-                                            <select
-                                                className="bg-slate-50 dark:bg-zinc-800 p-2 rounded border border-slate-200 dark:border-zinc-700 outline-none"
-                                                value={s.gloveExchanges || 0}
-                                                onChange={(e) => handleUpdateGlove(s.matricula, 'gloveExchanges', Number(e.target.value))}
-                                            >
-                                                <option value={0}>0</option>
-                                                <option value={1}>1</option>
-                                                <option value={2}>2</option>
-                                                <option value={3}>3</option>
-                                                <option value={4}>4</option>
-                                                <option value={5}>5</option>
+                                            <select className="bg-slate-50 dark:bg-zinc-800 p-2 rounded border border-slate-200 dark:border-zinc-700 outline-none" value={s.gloveExchanges || 0} onChange={e => handleUpdateGlove(s.matricula, 'gloveExchanges', Number(e.target.value))}>
+                                                {[0, 1, 2, 3, 4, 5].map(n => <option key={n} value={n}>{n}</option>)}
                                             </select>
                                         </td>
                                     </tr>
@@ -793,6 +739,7 @@ export const PeopleManagementModule: React.FC<PeopleManagementModuleProps> = ({ 
             </Card>
         );
     };
+
     // TAB 6: EDIÇÃO
     const [editQuery, setEditQuery] = useState('');
     const [editFound, setEditFound] = useState(false);
@@ -829,7 +776,6 @@ export const PeopleManagementModule: React.FC<PeopleManagementModuleProps> = ({ 
                 <div className="flex-1"><Input label="Buscar Matrícula para Editar" value={editQuery} onChange={e => setEditQuery(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleEditSearch()} /></div>
                 <Button onClick={handleEditSearch}><Search size={16} /> Buscar</Button>
             </Card>
-
             {editFound && (
                 <Card className="space-y-4">
                     <div className="flex items-center gap-3 pb-3 border-b border-slate-100 dark:border-zinc-800">
@@ -890,16 +836,19 @@ export const PeopleManagementModule: React.FC<PeopleManagementModuleProps> = ({ 
         </div>
     );
 
-
     return (
         <div className="w-full max-w-7xl mx-auto space-y-6">
             <header className="flex flex-col gap-4 mb-4 md:mb-8 pb-4 md:pb-6 border-b border-zinc-200 dark:border-zinc-800">
                 <div className="flex items-center justify-between">
                     <h1 className="text-lg md:text-2xl font-bold text-slate-900 dark:text-zinc-100 flex items-center gap-2">
-                        <UserIcon className="text-cyan-500" /> Gestão de Pessoas
+                        <UserIcon className="text-violet-500" /> Gestão de Pessoas (Gestores)
                     </h1>
                     <Button variant="outline" onClick={onBack}><ArrowLeft size={16} /> Voltar</Button>
                 </div>
+
+                {/* FILTRO GLOBAL DE LÍDER */}
+                <LeaderFilter />
+
                 <div className="flex gap-2 overflow-x-auto pb-2 custom-scrollbar">
                     <Button variant={tab === 'CADASTRO' ? 'primary' : 'secondary'} onClick={() => setTab('CADASTRO')}><UserIcon size={16} /> Cadastro</Button>
                     <Button variant={tab === 'CONSULTA' ? 'primary' : 'secondary'} onClick={() => setTab('CONSULTA')}><Search size={16} /> Consulta</Button>
