@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Camera, Box, Package, Plus, Search, FileText, CheckCircle2, Trash2, X } from 'lucide-react';
+import { Camera, Box, Package, Plus, Search, FileText, CheckCircle2, Trash2, X, Eye } from 'lucide-react';
 import jsQR from 'jsqr';
 import { Card } from './Card';
 import { Button } from './Button';
@@ -7,6 +7,8 @@ import { Input } from './Input';
 import { getBoxes, createBox, closeBox, associateBoxNF, linkScrapToBox, deleteBox, reopenBox } from '../services/boxService';
 import { exportExecutiveReport, generateBoxLabels } from '../services/excelService';
 import { apiFetch } from '../services/networkConfig';
+import { ScrapDetailModal } from './ScrapModule';
+import { User, ScrapData } from '../types';
 
 export const QRScannerInput = ({ onScan }: { onScan: (qrCode: string, extractedCode: string) => void }) => {
     const [scanned, setScanned] = useState('');
@@ -172,6 +174,7 @@ export const ScrapBoxMount = ({ currentUser, onUpdate }: any) => {
                                 <option value="REAR">REAR</option>
                                 <option value="FRONT/OCTA">FRONT/OCTA</option>
                                 <option value="BATERIA">BATERIA</option>
+                                <option value="PLACA">PLACA</option>
                                 <option value="MIUDEZA(S)">MIUDEZA(S)</option>
                             </select>
                             <p className="text-xs text-slate-500 dark:text-zinc-500 mt-1">Somente scraps do mesmo tipo poderão ser bipados nesta caixa.</p>
@@ -320,9 +323,11 @@ export const ScrapBoxMount = ({ currentUser, onUpdate }: any) => {
 };
 
 
-export const ScrapBoxIdentified = ({ currentUser, onUpdate }: any) => {
+export const ScrapBoxIdentified = ({ currentUser, onUpdate, users = [] }: { currentUser: any, onUpdate?: () => void, users?: User[] }) => {
     const [boxes, setBoxes] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
+    const [previewBox, setPreviewBox] = useState<any | null>(null);
+    const [selectedScrap, setSelectedScrap] = useState<ScrapData | null>(null);
 
     const loadBoxes = async () => {
         try {
@@ -351,6 +356,8 @@ export const ScrapBoxIdentified = ({ currentUser, onUpdate }: any) => {
         }
     };
 
+    const formatCurrency = (val: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(val || 0);
+
     if (loading) return <div>Carregando Caixas Identificadas...</div>;
 
     return (
@@ -365,14 +372,13 @@ export const ScrapBoxIdentified = ({ currentUser, onUpdate }: any) => {
                     {boxes.map(box => {
                         const totalItens = box.scraps?.length || 0;
                         const valorTotal = box.scraps?.reduce((acc: number, s: any) => acc + (Number(s.totalValue) || 0), 0) || 0;
-                        const formatCurrency = (val: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(val || 0);
 
                         return (
                             <Card key={box.id} className="border-l-4 border-l-green-500 flex flex-col h-full bg-white dark:bg-zinc-950">
                                 <div className="flex-1">
                                     <div className="flex justify-between items-start mb-4">
                                         <div>
-                                            <h3 className="font-bold text-lg">Caixa #{box.id}</h3>
+                                            <h3 className="font-bold text-lg text-slate-900 dark:text-white">Caixa #{box.id}</h3>
                                             <span className="text-xs text-zinc-500 uppercase">{box.type}</span>
                                         </div>
                                         <div className="bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 text-[10px] px-2 py-1 rounded font-bold">
@@ -380,12 +386,19 @@ export const ScrapBoxIdentified = ({ currentUser, onUpdate }: any) => {
                                         </div>
                                     </div>
                                     <div className="space-y-1 mb-6">
-                                        <p className="text-sm font-medium">Itens na caixa: <span className="font-bold">{totalItens}</span></p>
-                                        <p className="text-sm font-medium">Valor Total: <span className="font-bold text-red-500">{formatCurrency(valorTotal)}</span></p>
+                                        <p className="text-sm font-medium text-slate-700 dark:text-zinc-300">
+                                            Itens na caixa: <span className="font-bold">{totalItens}</span>
+                                        </p>
+                                        <p className="text-sm font-medium text-slate-700 dark:text-zinc-300">
+                                            Valor Total: <span className="font-bold text-red-500">{formatCurrency(valorTotal)}</span>
+                                        </p>
                                         <p className="text-xs text-zinc-400 mt-2">Fechada em: {new Date(box.closedAt).toLocaleDateString()}</p>
                                     </div>
                                 </div>
                                 <div className="flex flex-col gap-2">
+                                    <Button onClick={() => setPreviewBox(box)} variant="ghost" className="w-full text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20 border border-blue-200 dark:border-blue-800">
+                                        <Eye size={16} className="mr-2" /> Ver Itens da Caixa
+                                    </Button>
                                     <Button onClick={() => handleAssociate(box.id)} className="w-full mt-auto" variant="outline">
                                         <FileText size={16} className="mr-2" /> Associar N.F.
                                     </Button>
@@ -405,6 +418,63 @@ export const ScrapBoxIdentified = ({ currentUser, onUpdate }: any) => {
                     })}
                 </div>
             )}
+
+            {/* Box items preview modal */}
+            {previewBox && (
+                <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={() => setPreviewBox(null)}>
+                    <Card className="max-w-2xl w-full max-h-[80vh] overflow-y-auto bg-white dark:bg-zinc-900 border-slate-200 dark:border-zinc-700" onClick={(e: React.MouseEvent) => e.stopPropagation()}>
+                        <div className="flex justify-between items-center mb-4">
+                            <div>
+                                <h3 className="font-bold text-lg text-slate-900 dark:text-white">Caixa #{previewBox.id} — {previewBox.type}</h3>
+                                <p className="text-xs text-slate-500 dark:text-zinc-500">{previewBox.scraps?.length || 0} itens • {formatCurrency(previewBox.scraps?.reduce((a: number, s: any) => a + (Number(s.totalValue) || 0), 0) || 0)}</p>
+                            </div>
+                            <button onClick={() => setPreviewBox(null)} className="text-slate-400 hover:text-slate-700 dark:hover:text-zinc-200 bg-slate-100 dark:bg-zinc-800 rounded-full w-8 h-8 flex items-center justify-center">
+                                <X size={16} />
+                            </button>
+                        </div>
+                        {previewBox.scraps && previewBox.scraps.length > 0 ? (
+                            <div className="w-full overflow-x-auto border border-slate-200 dark:border-zinc-800 rounded-xl">
+                                <table className="w-full text-xs text-left min-w-[500px]">
+                                    <thead className="bg-slate-100 dark:bg-zinc-900 text-slate-600 dark:text-zinc-400">
+                                        <tr>
+                                            <th className="p-2.5">Item</th>
+                                            <th className="p-2.5">Modelo</th>
+                                            <th className="p-2.5">Código</th>
+                                            <th className="p-2.5 text-right">Valor</th>
+                                            <th className="p-2.5"></th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {previewBox.scraps.map((s: any) => (
+                                            <tr
+                                                key={s.id}
+                                                className="border-b border-slate-100 dark:border-zinc-800 last:border-0 hover:bg-blue-50/60 dark:hover:bg-blue-900/10 cursor-pointer transition-colors"
+                                                onClick={() => { setPreviewBox(null); setSelectedScrap(s as ScrapData); }}
+                                            >
+                                                <td className="p-2.5 text-slate-700 dark:text-zinc-300 font-medium">{s.item}</td>
+                                                <td className="p-2.5 text-slate-600 dark:text-zinc-400">{s.model}</td>
+                                                <td className="p-2.5 font-mono text-slate-500 dark:text-zinc-500">{s.code || '-'}</td>
+                                                <td className="p-2.5 text-right font-mono text-slate-700 dark:text-zinc-300">{formatCurrency(Number(s.totalValue) || 0)}</td>
+                                                <td className="p-2.5"><Eye size={14} className="text-blue-500" /></td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                        ) : (
+                            <p className="text-center text-slate-400 py-8">Nenhum item nesta caixa.</p>
+                        )}
+                    </Card>
+                </div>
+            )}
+
+            {/* Scrap Detail Modal */}
+            <ScrapDetailModal
+                isOpen={!!selectedScrap}
+                scrap={selectedScrap}
+                users={users}
+                onClose={() => setSelectedScrap(null)}
+            />
         </div>
     );
 };

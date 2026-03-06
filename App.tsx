@@ -82,7 +82,7 @@ const getWeekNumber = (d: Date) => {
     return weekNo;
 }
 
-const CRITICAL_ITEMS = ['REAR', 'FRONT', 'OCTA', 'BATERIA SCRAP'];
+const CRITICAL_ITEMS = ['REAR', 'FRONT', 'OCTA', 'BATERIA SCRAP', 'BATERIA RMA', 'PLACA'];
 const isCriticalItem = (item?: string) => {
     if (!item) return false;
     return CRITICAL_ITEMS.includes(item.toUpperCase().trim());
@@ -418,10 +418,14 @@ const App = () => {
                     });
 
                     if (auditTab === 'LEADERS') {
-                        const leaders = usersList.filter(u =>
-                            u.role.toLowerCase().includes('líder de produção') ||
-                            u.role.toLowerCase().includes('líder do reparo/retrabalho')
-                        );
+                        const leaders = usersList.filter(u => {
+                            const role = u.role.toLowerCase();
+                            return role.includes('líder de produção') ||
+                                role.includes('líder do reparo/retrabalho') ||
+                                role.includes('tecnico de processo') ||
+                                role.includes('técnico de processo') ||
+                                role.includes('coordenador');
+                        });
 
                         const matrix: LeaderStatus[] = leaders.map(leader => {
                             const statuses = weekDates.map(date => {
@@ -532,7 +536,10 @@ const App = () => {
                             const role = (leader.role || '').toLowerCase();
                             // Define quais palavras-chave ativam o alerta
                             return role.includes('líder de produção') ||
-                                role.includes('líder do reparo/retrabalho')
+                                role.includes('líder do reparo/retrabalho') ||
+                                role.includes('tecnico de processo') ||
+                                role.includes('técnico de processo') ||
+                                role.includes('coordenador');
                         });
                         // -------------------------------------
                         missing = missing.filter(leader => {
@@ -995,38 +1002,15 @@ const App = () => {
         const updatedLog: ChecklistLog = {
             ...activeLineStopLog,
             data: updatedData as unknown as ChecklistData,
-            status: 'WAITING_SIGNATURE'
+            status: 'COMPLETED'
         };
 
         setIsLoading(true);
         await saveLineStop(updatedLog);
         setIsLoading(false);
-        alert("Justificativa salva! Agora imprima e colete as assinaturas.");
+        alert("Justificativa salva! Processo finalizado.");
         setActiveLineStopLog(null);
-        setLineStopTab('UPLOAD');
-    };
-
-    const handleUploadSignedDoc = async (file: File) => {
-        if (!activeLineStopLog) return;
-        try {
-            setIsLoading(true);
-            const base64 = await fileToBase64(file);
-
-            const updatedLog: ChecklistLog = {
-                ...activeLineStopLog,
-                signedDocUrl: base64,
-                status: 'COMPLETED'
-            };
-
-            await saveLineStop(updatedLog);
-            setIsLoading(false);
-            alert("Upload realizado com sucesso! Processo finalizado.");
-            setActiveLineStopLog(null);
-            setLineStopTab('HISTORY');
-        } catch (e) {
-            setIsLoading(false);
-            alert("Erro ao fazer upload.");
-        }
+        setLineStopTab('HISTORY');
     };
 
     // --- MANAGEMENT HANDLERS ---
@@ -2252,7 +2236,7 @@ const App = () => {
 
 
     // --- LINE STOP DASHBOARD ---
-    if (view === 'LINE_STOP_DASHBOARD') return <Layout sidebar={<SidebarContent />} onToggleTheme={toggleTheme} isDark={isDark}><div className="w-full max-w-7xl mx-auto space-y-6"><header className="flex flex-col gap-4 mb-4 md:mb-8 pb-4 md:pb-6 border-b border-slate-200 dark:border-zinc-800"><h1 className="text-lg md:text-2xl font-bold text-slate-900 dark:text-zinc-100 flex items-center gap-2"><AlertTriangle className="text-red-500" /> Parada de Linha</h1><div className="flex gap-2 overflow-x-auto pb-2"><Button variant={lineStopTab === 'NEW' ? 'primary' : 'secondary'} onClick={() => setLineStopTab('NEW')}><Plus size={16} /> Novo Reporte</Button><Button variant={lineStopTab === 'PENDING' ? 'primary' : 'secondary'} onClick={() => setLineStopTab('PENDING')}><Clock size={16} /> Pendentes</Button><Button variant={lineStopTab === 'UPLOAD' ? 'primary' : 'secondary'} onClick={() => setLineStopTab('UPLOAD')}><Upload size={16} /> Upload Assinatura</Button><Button variant={lineStopTab === 'HISTORY' ? 'primary' : 'secondary'} onClick={() => setLineStopTab('HISTORY')}><History size={16} /> Histórico</Button></div></header>{lineStopTab === 'NEW' && (<div className="space-y-6 max-w-4xl mx-auto pb-20"><Card><h3 className="text-lg font-bold mb-4 border-b border-slate-200 dark:border-zinc-800 pb-2 text-slate-900 dark:text-white">Dados da Parada</h3><div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+    if (view === 'LINE_STOP_DASHBOARD') return <Layout sidebar={<SidebarContent />} onToggleTheme={toggleTheme} isDark={isDark}><div className="w-full max-w-7xl mx-auto space-y-6"><header className="flex flex-col gap-4 mb-4 md:mb-8 pb-4 md:pb-6 border-b border-slate-200 dark:border-zinc-800"><h1 className="text-lg md:text-2xl font-bold text-slate-900 dark:text-zinc-100 flex items-center gap-2"><AlertTriangle className="text-red-500" /> Parada de Linha</h1><div className="flex gap-2 overflow-x-auto pb-2"><Button variant={lineStopTab === 'NEW' ? 'primary' : 'secondary'} onClick={() => setLineStopTab('NEW')}><Plus size={16} /> Novo Reporte</Button><Button variant={lineStopTab === 'PENDING' ? 'primary' : 'secondary'} onClick={() => setLineStopTab('PENDING')}><Clock size={16} /> Pendentes</Button><Button variant={lineStopTab === 'HISTORY' ? 'primary' : 'secondary'} onClick={() => setLineStopTab('HISTORY')}><History size={16} /> Histórico</Button></div></header>{lineStopTab === 'NEW' && (<div className="space-y-6 max-w-4xl mx-auto pb-20"><Card><h3 className="text-lg font-bold mb-4 border-b border-slate-200 dark:border-zinc-800 pb-2 text-slate-900 dark:text-white">Dados da Parada</h3><div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
         <div>
             <label className="text-xs font-bold text-slate-500 dark:text-zinc-500 uppercase mb-1 block">Modelo</label>
             <input list="model-list" className="w-full bg-white dark:bg-zinc-950 border border-slate-300 dark:border-zinc-800 rounded-lg p-2.5 text-slate-900 dark:text-zinc-100 placeholder-slate-400 dark:placeholder-zinc-600 outline-none focus:ring-2 focus:ring-blue-600/50" value={lineStopData.model} onChange={e => setLineStopData({ ...lineStopData, model: e.target.value })} placeholder="Selecione ou digite..." />
@@ -2281,17 +2265,6 @@ const App = () => {
                             </span>
                         )}
                     </div></div>{activeLineStopLog?.id === log.id && (<div className="mt-6 pt-6 border-t border-slate-200 dark:border-zinc-800 animate-in slide-in-from-top-2"><label className="text-xs font-bold text-slate-500 dark:text-zinc-500 uppercase mb-2 block">Justificativa e Plano de Ação</label><textarea className="w-full bg-slate-50 dark:bg-zinc-950 border border-slate-300 dark:border-zinc-800 rounded-lg p-3 h-32 text-slate-900 dark:text-zinc-100 focus:ring-2 focus:ring-blue-600/50 outline-none" value={justificationInput} onChange={e => setJustificationInput(e.target.value)} placeholder="Descreva a solução definitiva..." /><div className="flex justify-end gap-2"><Button variant="secondary" onClick={() => setActiveLineStopLog(null)}>Cancelar</Button><Button onClick={handleSaveJustification}>Salvar e Prosseguir</Button></div></div>)}</div>
-            );
-        })}</div>)}
-
-        {/* UPLOAD TAB */}
-        {lineStopTab === 'UPLOAD' && (<div className="space-y-4">{lineStopLogs.filter(l => l.status === 'WAITING_SIGNATURE').length === 0 && <p className="text-center text-slate-500 dark:text-zinc-500 py-10">Nenhum reporte aguardando upload.</p>}{lineStopLogs.filter(l => l.status === 'WAITING_SIGNATURE').map(log => {
-            return (
-                <div key={log.id} className="bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 rounded-xl p-6 relative overflow-hidden shadow-sm"><div className="absolute left-0 top-0 bottom-0 w-1 bg-blue-500"></div><div className="flex flex-col md:flex-row justify-between gap-4"><div><div className="flex items-center gap-2 mb-2"><span className="bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 px-2 py-1 rounded text-xs font-bold uppercase border border-blue-200 dark:border-blue-900/50">Aguardando Assinatura</span><span className="text-slate-500 dark:text-zinc-500 text-xs">{new Date(log.date).toLocaleString()}</span></div>
-                    <h3 className="text-xl font-bold text-slate-900 dark:text-white mb-1">{getLogTitle(log)}</h3>
-                    <div className="mt-2 text-sm text-slate-500 dark:text-zinc-400"><p>1. Baixe a planilha gerada.</p><p>2. Imprima e colete as assinaturas.</p><p>3. Tire uma foto e faça o upload abaixo.</p></div></div><div className="flex flex-col justify-center gap-2 min-w-[200px]"><Button variant="outline" onClick={async () => {
-                        try { await exportLineStopToExcel(log); } catch (e: any) { alert("Erro ao baixar: " + e.message); }
-                    }}><Printer size={16} /> Baixar Planilha</Button><Button onClick={() => setActiveLineStopLog(log)}>Fazer Upload</Button></div></div>{activeLineStopLog?.id === log.id && (<div className="mt-6 pt-6 border-t border-slate-200 dark:border-zinc-800 animate-in slide-in-from-top-2"><label className="cursor-pointer flex flex-col items-center justify-center h-32 w-full border-2 border-dashed border-slate-300 dark:border-zinc-700 hover:border-blue-500 rounded-lg transition-colors"><Camera size={24} className="mb-2 text-slate-400 dark:text-zinc-500" /><span className="text-sm text-slate-500 dark:text-zinc-400">Tirar Foto da Folha Assinada</span><input type="file" accept="image/*" capture="environment" className="hidden" onChange={(e) => { if (e.target.files?.[0]) handleUploadSignedDoc(e.target.files[0]) }} /></label><Button variant="ghost" fullWidth className="mt-2" onClick={() => setActiveLineStopLog(null)}>Cancelar</Button></div>)}</div>
             );
         })}</div>)}
 

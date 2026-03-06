@@ -2,8 +2,9 @@ import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { Button } from './Button';
 import { Card } from './Card';
 import { Input } from './Input';
-import { Shield, Plus, Search, User as UserIcon, List, ArrowLeft, CheckCircle, Clock, Save, Download, HandMetal } from 'lucide-react';
+import { Shield, Plus, Search, User as UserIcon, List, ArrowLeft, CheckCircle, Clock, Save, Download, HandMetal, Scan } from 'lucide-react';
 import { apiFetch } from '../services/networkConfig';
+import { QRStreamReader } from './QRStreamReader';
 import { exportLeaderLayout, exportModelLayout, exportGloveControl } from '../services/excelService';
 
 import { EmployeeData, User, ConfigModel, Workstation, ConfigRole } from '../types';
@@ -20,6 +21,7 @@ export const PeopleManagementManagersModule: React.FC<Props> = ({ onBack, curren
     const [employees, setEmployees] = useState<EmployeeData[]>([]);
     const [leaders, setLeaders] = useState<User[]>([]);
     const [models, setModels] = useState<ConfigModel[]>([]);
+    const [unifiedModels, setUnifiedModels] = useState<ConfigModel[]>([]);
     const [workstations, setWorkstations] = useState<Workstation[]>([]);
     const [configRoles, setConfigRoles] = useState<ConfigRole[]>([]);
 
@@ -28,12 +30,13 @@ export const PeopleManagementManagersModule: React.FC<Props> = ({ onBack, curren
 
     const loadBaseData = useCallback(async () => {
         try {
-            const [usersList, empList, modsList, wksList, rolesList] = await Promise.all([
+            const [usersList, empList, modsList, wksList, rolesList, unifiedList] = await Promise.all([
                 apiFetch('/users'),
                 apiFetch('/employees'),
                 apiFetch('/config/models'),
                 apiFetch('/workstations'),
-                apiFetch('/config/roles')
+                apiFetch('/config/roles'),
+                apiFetch('/config/models/unified')
             ]);
 
             if (Array.isArray(usersList)) {
@@ -44,6 +47,7 @@ export const PeopleManagementManagersModule: React.FC<Props> = ({ onBack, curren
             if (Array.isArray(modsList)) setModels(modsList);
             if (Array.isArray(wksList)) setWorkstations(wksList);
             if (Array.isArray(rolesList)) setConfigRoles(rolesList);
+            if (Array.isArray(unifiedList)) setUnifiedModels(unifiedList);
         } catch (e: any) {
             alert('Erro ao carregar dados base: ' + (e.message || 'Falha de conexão.'));
         }
@@ -185,20 +189,68 @@ export const PeopleManagementManagersModule: React.FC<Props> = ({ onBack, curren
     const [searchQuery, setSearchQuery] = useState('');
     const [consultResult, setConsultResult] = useState<any>(null);
     const [showMissesModal, setShowMissesModal] = useState(false);
-    const [historyFilter, setHistoryFilter] = useState('Mes');
 
-    const handleConsult = async () => {
-        if (!searchQuery) return;
+    // Filters for modal
+    const [historyFilterType, setHistoryFilterType] = useState<'semana' | 'mes' | 'ano' | 'todos'>('mes');
+    const [historyFilterWeek, setHistoryFilterWeek] = useState<string>(''); // YYYY-Www
+    const [historyFilterMonth, setHistoryFilterMonth] = useState<string>(''); // YYYY-MM
+    const [historyFilterYear, setHistoryFilterYear] = useState<string>(''); // YYYY
+
+    const [showScanner, setShowScanner] = useState(false);
+    const isAndroid = navigator.userAgent.toLowerCase().includes('android');
+
+    const handleConsult = async (overrideQuery?: string | React.MouseEvent) => {
+        const queryToUse = typeof overrideQuery === 'string' ? overrideQuery : searchQuery;
+        if (!queryToUse) return;
         try {
-            const res = await apiFetch('/employees/search/' + encodeURIComponent(searchQuery.trim()));
+            const res = await apiFetch('/employees/search/' + encodeURIComponent(queryToUse.trim()));
             if (res && res.matricula) {
+                // Initialize current dates
                 const now = new Date();
+
+                // Initialize current filters correctly
+                const yyyy = now.getFullYear();
+                const mm = String(now.getMonth() + 1).padStart(2, '0');
+
+                // Get ISO week
+                const tempDate = new Date(now.valueOf());
+                const dayn = (now.getDay() + 6) % 7;
+                tempDate.setDate(tempDate.getDate() - dayn + 3);
+                const firstThursday = tempDate.valueOf();
+                tempDate.setMonth(0, 1);
+                if (tempDate.getDay() !== 4) {
+                    tempDate.setMonth(0, 1 + ((4 - tempDate.getDay()) + 7) % 7);
+                }
+                const ww = String(1 + Math.ceil((firstThursday - tempDate.valueOf()) / 604800000)).padStart(2, '0');
+
+                setHistoryFilterWeek(`${yyyy}-W${ww}`);
+                setHistoryFilterMonth(`${yyyy}-${mm}`);
+                setHistoryFilterYear(`${yyyy}`);
+
+                const currentMonth = now.getMonth();
+                const currentYear = now.getFullYear();
                 let misses = 0;
                 res.attendanceLogs?.forEach((log: any) => {
                     const d = new Date(log.date);
-                    if (d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear() && (log.type === 'FALTA' || log.type === 'ATESTADO')) misses++;
+                    if (d.getMonth() === currentMonth && d.getFullYear() === currentYear && (log.type === 'FALTA' || log.type === 'ATESTADO')) misses++;
                 });
-                setConsultResult({ ...res, misses, rank: Math.max(0, 10 - misses * 0.5) });
+
+                // Grab all workstation slots where user is allocated
+                const userWorkstations = workstations.reduce((acc: any[], ws: any) => {
+                    if (ws.slots) {
+                        let foundSlots;
+                        try {
+                            foundSlots = typeof ws.slots === 'string' ? JSON.parse(ws.slots) : ws.slots;
+                        } catch {
+                            foundSlots = [];
+                        }
+                        const isAllocated = foundSlots.some((s: any) => s.matricula === res.matricula);
+                        if (isAllocated) acc.push(ws.name);
+                    }
+                    return acc;
+                }, []);
+
+                setConsultResult({ ...res, misses, rank: Math.max(0, 10 - misses * 0.5), allocatedWorkstations: userWorkstations });
             } else {
                 setConsultResult(null);
                 alert('Não encontrado');
@@ -212,39 +264,79 @@ export const PeopleManagementManagersModule: React.FC<Props> = ({ onBack, curren
     const renderConsulta = () => (
         <div className="space-y-4">
             <Card className="flex gap-2 items-end">
-                <div className="flex-1"><Input label="Buscar Matrícula" value={searchQuery} onChange={e => setSearchQuery(e.target.value)} /></div>
+                <div className="flex-1"><Input label="Buscar Matrícula" value={searchQuery} onChange={e => setSearchQuery(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleConsult()} /></div>
+                {isAndroid && (
+                    <Button variant="secondary" onClick={() => setShowScanner(true)}>
+                        <Scan size={16} /> Ler QR Code
+                    </Button>
+                )}
                 <Button onClick={handleConsult}><Search size={16} /> Buscar</Button>
             </Card>
+
+            {showScanner && (
+                <QRStreamReader
+                    onScanSuccess={(text) => {
+                        setShowScanner(false);
+                        setSearchQuery(text);
+                        handleConsult(text);
+                    }}
+                    onClose={() => setShowScanner(false)}
+                />
+            )}
+
             {consultResult && (
                 <div className="space-y-4">
-                    <Card className="flex gap-4 items-start border-b-0 rounded-b-none">
-                        {consultResult.photo ? (
-                            <img src={consultResult.photo} alt="Colaborador" className="w-48 h-48 object-cover rounded-xl border border-slate-200" />
-                        ) : (
-                            <div className="w-48 h-48 bg-slate-200 dark:bg-zinc-800 rounded-xl flex items-center justify-center shrink-0">
-                                <UserIcon size={64} className="text-slate-400" />
-                            </div>
-                        )}
-                        <div className="flex-1">
-                            <h2 className="text-2xl font-bold text-slate-800 dark:text-zinc-100 mb-1">{consultResult.fullName}</h2>
-                            <p className="inline-block bg-slate-100 dark:bg-zinc-800 px-3 py-1 rounded-full text-sm font-medium text-slate-600 dark:text-zinc-400">
-                                Matrícula: {consultResult.matricula}
-                            </p>
-                            <div className="flex gap-3 mt-4">
-                                <div className="bg-cyan-50 dark:bg-cyan-900/20 text-cyan-700 dark:text-cyan-400 px-4 py-2 rounded-xl text-center border border-cyan-100 dark:border-cyan-900/40">
-                                    <p className="text-[10px] uppercase font-bold tracking-wider mb-1">Rank do Mês</p>
-                                    <p className="text-xl font-black">{consultResult.rank.toFixed(1)}</p>
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-stretch">
+                        <Card className="flex gap-4 items-start w-full">
+                            {consultResult.photo ? (
+                                <img src={consultResult.photo} alt="Colaborador" className="w-40 h-40 object-cover rounded-xl border border-slate-200" />
+                            ) : (
+                                <div className="w-40 h-40 bg-slate-200 dark:bg-zinc-800 rounded-xl flex items-center justify-center shrink-0">
+                                    <UserIcon size={64} className="text-slate-400" />
                                 </div>
-                                <button
-                                    onClick={() => setShowMissesModal(true)}
-                                    className="bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400 px-4 py-2 rounded-xl text-center border border-red-100 dark:border-red-900/40 hover:bg-red-100 dark:hover:bg-red-900/50 transition-colors cursor-pointer flex flex-col items-center justify-center"
-                                >
-                                    <p className="text-[10px] uppercase font-bold tracking-wider mb-1">Ver Histórico Completo 🔍</p>
-                                    <p className="text-xl font-black">{consultResult.misses} Ausências</p>
-                                </button>
+                            )}
+                            <div className="flex-1 flex flex-col justify-between h-full">
+                                <div>
+                                    <h2 className="text-2xl font-bold text-slate-800 dark:text-zinc-100 mb-1">{consultResult.fullName}</h2>
+                                    <p className="inline-block bg-slate-100 dark:bg-zinc-800 px-3 py-1 rounded-full text-sm font-medium text-slate-600 dark:text-zinc-400">
+                                        Matrícula: {consultResult.matricula}
+                                    </p>
+                                </div>
+                                <div className="flex gap-3 mt-4">
+                                    <div className="bg-cyan-50 dark:bg-cyan-900/20 text-cyan-700 dark:text-cyan-400 px-4 py-2 rounded-xl text-center border border-cyan-100 dark:border-cyan-900/40">
+                                        <p className="text-[10px] uppercase font-bold tracking-wider mb-1">Rank do Mês</p>
+                                        <p className="text-xl font-black">{consultResult.rank.toFixed(1)}</p>
+                                    </div>
+                                    <button
+                                        onClick={() => setShowMissesModal(true)}
+                                        className="bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400 px-4 py-2 rounded-xl text-center border border-red-100 dark:border-red-900/40 hover:bg-red-100 dark:hover:bg-red-900/50 transition-colors cursor-pointer flex flex-col items-center justify-center"
+                                    >
+                                        <p className="text-[10px] uppercase font-bold tracking-wider mb-1">Histórico Completo</p>
+                                        <p className="text-xl font-black">{consultResult.misses} Ausências</p>
+                                    </button>
+                                </div>
                             </div>
-                        </div>
-                    </Card>
+                        </Card>
+                        <Card className="flex flex-col w-full">
+                            <h3 className="text-sm font-bold text-slate-800 dark:text-zinc-100 uppercase tracking-wide border-b border-slate-100 dark:border-zinc-800 pb-2 mb-3 h-fit">Postos Habilitados</h3>
+                            <div className="flex-1 overflow-y-auto max-h-40">
+                                {consultResult.allocatedWorkstations && consultResult.allocatedWorkstations.length > 0 ? (
+                                    <div className="flex flex-wrap gap-2">
+                                        {consultResult.allocatedWorkstations.map((ws: string, i: number) => (
+                                            <span key={i} className="px-3 py-1.5 bg-indigo-50 dark:bg-indigo-900/20 text-indigo-700 dark:text-indigo-300 rounded-lg text-sm font-medium border border-indigo-100 dark:border-indigo-900/40">
+                                                {ws}
+                                            </span>
+                                        ))}
+                                    </div>
+                                ) : (
+                                    <div className="flex items-center justify-center h-full text-slate-400 text-sm font-medium italic">
+                                        Não alocado em nenhum posto
+                                    </div>
+                                )}
+                            </div>
+                        </Card>
+                    </div>
+
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-0">
                         <Card className="rounded-t-none md:rounded-tr-xl border-t-0 space-y-3">
                             <h3 className="font-bold text-slate-800 dark:text-zinc-100 flex items-center gap-2 pb-2 border-b border-slate-100 dark:border-zinc-800">
@@ -316,49 +408,82 @@ export const PeopleManagementManagersModule: React.FC<Props> = ({ onBack, curren
                     {showMissesModal && (() => {
                         const allLogs = consultResult.attendanceLogs || [];
                         const validLogs = allLogs.filter((l: any) => l.type === 'FALTA' || l.type === 'ATESTADO' || l.type === 'ATRASO');
+
                         const filteredLogs = validLogs.filter((log: any) => {
                             const d = new Date(log.date);
-                            const now = new Date();
-                            if (historyFilter === 'Dia') return d.getDate() === now.getDate() && d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
-                            if (historyFilter === 'Semana') return d >= new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
-                            if (historyFilter === 'Mes') return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
-                            if (historyFilter === 'Ano') return d.getFullYear() === now.getFullYear();
+                            if (historyFilterType === 'semana') {
+                                if (!historyFilterWeek) return true;
+                                const tempDate = new Date(d.valueOf());
+                                const dayn = (d.getDay() + 6) % 7;
+                                tempDate.setDate(tempDate.getDate() - dayn + 3);
+                                const firstThursday = tempDate.valueOf();
+                                tempDate.setMonth(0, 1);
+                                if (tempDate.getDay() !== 4) {
+                                    tempDate.setMonth(0, 1 + ((4 - tempDate.getDay()) + 7) % 7);
+                                }
+                                const ww = String(1 + Math.ceil((firstThursday - tempDate.valueOf()) / 604800000)).padStart(2, '0');
+                                const logWeek = `${tempDate.getFullYear()}-W${ww}`;
+                                return logWeek === historyFilterWeek;
+                            }
+                            if (historyFilterType === 'mes') {
+                                if (!historyFilterMonth) return true;
+                                const logMonth = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+                                return logMonth === historyFilterMonth;
+                            }
+                            if (historyFilterType === 'ano') {
+                                if (!historyFilterYear) return true;
+                                return String(d.getFullYear()) === historyFilterYear;
+                            }
                             return true;
                         });
+
                         let dynamicRank = 10;
                         filteredLogs.forEach((log: any) => {
                             if (log.type === 'FALTA') dynamicRank -= 1;
                             if (log.type === 'ATESTADO') dynamicRank -= 0.5;
                         });
                         dynamicRank = Math.max(0, dynamicRank);
+
                         return (
                             <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={(e) => { if (e.target === e.currentTarget) setShowMissesModal(false) }}>
-                                <Card className="w-full max-w-lg space-y-4 max-h-[80vh] overflow-y-auto shadow-2xl border-0 ring-1 ring-white/10 relative">
-                                    <div className="flex justify-between items-center border-b border-slate-100 dark:border-zinc-800/50 pb-3">
+                                <Card className="w-full max-w-lg space-y-4 max-h-[80vh] flex flex-col shadow-2xl border-0 ring-1 ring-white/10 relative">
+                                    <div className="flex justify-between items-center border-b border-slate-100 dark:border-zinc-800/50 pb-3 shrink-0">
                                         <h3 className="font-bold text-lg text-slate-800 dark:text-zinc-100 flex items-center gap-2">
                                             <Clock size={16} className="text-red-500" /> Histórico Completo
                                         </h3>
                                         <button onClick={() => setShowMissesModal(false)} className="text-slate-400 hover:text-slate-700 dark:hover:text-zinc-200 transition-colors bg-slate-100 dark:bg-zinc-800 rounded-full w-8 h-8 flex items-center justify-center">×</button>
                                     </div>
-                                    <div className="flex justify-between items-center bg-slate-50 dark:bg-zinc-900/50 p-3 rounded-xl">
-                                        <select
-                                            className="bg-white dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 rounded-lg px-3 py-1.5 text-sm font-medium outline-none"
-                                            value={historyFilter} onChange={e => setHistoryFilter(e.target.value)}
-                                        >
-                                            <option value="Dia">Hoje</option>
-                                            <option value="Semana">Últimos 7 Dias</option>
-                                            <option value="Mes">Este Mês</option>
-                                            <option value="Ano">Este Ano</option>
-                                            <option value="Todos">Todo o Período</option>
-                                        </select>
-                                        <div className="text-right">
-                                            <p className="text-[10px] uppercase font-bold text-slate-500 tracking-wider">Rank do Período</p>
+                                    <div className="flex flex-col gap-3 bg-slate-50 dark:bg-zinc-900/50 p-3 rounded-xl shrink-0">
+                                        <div className="flex items-center gap-2">
+                                            <select
+                                                className="bg-white dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 rounded-lg px-3 py-2 text-sm font-medium outline-none flex-1"
+                                                value={historyFilterType} onChange={e => setHistoryFilterType(e.target.value as any)}
+                                            >
+                                                <option value="semana">Por Semana</option>
+                                                <option value="mes">Por Mês</option>
+                                                <option value="ano">Por Ano</option>
+                                                <option value="todos">Todo o Período</option>
+                                            </select>
+
+                                            {historyFilterType === 'semana' && (
+                                                <input type="week" value={historyFilterWeek} onChange={e => setHistoryFilterWeek(e.target.value)} className="bg-white dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 rounded-lg px-3 py-2 text-sm font-medium outline-none flex-1" />
+                                            )}
+                                            {historyFilterType === 'mes' && (
+                                                <input type="month" value={historyFilterMonth} onChange={e => setHistoryFilterMonth(e.target.value)} className="bg-white dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 rounded-lg px-3 py-2 text-sm font-medium outline-none flex-1" />
+                                            )}
+                                            {historyFilterType === 'ano' && (
+                                                <input type="number" min="2000" max="2100" step="1" value={historyFilterYear} onChange={e => setHistoryFilterYear(e.target.value)} placeholder="YYYY" className="bg-white dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 rounded-lg px-3 py-2 text-sm font-medium outline-none w-24 text-center" />
+                                            )}
+                                        </div>
+
+                                        <div className="flex items-center justify-between border-t border-slate-200 dark:border-zinc-800 pt-3 mt-1">
+                                            <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">Rank do Período</p>
                                             <p className={`text-2xl font-black ${dynamicRank >= 9 ? 'text-emerald-500' : dynamicRank >= 7 ? 'text-amber-500' : 'text-red-500'}`}>
                                                 {dynamicRank.toFixed(1)}
                                             </p>
                                         </div>
                                     </div>
-                                    <div className="space-y-3">
+                                    <div className="space-y-3 overflow-y-auto flex-1 pr-1">
                                         {filteredLogs.length > 0 ? (
                                             <ul className="space-y-2">
                                                 {filteredLogs
@@ -642,11 +767,11 @@ export const PeopleManagementManagersModule: React.FC<Props> = ({ onBack, curren
                         <div className="grid grid-cols-2 gap-2 mt-4">
                             <select className="bg-slate-50 dark:bg-zinc-800 p-2 rounded" value={alocModel} onChange={e => { setAlocModel(e.target.value); setAlocStation(''); }}>
                                 <option value="">Selecione Modelo</option>
-                                {models.map(m => <option key={m.name} value={m.name}>{m.name}</option>)}
+                                {unifiedModels.map(m => <option key={m.name} value={m.name}>{m.name}</option>)}
                             </select>
                             <select className="bg-slate-50 dark:bg-zinc-800 p-2 rounded" value={alocStation} onChange={e => setAlocStation(e.target.value)}>
                                 <option value="">Selecione Posto</option>
-                                {workstations.filter(w => w.modelName === alocModel).map(w => <option key={w.id} value={w.name}>{w.name}</option>)}
+                                {workstations.filter(w => w.modelName === alocModel || (w.modelName || '').substring(0, 7) === alocModel).map(w => <option key={w.id} value={w.name}>{w.name}</option>)}
                             </select>
                             <Input label="Ordem (Ex: 1, 2...)" value={alocOrder} onChange={e => setAlocOrder(e.target.value)} />
                         </div>
@@ -669,7 +794,7 @@ export const PeopleManagementManagersModule: React.FC<Props> = ({ onBack, curren
             const empToUpdate = employees.find(e => e.matricula === matricula);
             if (!empToUpdate) return;
             try {
-                await apiFetch('/employees', { method: 'POST', body: JSON.stringify({ ...empToUpdate, [field]: value }) });
+                await apiFetch('/employees', { method: 'POST', body: JSON.stringify({ ...empToUpdate, [field]: value, isEdit: true }) });
                 setEmployees(prev => prev.map(e => e.matricula === matricula ? { ...e, [field]: value } : e));
             } catch (e) { alert('Erro ao atualizar luva'); }
         };

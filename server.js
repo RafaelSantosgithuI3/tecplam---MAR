@@ -588,6 +588,7 @@ const createConfigRoutes = (modelDelegate, pathName) => {
 
 // We need to define routes manually to use the string key for model
 app.get('/api/config/models', async (req, res) => res.json(await prisma.configModel.findMany()));
+// POST: salva lista completa e calcula unifiedCode automaticamente
 app.post('/api/config/models', async (req, res) => {
     try {
         await prisma.$transaction(async tx => {
@@ -595,10 +596,30 @@ app.post('/api/config/models', async (req, res) => {
             for (const i of req.body.items) {
                 const name = typeof i === 'string' ? i : i.name;
                 const sku = typeof i === 'object' ? i.sku : undefined;
-                await tx.configModel.create({ data: { name, sku } });
+                const unifiedCode = (typeof i === 'object' && i.unifiedCode)
+                    ? i.unifiedCode
+                    : (name || '').substring(0, 7);
+                await tx.configModel.create({ data: { name, sku, unifiedCode } });
             }
         });
         res.json({ message: "Salvo" });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// GET: retorna modelos agrupados — um por unifiedCode distinto (para selects de Layout)
+app.get('/api/config/models/unified', async (req, res) => {
+    try {
+        const all = await prisma.configModel.findMany();
+        const seen = new Set();
+        const unified = [];
+        for (const m of all) {
+            const code = m.unifiedCode || (m.name || '').substring(0, 7);
+            if (!seen.has(code)) {
+                seen.add(code);
+                unified.push({ name: code, sku: m.sku, unifiedCode: code });
+            }
+        }
+        res.json(unified);
     } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -839,9 +860,11 @@ app.post('/api/boxes/:id/scraps', async (req, res) => {
             categoryMatch = itemUp.includes('FRONT') || itemUp.includes('OCTA');
         } else if (boxType === 'BATERIA') {
             categoryMatch = itemUp.includes('BATERIA') || itemUp.includes('BATTERY');
+        } else if (boxType === 'PLACA') {
+            categoryMatch = itemUp.includes('PLACA');
         } else if (boxType.includes('MIUDEZA')) {
-            // Miudezas aceita tudo que não é REAR, FRONT, OCTA nem BATERIA
-            const isMainCategory = itemUp.includes('REAR') || itemUp.includes('FRONT') || itemUp.includes('OCTA') || itemUp.includes('BATERIA');
+            // Miudezas aceita tudo que não é REAR, FRONT, OCTA, BATERIA, nem PLACA
+            const isMainCategory = itemUp.includes('REAR') || itemUp.includes('FRONT') || itemUp.includes('OCTA') || itemUp.includes('BATERIA') || itemUp.includes('PLACA');
             categoryMatch = !isMainCategory;
         } else {
             categoryMatch = true; // tipo desconhecido: aceita qualquer item
@@ -974,6 +997,86 @@ app.post('/api/scraps', async (req, res) => {
         res.json({ message: "Scrap salvo" });
     } catch (e) {
         console.error("Scrap Create Error:", e);
+        res.status(500).json({ error: e.message });
+    }
+});
+
+// --- SCRAP BATCH CREATE (multi-scan) ---
+app.post('/api/scraps/batch-create', async (req, res) => {
+    const { scraps } = req.body;
+
+    if (!Array.isArray(scraps) || scraps.length === 0) {
+        return res.status(400).json({ error: "Array de scraps vazio." });
+    }
+
+    try {
+        // Validate all QR codes are unique in DB
+        for (const s of scraps) {
+            if (s.qrCode) {
+                const existing = await prisma.scrapLog.findFirst({ where: { qrCode: String(s.qrCode) } });
+                if (existing) {
+                    return res.status(400).json({ error: `A etiqueta ${s.qrCode} já está atrelada a outro scrap.` });
+                }
+            }
+        }
+
+        const created = [];
+        await prisma.$transaction(async (tx) => {
+            for (const s of scraps) {
+                let plantToSave = 'ND';
+                if (s.code) {
+                    const material = await tx.material.findUnique({ where: { code: String(s.code) } });
+                    if (material && material.plant) {
+                        plantToSave = material.plant;
+                    } else if (s.plant) {
+                        plantToSave = s.plant;
+                    }
+                } else if (s.plant) {
+                    plantToSave = s.plant;
+                }
+
+                const newScrap = await tx.scrapLog.create({
+                    data: {
+                        userId: s.userId,
+                        date: s.date,
+                        time: s.time,
+                        week: Number(s.week) || null,
+                        shift: s.shift ? String(s.shift) : null,
+                        leaderName: s.leaderName,
+                        pqc: s.pqc,
+                        model: s.model,
+                        qty: 1, // Forçar qty=1 por registro individual no lote
+                        item: s.item,
+                        status: s.status,
+                        code: s.code,
+                        description: s.description,
+                        unitValue: Number(s.unitValue) || 0,
+                        totalValue: Number(s.unitValue) || 0, // qty=1, logo totalValue = unitValue
+                        usedModel: s.usedModel,
+                        responsible: s.responsible,
+                        station: s.station,
+                        reason: s.reason,
+                        rootCause: s.rootCause,
+                        countermeasure: s.countermeasure || null,
+                        immediateAction: s.immediateAction || null,
+                        line: s.line,
+                        plant: plantToSave,
+                        qrCode: s.qrCode || null,
+                        situation: 'PENDING'
+                    }
+                });
+                created.push(newScrap);
+            }
+        });
+
+        // Write-Through Cache
+        if (SCRAP_CACHE) {
+            created.forEach(ns => SCRAP_CACHE.unshift(ns));
+        }
+
+        res.json({ message: `${created.length} scraps salvos com sucesso.` });
+    } catch (e) {
+        console.error("Batch Scrap Create Error:", e);
         res.status(500).json({ error: e.message });
     }
 });
@@ -1172,6 +1275,35 @@ app.post('/api/materials/bulk', async (req, res) => {
 });
 
 // --- FILES & BACKUP ---
+
+// --- MATERIAL DELETE (single) ---
+app.delete('/api/materials/:code', async (req, res) => {
+    const { code } = req.params;
+    try {
+        await prisma.material.delete({ where: { code: String(code) } });
+        res.json({ success: true });
+    } catch (e) {
+        console.error("Material Delete Error:", e);
+        res.status(500).json({ error: e.message });
+    }
+});
+
+// --- MATERIAL DELETE (bulk) ---
+app.post('/api/materials/bulk-delete', async (req, res) => {
+    const { codes } = req.body;
+    if (!Array.isArray(codes) || codes.length === 0) {
+        return res.status(400).json({ error: 'Array de códigos obrigatório.' });
+    }
+    try {
+        const result = await prisma.material.deleteMany({
+            where: { code: { in: codes.map(c => String(c)) } }
+        });
+        res.json({ success: true, deleted: result.count });
+    } catch (e) {
+        console.error("Bulk Material Delete Error:", e);
+        res.status(500).json({ error: e.message });
+    }
+});
 
 app.post('/api/backup/save', (req, res) => {
     const { fileName, fileData } = req.body;

@@ -22,3 +22,14 @@ export const saveMaterialsBulk = async (materials: Material[]) => {
         throw e;
     }
 };
+
+export const deleteMaterial = async (code: string) => {
+    return apiFetch(`/materials/${encodeURIComponent(code)}`, { method: 'DELETE' });
+};
+
+export const deleteMaterialsBulk = async (codes: string[]) => {
+    return apiFetch('/materials/bulk-delete', {
+        method: 'POST',
+        body: JSON.stringify({ codes })
+    });
+};

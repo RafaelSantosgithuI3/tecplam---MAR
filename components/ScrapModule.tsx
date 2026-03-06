@@ -17,7 +17,7 @@ import {
 } from '../services/storageService';
 import {
     getScraps, saveScrap, updateScrap, deleteScrap, getMaterials, saveMaterials,
-    SCRAP_ITEMS, SCRAP_STATUS, CAUSA_RAIZ_OPTIONS
+    SCRAP_ITEMS, SCRAP_STATUS, CAUSA_RAIZ_OPTIONS, saveBatchScraps
 } from '../services/scrapService';
 import * as authService from '../services/authService';
 import { exportScrapToExcel, exportExecutiveReport } from '../services/excelService';
@@ -33,7 +33,7 @@ const formatDateDisplay = (dateString: string | undefined) => {
     return `${day}/${month}/${year}`;
 };
 
-const CRITICAL_ITEMS = ['REAR', 'FRONT', 'OCTA', 'BATERIA SCRAP'];
+const CRITICAL_ITEMS = ['REAR', 'FRONT', 'OCTA', 'BATERIA SCRAP', 'BATERIA RMA', 'PLACA'];
 const isCriticalItem = (item?: string) => {
     if (!item) return false;
     return CRITICAL_ITEMS.includes(item.toUpperCase().trim());
@@ -237,6 +237,8 @@ export const ScrapModule: React.FC<ScrapModuleProps> = ({ currentUser, onBack, i
 // --- SUB COMPONENTS ---
 
 const ScrapForm = ({ users, models, stations, lines, materials, onSuccess, currentUser }: any) => {
+    const ORIGIN_OPTIONS = [...lines];
+
     const initialState = {
         date: getManausDate().toISOString().split('T')[0],
         week: getWeekNumber(getManausDate()),
@@ -265,9 +267,34 @@ const ScrapForm = ({ users, models, stations, lines, materials, onSuccess, curre
     const isAndroid = /Android/i.test(navigator.userAgent);
     const [showQRReader, setShowQRReader] = useState(false);
 
+    // Multi-scan state
+    const [multiScanMode, setMultiScanMode] = useState(false);
+    const [multiQRs, setMultiQRs] = useState<string[]>([]);
+    const [showMultiScanPrompt, setShowMultiScanPrompt] = useState(false);
+    const [pendingQR, setPendingQR] = useState<string>('');
+
+    // QR Code optional if origin contains LOGÍSTICA or RETRABALHO
+    const originUpper = formData.line.toUpperCase();
+    const isQRRequired = !originUpper.includes('LOGÍSTICA') && !originUpper.includes('RETRABALHO');
+
     const handleQRScanSuccess = (text: string) => {
         setShowQRReader(false);
 
+        if (multiScanMode) {
+            // In multi-scan mode, add to list
+            if (text && !multiQRs.includes(text)) {
+                setMultiQRs(prev => [...prev, text]);
+            } else if (multiQRs.includes(text)) {
+                alert('Este QR Code já foi lido neste lote.');
+            }
+            // Also auto-fill code/material from first scan if list is empty
+            if (multiQRs.length === 0 && text && text.length >= 11) {
+                handleCodeChange(text.substring(0, 11));
+            }
+            return;
+        }
+
+        // Single-scan: show prompt to enter multi-scan mode
         let extractedDate = undefined;
         let extractedQty = undefined;
 
@@ -296,9 +323,37 @@ const ScrapForm = ({ users, models, stations, lines, materials, onSuccess, curre
         if (text && text.length >= 11) {
             handleCodeChange(text.substring(0, 11));
         }
+
+        // Trigger multi-scan prompt
+        setPendingQR(text);
+        setShowMultiScanPrompt(true);
+    };
+
+    const handleMultiScanConfirm = (accept: boolean) => {
+        setShowMultiScanPrompt(false);
+        if (accept) {
+            setMultiScanMode(true);
+            setMultiQRs([pendingQR]);
+            setFormData(prev => ({ ...prev, qrCode: '' }));
+        }
+        setPendingQR('');
+    };
+
+    const handleRemoveQR = (qr: string) => {
+        setMultiQRs(prev => prev.filter(q => q !== qr));
+    };
+
+    const handleFinishMultiScan = () => {
+        // Keep multi-scan mode active, user will submit the form
     };
 
     // Derived Form Values
+    useEffect(() => {
+        if (multiScanMode) {
+            setFormData(prev => ({ ...prev, qty: multiQRs.length }));
+        }
+    }, [multiQRs, multiScanMode]);
+
     useEffect(() => {
         if (formData.date) {
             const d = new Date(formData.date);
@@ -334,33 +389,72 @@ const ScrapForm = ({ users, models, stations, lines, materials, onSuccess, curre
     };
 
     const handleSubmit = async () => {
-        if (!formData.leaderName || !formData.model || !formData.item || !formData.line || !formData.qrCode) {
-            alert("Preencha todos os campos obrigatórios (QR Code, Líder, Linha, Modelo, Item)!");
+        if (!formData.leaderName || !formData.model || !formData.item || !formData.line) {
+            alert("Preencha todos os campos obrigatórios (Líder, Origem, Modelo, Item)!");
+            return;
+        }
+
+        // QR required validation based on origin
+        if (isQRRequired && !multiScanMode && !formData.qrCode) {
+            alert("QR Code obrigatório para esta origem!");
+            return;
+        }
+
+        if (multiScanMode && multiQRs.length === 0) {
+            alert("Nenhum QR Code foi lido no modo multi-scan!");
             return;
         }
 
         const now = getManausDate();
         const time = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
 
-        const payload: ScrapData = {
-            ...formData as ScrapData,
-            userId: currentUser.matricula,
-            time: time,
-            status: formData.status!,
-            item: formData.item!,
-            rootCause: formData.rootCause!,
-            station: formData.station || 'ND',
-            responsible: formData.responsible || currentUser.name
-        };
+        if (multiScanMode && multiQRs.length > 0) {
+            // Batch create: one record per QR
+            const batchPayloads: ScrapData[] = multiQRs.map(qr => ({
+                ...formData as ScrapData,
+                userId: currentUser.matricula,
+                time: time,
+                status: formData.status!,
+                item: formData.item!,
+                rootCause: formData.rootCause!,
+                station: formData.station || 'ND',
+                responsible: formData.responsible || currentUser.name,
+                qrCode: qr
+            }));
 
-        try {
-            await saveScrap(payload);
-            alert("Scrap lançado com sucesso!");
-            setFormData(initialState);
-            onSuccess();
-        } catch (e: any) {
-            const msg = e?.message || e?.error || "Erro ao salvar scrap.";
-            alert(msg);
+            try {
+                await saveBatchScraps(batchPayloads);
+                alert(`${multiQRs.length} scraps lançados com sucesso (lote)!`);
+                setFormData(initialState);
+                setMultiScanMode(false);
+                setMultiQRs([]);
+                onSuccess();
+            } catch (e: any) {
+                const msg = e?.message || e?.error || "Erro ao salvar lote de scraps.";
+                alert(msg);
+            }
+        } else {
+            // Single create
+            const payload: ScrapData = {
+                ...formData as ScrapData,
+                userId: currentUser.matricula,
+                time: time,
+                status: formData.status!,
+                item: formData.item!,
+                rootCause: formData.rootCause!,
+                station: formData.station || 'ND',
+                responsible: formData.responsible || currentUser.name
+            };
+
+            try {
+                await saveScrap(payload);
+                alert("Scrap lançado com sucesso!");
+                setFormData(initialState);
+                onSuccess();
+            } catch (e: any) {
+                const msg = e?.message || e?.error || "Erro ao salvar scrap.";
+                alert(msg);
+            }
         }
     };
 
@@ -396,14 +490,14 @@ const ScrapForm = ({ users, models, stations, lines, materials, onSuccess, curre
 
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                     <div>
-                        <label className="block text-xs font-medium text-slate-500 dark:text-zinc-400 mb-1.5 uppercase">Linha</label>
+                        <label className="block text-xs font-medium text-slate-500 dark:text-zinc-400 mb-1.5 uppercase">Origem do Scrap</label>
                         <select
                             className="w-full bg-white dark:bg-zinc-950 border border-slate-300 dark:border-zinc-800 rounded-lg p-2.5 text-sm outline-none focus:ring-2 focus:ring-blue-600 text-slate-900 dark:text-zinc-100"
                             value={formData.line || ''}
                             onChange={e => setFormData({ ...formData, line: e.target.value })}
                         >
                             <option value="" disabled>Selecione...</option>
-                            {lines.map((l: string) => <option key={l} value={l}>{l}</option>)}
+                            {ORIGIN_OPTIONS.map((l: string) => <option key={l} value={l}>{l}</option>)}
                         </select>
                     </div>
                     <div>
@@ -433,33 +527,88 @@ const ScrapForm = ({ users, models, stations, lines, materials, onSuccess, curre
 
                 <hr className="border-slate-200 dark:border-zinc-800" />
 
+                {/* QR Code Section */}
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                     <div>
-                        <label className="block text-xs uppercase mb-1.5 font-bold text-blue-600 dark:text-blue-400">Leia o QR da Etiqueta do desmonte *</label>
-                        <div className="flex gap-2">
-                            <input
-                                type="text"
-                                className="w-full bg-blue-50/50 dark:bg-blue-900/10 border-2 border-blue-400/50 dark:border-blue-500/50 rounded-lg p-2.5 text-sm outline-none focus:ring-2 focus:ring-blue-500 font-mono text-slate-900 dark:text-zinc-100 transition-all placeholder-blue-300 dark:placeholder-blue-700"
-                                value={formData.qrCode || ''}
-                                onChange={(e) => setFormData((prev: any) => ({ ...prev, qrCode: e.target.value }))}
-                                onKeyDown={(e) => {
-                                    if (e.key === 'Enter') {
-                                        e.preventDefault();
-                                        const qr = formData.qrCode || '';
-                                        if (qr) {
-                                            handleQRScanSuccess(qr);
+                        <label className="block text-xs uppercase mb-1.5 font-bold text-blue-600 dark:text-blue-400">
+                            Leia o QR da Etiqueta do desmonte {isQRRequired ? '*' : '(Opcional)'}
+                        </label>
+                        {!multiScanMode ? (
+                            <div className="flex gap-2">
+                                <input
+                                    type="text"
+                                    className="w-full bg-blue-50/50 dark:bg-blue-900/10 border-2 border-blue-400/50 dark:border-blue-500/50 rounded-lg p-2.5 text-sm outline-none focus:ring-2 focus:ring-blue-500 font-mono text-slate-900 dark:text-zinc-100 transition-all placeholder-blue-300 dark:placeholder-blue-700"
+                                    value={formData.qrCode || ''}
+                                    onChange={(e) => setFormData((prev: any) => ({ ...prev, qrCode: e.target.value }))}
+                                    onKeyDown={(e) => {
+                                        if (e.key === 'Enter') {
+                                            e.preventDefault();
+                                            const qr = formData.qrCode || '';
+                                            if (qr) {
+                                                handleQRScanSuccess(qr);
+                                            }
                                         }
-                                    }
-                                }}
-                                placeholder="Bipe o código..."
-                                required
-                            />
-                            {isAndroid && (
-                                <button type="button" onClick={() => setShowQRReader(true)} className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-2 rounded-lg flex items-center justify-center transition-colors shadow flex-shrink-0" title="Ler com a câmera">
-                                    <QrCode size={20} />
-                                </button>
-                            )}
-                        </div>
+                                    }}
+                                    placeholder="Bipe o código..."
+                                    required={isQRRequired}
+                                />
+                                {isAndroid && (
+                                    <button type="button" onClick={() => setShowQRReader(true)} className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-2 rounded-lg flex items-center justify-center transition-colors shadow flex-shrink-0" title="Ler com a câmera">
+                                        <QrCode size={20} />
+                                    </button>
+                                )}
+                            </div>
+                        ) : (
+                            /* Multi-scan mode UI */
+                            <div className="space-y-3">
+                                <div className="flex gap-2">
+                                    <input
+                                        type="text"
+                                        className="w-full bg-green-50/50 dark:bg-green-900/10 border-2 border-green-400/50 dark:border-green-500/50 rounded-lg p-2.5 text-sm outline-none focus:ring-2 focus:ring-green-500 font-mono text-slate-900 dark:text-zinc-100 transition-all placeholder-green-400 dark:placeholder-green-700"
+                                        onKeyDown={(e) => {
+                                            if (e.key === 'Enter') {
+                                                e.preventDefault();
+                                                const val = (e.target as HTMLInputElement).value;
+                                                if (val) {
+                                                    handleQRScanSuccess(val);
+                                                    (e.target as HTMLInputElement).value = '';
+                                                }
+                                            }
+                                        }}
+                                        placeholder="Continue bipando QR Codes..."
+                                        aria-label="Scanner multi-scan"
+                                        autoFocus
+                                    />
+                                    {isAndroid && (
+                                        <button type="button" onClick={() => setShowQRReader(true)} className="bg-green-600 hover:bg-green-700 text-white px-3 py-2 rounded-lg flex items-center justify-center transition-colors shadow flex-shrink-0" title="Ler com a câmera">
+                                            <QrCode size={20} />
+                                        </button>
+                                    )}
+                                </div>
+                                <div className="bg-green-50 dark:bg-green-900/10 border border-green-200 dark:border-green-800/50 rounded-lg p-3 max-h-48 overflow-y-auto">
+                                    <div className="flex items-center justify-between mb-2">
+                                        <p className="text-xs font-bold text-green-700 dark:text-green-400 uppercase">QR Codes lidos</p>
+                                        <span className="bg-green-600 text-white text-sm font-bold px-3 py-0.5 rounded-full">{multiQRs.length}</span>
+                                    </div>
+                                    {multiQRs.map((qr, idx) => (
+                                        <div key={idx} className="flex items-center justify-between py-1 border-b border-green-100 dark:border-green-900/30 last:border-0">
+                                            <span className="font-mono text-xs text-slate-700 dark:text-zinc-300 truncate max-w-[80%]">{qr}</span>
+                                            <button type="button" onClick={() => handleRemoveQR(qr)} className="text-red-400 hover:text-red-600 p-1" title="Remover">
+                                                <Trash2 size={14} />
+                                            </button>
+                                        </div>
+                                    ))}
+                                </div>
+                                <div className="flex gap-2">
+                                    <Button size="sm" variant="ghost" onClick={() => { setMultiScanMode(false); setMultiQRs([]); }} className="text-red-500">
+                                        <X size={14} /> Cancelar Lote
+                                    </Button>
+                                    <Button size="sm" onClick={handleFinishMultiScan} className="bg-green-600 hover:bg-green-700 text-white">
+                                        <CheckCircle2 size={14} /> Finalizar Leitura ({multiQRs.length})
+                                    </Button>
+                                </div>
+                            </div>
+                        )}
                         {showQRReader && (
                             <QRStreamReader onScanSuccess={handleQRScanSuccess} onClose={() => setShowQRReader(false)} />
                         )}
@@ -537,6 +686,22 @@ const ScrapForm = ({ users, models, stations, lines, materials, onSuccess, curre
                     <Input label="Responsável" value={formData.responsible} onChange={e => setFormData({ ...formData, responsible: e.target.value })} />
                 </div>
 
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                    <div>
+                        <label className="block text-xs font-medium text-slate-500 dark:text-zinc-400 mb-1.5 uppercase">Estação</label>
+                        <input
+                            list="station-list"
+                            className="w-full bg-white dark:bg-zinc-950 border border-slate-300 dark:border-zinc-800 rounded-lg p-2.5 text-sm outline-none focus:ring-2 focus:ring-blue-600 text-slate-900 dark:text-zinc-100"
+                            value={formData.station || ''}
+                            onChange={e => setFormData({ ...formData, station: e.target.value })}
+                            placeholder="Selecione..."
+                        />
+                        <datalist id="station-list">
+                            {stations.map((st: string) => <option key={st} value={st} />)}
+                        </datalist>
+                    </div>
+                </div>
+
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                     <div>
                         <label className="block text-xs font-medium text-gray-500 dark:text-zinc-400 mb-1.5 uppercase">Motivo Detalhado</label>
@@ -569,10 +734,28 @@ const ScrapForm = ({ users, models, stations, lines, materials, onSuccess, curre
 
                 <div className="pt-4 flex justify-end">
                     <Button onClick={handleSubmit} size="lg" className="w-full md:w-auto">
-                        <Save size={18} /> Salvar Scrap
+                        <Save size={18} /> {multiScanMode ? `Salvar ${multiQRs.length} Scraps (Lote)` : 'Salvar Scrap'}
                     </Button>
                 </div>
             </div>
+
+            {/* Multi-scan prompt modal */}
+            {showMultiScanPrompt && (
+                <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+                    <Card className="max-w-sm w-full bg-white dark:bg-zinc-900 border-slate-200 dark:border-zinc-700 space-y-4">
+                        <h3 className="font-bold text-lg text-slate-900 dark:text-white">Cadastro em Lote</h3>
+                        <p className="text-sm text-slate-600 dark:text-zinc-400">
+                            Deseja cadastrar mais de um scrap do item que tenha o mesmo defeito?
+                        </p>
+                        <div className="flex gap-2 pt-2">
+                            <Button variant="ghost" className="flex-1" onClick={() => handleMultiScanConfirm(false)}>Não, apenas este</Button>
+                            <Button className="flex-1 bg-green-600 hover:bg-green-700 text-white" onClick={() => handleMultiScanConfirm(true)}>
+                                <Plus size={16} /> Sim, múltiplos
+                            </Button>
+                        </div>
+                    </Card>
+                </div>
+            )}
         </Card>
     );
 };
@@ -640,6 +823,7 @@ const ScrapPending = ({ scraps, currentUser, onUpdate, users, lines, models, cat
                     materials={materials}
                     stations={stations}
                     currentUser={currentUser}
+                    readOnlyMode={true}
                     onClose={() => setEditingScrap(null)}
                     onSave={async () => {
                         await onUpdate();
@@ -1132,9 +1316,10 @@ export const ScrapDetailModal: React.FC<ScrapDetailModalProps> = ({ isOpen, scra
                             <div className="md:col-span-2">
                                 <DetailItem label="Descrição" value={scrap.description || '-'} />
                             </div>
-                            <DetailItem label="QR Code" value={scrap.qrCode || '-'} />
                             <DetailItem label="Modelo Usado" value={scrap.usedModel || '-'} />
-                            <DetailItem label="Modelo Usado" value={scrap.usedModel || '-'} />
+                            <div className="md:col-span-3">
+                                <DetailItem label="QR Code" value={scrap.qrCode || '-'} breakAll />
+                            </div>
                         </div>
                     </div>
 
@@ -1176,27 +1361,25 @@ export const ScrapDetailModal: React.FC<ScrapDetailModalProps> = ({ isOpen, scra
                             <span className="text-xs font-mono text-slate-500">{scrap.time}</span>
                         </div>
 
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                             <div>
-                                <label className="flex text-xs font-bold text-slate-500 dark:text-zinc-500 mb-2 uppercase items-center gap-2"><FileText size={14} /> Motivo Detalhado</label>
+                                <label className="flex items-center gap-2 text-xs font-bold text-slate-500 dark:text-zinc-500 mb-2 uppercase"><FileText size={14} /> Motivo Detalhado</label>
                                 <div className="bg-slate-100 dark:bg-zinc-950 p-4 rounded-lg border border-slate-200 dark:border-zinc-800 text-sm min-h-[100px] text-slate-700 dark:text-zinc-300 leading-relaxed shadow-inner">
                                     {scrap.reason || <span className="italic text-slate-400">Não informado.</span>}
                                 </div>
                             </div>
                             <div>
-                                <label className="block text-xs font-bold text-green-600 dark:text-green-500 mb-2 uppercase flex items-center gap-2"><CheckCircle2 size={14} /> Contra Medida</label>
+                                <label className="flex items-center gap-2 text-xs font-bold text-yellow-600 dark:text-yellow-500 mb-2 uppercase"><AlertTriangle size={14} /> Ação Imediata</label>
+                                <div className="bg-yellow-50 dark:bg-yellow-900/10 p-4 rounded-lg border border-yellow-200 dark:border-yellow-900/30 text-sm min-h-[100px] text-slate-800 dark:text-zinc-200 leading-relaxed shadow-inner">
+                                    {scrap.immediateAction || <span className="italic text-slate-400">Não informado.</span>}
+                                </div>
+                            </div>
+                            <div>
+                                <label className="flex items-center gap-2 text-xs font-bold text-green-600 dark:text-green-500 mb-2 uppercase"><CheckCircle2 size={14} /> Contra Medida</label>
                                 <div className={`p-4 rounded-lg border text-sm min-h-[100px] shadow-inner leading-relaxed ${scrap.countermeasure ? 'bg-green-50 dark:bg-green-900/10 border-green-200 dark:border-green-900/30 text-slate-800 dark:text-zinc-200' : 'bg-slate-50 dark:bg-zinc-950 border-slate-200 dark:border-zinc-800 text-slate-400 italic'}`}>
                                     {scrap.countermeasure || 'Nenhuma contra medida registrada.'}
                                 </div>
                             </div>
-                            {scrap.immediateAction && (
-                                <div className="md:col-span-2">
-                                    <label className="block text-xs font-bold text-yellow-600 dark:text-yellow-500 mb-2 uppercase flex items-center gap-2"><AlertTriangle size={14} /> Ação Imediata</label>
-                                    <div className="bg-yellow-50 dark:bg-yellow-900/10 p-4 rounded-lg border border-yellow-200 dark:border-yellow-900/30 text-sm text-slate-800 dark:text-zinc-200 leading-relaxed shadow-inner">
-                                        {scrap.immediateAction}
-                                    </div>
-                                </div>
-                            )}
                         </div>
                     </div>
                 </div>
@@ -1211,10 +1394,10 @@ export const ScrapDetailModal: React.FC<ScrapDetailModalProps> = ({ isOpen, scra
 };
 
 // Helper component for uniform items
-export const DetailItem = ({ label, value, className = "" }: any) => (
+export const DetailItem = ({ label, value, className = "", breakAll = false }: any) => (
     <div className="bg-white dark:bg-zinc-900 p-2.5 rounded border border-slate-100 dark:border-zinc-800 shadow-sm transition-all hover:border-blue-200 dark:hover:border-blue-800/50">
         <label className="block text-[10px] font-bold text-slate-400 dark:text-zinc-500 uppercase mb-1 tracking-wider">{label}</label>
-        <div className={`text-sm text-slate-700 dark:text-zinc-300 font-medium truncate ${className}`}>{value}</div>
+        <div className={`text-sm text-slate-700 dark:text-zinc-300 font-medium ${breakAll ? 'break-all whitespace-normal' : 'truncate'} ${className}`}>{value}</div>
     </div>
 );
 
@@ -1372,7 +1555,7 @@ const ScrapEditDelete = ({ scraps, users, lines, models, onUpdate, categories, s
     );
 };
 
-const ScrapEditModal = ({ scrap, users, lines, models, categories, statusOptions, rootCauseOptions, materials, stations, currentUser, onClose, onSave }: any) => {
+const ScrapEditModal = ({ scrap, users, lines, models, categories, statusOptions, rootCauseOptions, materials, stations, currentUser, onClose, onSave, readOnlyMode = false }: any) => {
     const [formData, setFormData] = useState<Partial<ScrapData>>({ ...scrap });
     const isAndroid = /Android/i.test(navigator.userAgent);
     const [showQRReader, setShowQRReader] = useState(false);
@@ -1446,24 +1629,48 @@ const ScrapEditModal = ({ scrap, users, lines, models, categories, statusOptions
     return (
         <div className="fixed inset-0 bg-black/80 flex items-center justify-center p-4 z-50 backdrop-blur-sm">
             <Card className="max-w-6xl w-full max-h-[90vh] overflow-y-auto bg-white/50 dark:bg-zinc-900/50 border-slate-200 dark:border-zinc-800 shadow-sm backdrop-blur-xl">
-                <div className="flex justify-between items-center mb-6">
+                <div className="flex justify-between items-center mb-4">
                     <h3 className="font-bold text-xl flex items-center gap-2">
-                        <FileText className="text-blue-500" />
-                        Editar Scrap Completo
+                        <FileText className={readOnlyMode ? 'text-yellow-500' : 'text-blue-500'} />
+                        {readOnlyMode ? 'Tratar Scrap (Líder)' : 'Editar Scrap Completo'}
                     </h3>
                     <button onClick={onClose}><X size={24} /></button>
                 </div>
 
+                {/* Banner: Registrado Por */}
+                {(() => {
+                    const registeredBy = users.find((u: User) => u.matricula === scrap.userId)?.name || scrap.userId || '-';
+                    return (
+                        <div className="mb-4 flex flex-wrap items-center justify-between gap-2 bg-slate-100 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 rounded-lg px-4 py-2">
+                            <div className="flex items-center gap-2 text-sm">
+                                <span className="text-xs font-bold uppercase text-slate-400 dark:text-zinc-500">Registrado por</span>
+                                <span className="font-bold text-slate-800 dark:text-zinc-100">{registeredBy}</span>
+                            </div>
+                            <span className="text-xs font-mono text-slate-500 dark:text-zinc-400">
+                                {formatDateDisplay(scrap.date)} {scrap.time ? `às ${scrap.time}` : ''}
+                            </span>
+                        </div>
+                    );
+                })()}
+
+                {readOnlyMode && (
+                    <div className="mb-4 flex items-center gap-2 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-900/40 rounded-lg px-4 py-2 text-sm text-yellow-800 dark:text-yellow-300">
+                        <AlertTriangle size={16} className="shrink-0" />
+                        Campos bloqueados. Preencha apenas: <strong className="ml-1">Responsável, Motivo, Ação Imediata e Contramedida.</strong>
+                    </div>
+                )}
+
                 <div className="space-y-6">
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                        <Input type="date" label="Data" value={formData.date} onChange={e => setFormData({ ...formData, date: e.target.value })} />
+                        <Input type="date" label="Data" value={formData.date} onChange={e => setFormData({ ...formData, date: e.target.value })} disabled={readOnlyMode} className={readOnlyMode ? 'opacity-50' : ''} />
                         <Input label="Semana" value={formData.week} readOnly className="opacity-50" />
                         <div className="md:col-span-2">
                             <label className="block text-xs font-medium text-gray-500 dark:text-zinc-400 mb-1.5 uppercase">Líder</label>
                             <select
-                                className="w-full bg-gray-50 dark:bg-zinc-950 border border-gray-300 dark:border-zinc-800 rounded-lg p-2.5 text-sm outline-none focus:ring-2 focus:ring-blue-600 text-gray-900 dark:text-zinc-100 transition-colors"
+                                className="w-full bg-gray-50 dark:bg-zinc-950 border border-gray-300 dark:border-zinc-800 rounded-lg p-2.5 text-sm outline-none focus:ring-2 focus:ring-blue-600 text-gray-900 dark:text-zinc-100 transition-colors disabled:opacity-50"
                                 value={formData.leaderName || ''}
                                 onChange={e => handleLeaderChange(e.target.value)}
+                                disabled={readOnlyMode}
                             >
                                 <option value="" disabled>Selecione...</option>
                                 {users.filter((u: User) => u.role.includes('Líder') || u.role.includes('Supervisor')).map((u: User) => (
@@ -1477,9 +1684,10 @@ const ScrapEditModal = ({ scrap, users, lines, models, categories, statusOptions
                         <div>
                             <label className="block text-xs font-medium text-slate-500 dark:text-zinc-400 mb-1.5 uppercase">Linha</label>
                             <select
-                                className="w-full bg-white dark:bg-zinc-950 border border-slate-300 dark:border-zinc-800 rounded-lg p-2.5 text-sm outline-none focus:ring-2 focus:ring-blue-600 text-slate-900 dark:text-zinc-100"
+                                className="w-full bg-white dark:bg-zinc-950 border border-slate-300 dark:border-zinc-800 rounded-lg p-2.5 text-sm outline-none focus:ring-2 focus:ring-blue-600 text-slate-900 dark:text-zinc-100 disabled:opacity-50"
                                 value={formData.line || ''}
                                 onChange={e => setFormData({ ...formData, line: e.target.value })}
+                                disabled={readOnlyMode}
                             >
                                 <option value="" disabled>Selecione...</option>
                                 {lines.map((l: string) => <option key={l} value={l}>{l}</option>)}
@@ -1488,21 +1696,23 @@ const ScrapEditModal = ({ scrap, users, lines, models, categories, statusOptions
                         <div>
                             <label className="block text-xs font-medium text-slate-500 dark:text-zinc-400 mb-1.5 uppercase">PQC</label>
                             <select
-                                className="w-full bg-white dark:bg-zinc-950 border border-slate-300 dark:border-zinc-800 rounded-lg p-2.5 text-sm outline-none focus:ring-2 focus:ring-blue-600 text-slate-900 dark:text-zinc-100"
+                                className="w-full bg-white dark:bg-zinc-950 border border-slate-300 dark:border-zinc-800 rounded-lg p-2.5 text-sm outline-none focus:ring-2 focus:ring-blue-600 text-slate-900 dark:text-zinc-100 disabled:opacity-50"
                                 value={formData.pqc || ''}
                                 onChange={e => setFormData({ ...formData, pqc: e.target.value })}
+                                disabled={readOnlyMode}
                             >
                                 <option value="" disabled>Selecione...</option>
                                 {pqcUsers.map((u: User) => <option key={u.matricula} value={u.name}>{u.name}</option>)}
                             </select>
                         </div>
-                        <Input label="Turno" value={formData.shift} onChange={e => setFormData({ ...formData, shift: e.target.value })} />
+                        <Input label="Turno" value={formData.shift} onChange={e => setFormData({ ...formData, shift: e.target.value })} disabled={readOnlyMode} className={readOnlyMode ? 'opacity-50' : ''} />
                         <div>
                             <label className="block text-xs font-medium text-slate-500 dark:text-zinc-400 mb-1.5 uppercase">Modelo</label>
                             <select
-                                className="w-full bg-white dark:bg-zinc-950 border border-slate-300 dark:border-zinc-800 rounded-lg p-2.5 text-sm outline-none focus:ring-2 focus:ring-blue-600 text-slate-900 dark:text-zinc-100"
+                                className="w-full bg-white dark:bg-zinc-950 border border-slate-300 dark:border-zinc-800 rounded-lg p-2.5 text-sm outline-none focus:ring-2 focus:ring-blue-600 text-slate-900 dark:text-zinc-100 disabled:opacity-50"
                                 value={formData.model || ''}
                                 onChange={e => setFormData({ ...formData, model: e.target.value })}
+                                disabled={readOnlyMode}
                             >
                                 <option value="" disabled>Selecione...</option>
                                 {models.map((m: string) => <option key={m} value={m}>{m}</option>)}
@@ -1518,21 +1728,20 @@ const ScrapEditModal = ({ scrap, users, lines, models, categories, statusOptions
                             <div className="flex gap-2">
                                 <input
                                     type="text"
-                                    className="w-full bg-blue-50/50 dark:bg-blue-900/10 border-2 border-blue-400/50 dark:border-blue-500/50 rounded-lg p-2.5 text-sm outline-none focus:ring-2 focus:ring-blue-500 font-mono text-slate-900 dark:text-zinc-100 transition-all placeholder-blue-300 dark:placeholder-blue-700"
+                                    className="w-full bg-blue-50/50 dark:bg-blue-900/10 border-2 border-blue-400/50 dark:border-blue-500/50 rounded-lg p-2.5 text-sm outline-none focus:ring-2 focus:ring-blue-500 font-mono text-slate-900 dark:text-zinc-100 transition-all placeholder-blue-300 dark:placeholder-blue-700 disabled:opacity-50"
                                     value={formData.qrCode || ''}
                                     onChange={(e) => setFormData((prev: any) => ({ ...prev, qrCode: e.target.value }))}
                                     onKeyDown={(e) => {
                                         if (e.key === 'Enter') {
                                             e.preventDefault();
                                             const qr = formData.qrCode || '';
-                                            if (qr && qr.length >= 11) {
-                                                handleCodeChange(qr.substring(0, 11));
-                                            }
+                                            if (qr && qr.length >= 11) handleCodeChange(qr.substring(0, 11));
                                         }
                                     }}
                                     placeholder="Bipe o código..."
+                                    disabled={readOnlyMode}
                                 />
-                                {isAndroid && (
+                                {isAndroid && !readOnlyMode && (
                                     <button type="button" onClick={() => setShowQRReader(true)} className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-2 rounded-lg flex items-center justify-center transition-colors shadow flex-shrink-0" title="Ler com a câmera">
                                         <QrCode size={20} />
                                     </button>
@@ -1547,10 +1756,11 @@ const ScrapEditModal = ({ scrap, users, lines, models, categories, statusOptions
                             <div className="relative">
                                 <input
                                     list="material-codes-edit"
-                                    className="w-full bg-gray-50 dark:bg-zinc-950 border border-gray-300 dark:border-zinc-800 rounded-lg p-2.5 text-sm outline-none focus:ring-2 focus:ring-blue-600 text-gray-900 dark:text-zinc-100 transition-colors"
+                                    className="w-full bg-gray-50 dark:bg-zinc-950 border border-gray-300 dark:border-zinc-800 rounded-lg p-2.5 text-sm outline-none focus:ring-2 focus:ring-blue-600 text-gray-900 dark:text-zinc-100 transition-colors disabled:opacity-50"
                                     value={formData.code || ''}
                                     onChange={e => handleCodeChange(e.target.value)}
                                     placeholder="Digite o código..."
+                                    disabled={readOnlyMode}
                                 />
                                 <datalist id="material-codes-edit">
                                     {materials.map((m: Material) => <option key={m.code} value={m.code}>{m.description}</option>)}
@@ -1564,15 +1774,16 @@ const ScrapEditModal = ({ scrap, users, lines, models, categories, statusOptions
                     </div>
 
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                        <Input type="number" label="Quantidade" value={formData.qty} onChange={e => setFormData({ ...formData, qty: Number(e.target.value) })} />
+                        <Input type="number" label="Quantidade" value={formData.qty} onChange={e => setFormData({ ...formData, qty: Number(e.target.value) })} disabled={readOnlyMode} className={readOnlyMode ? 'opacity-50' : ''} />
                         <div>
                             <label className="block text-xs font-medium text-slate-500 dark:text-zinc-400 mb-1.5 uppercase">Item (Categoria)</label>
                             <input
                                 list="items-list-edit"
-                                className="w-full bg-white dark:bg-zinc-950 border border-slate-300 dark:border-zinc-800 rounded-lg p-2.5 text-sm outline-none focus:ring-2 focus:ring-blue-600 text-slate-900 dark:text-zinc-100"
+                                className="w-full bg-white dark:bg-zinc-950 border border-slate-300 dark:border-zinc-800 rounded-lg p-2.5 text-sm outline-none focus:ring-2 focus:ring-blue-600 text-slate-900 dark:text-zinc-100 disabled:opacity-50"
                                 value={formData.item || ''}
                                 onChange={e => setFormData({ ...formData, item: e.target.value })}
                                 placeholder="Selecione..."
+                                disabled={readOnlyMode}
                             />
                             <datalist id="items-list-edit">
                                 {categories.map((i: string) => <option key={i} value={i} />)}
@@ -1582,10 +1793,11 @@ const ScrapEditModal = ({ scrap, users, lines, models, categories, statusOptions
                             <label className="block text-xs font-medium text-slate-500 dark:text-zinc-400 mb-1.5 uppercase">Status</label>
                             <input
                                 list="status-list-edit"
-                                className="w-full bg-white dark:bg-zinc-950 border border-slate-300 dark:border-zinc-800 rounded-lg p-2.5 text-sm outline-none focus:ring-2 focus:ring-blue-600 text-slate-900 dark:text-zinc-100"
+                                className="w-full bg-white dark:bg-zinc-950 border border-slate-300 dark:border-zinc-800 rounded-lg p-2.5 text-sm outline-none focus:ring-2 focus:ring-blue-600 text-slate-900 dark:text-zinc-100 disabled:opacity-50"
                                 value={formData.status || ''}
                                 onChange={e => setFormData({ ...formData, status: e.target.value })}
                                 placeholder="Selecione..."
+                                disabled={readOnlyMode}
                             />
                             <datalist id="status-list-edit">
                                 {statusOptions.map((i: string) => <option key={i} value={i} />)}
@@ -1602,9 +1814,10 @@ const ScrapEditModal = ({ scrap, users, lines, models, categories, statusOptions
                         <div>
                             <label className="block text-xs font-medium text-slate-500 dark:text-zinc-400 mb-1.5 uppercase">Causa Raiz</label>
                             <select
-                                className="w-full bg-white dark:bg-zinc-950 border border-slate-300 dark:border-zinc-800 rounded-lg p-2.5 text-sm outline-none focus:ring-2 focus:ring-blue-600 text-slate-900 dark:text-zinc-100"
+                                className="w-full bg-white dark:bg-zinc-950 border border-slate-300 dark:border-zinc-800 rounded-lg p-2.5 text-sm outline-none focus:ring-2 focus:ring-blue-600 text-slate-900 dark:text-zinc-100 disabled:opacity-50"
                                 value={formData.rootCause || ''}
                                 onChange={e => setFormData({ ...formData, rootCause: e.target.value })}
+                                disabled={readOnlyMode}
                             >
                                 <option value="" disabled>Selecione...</option>
                                 {rootCauseOptions.map((c: string) => <option key={c} value={c}>{c}</option>)}
@@ -1613,9 +1826,10 @@ const ScrapEditModal = ({ scrap, users, lines, models, categories, statusOptions
                         <div>
                             <label className="block text-xs font-medium text-slate-500 dark:text-zinc-400 mb-1.5 uppercase">Estação</label>
                             <select
-                                className="w-full bg-white dark:bg-zinc-950 border border-slate-300 dark:border-zinc-800 rounded-lg p-2.5 text-sm outline-none focus:ring-2 focus:ring-blue-600 text-slate-900 dark:text-zinc-100"
+                                className="w-full bg-white dark:bg-zinc-950 border border-slate-300 dark:border-zinc-800 rounded-lg p-2.5 text-sm outline-none focus:ring-2 focus:ring-blue-600 text-slate-900 dark:text-zinc-100 disabled:opacity-50"
                                 value={formData.station || ''}
                                 onChange={e => setFormData({ ...formData, station: e.target.value })}
+                                disabled={readOnlyMode}
                             >
                                 <option value="" disabled>Selecione...</option>
                                 {stations.map((c: string) => <option key={c} value={c}>{c}</option>)}
@@ -1623,28 +1837,45 @@ const ScrapEditModal = ({ scrap, users, lines, models, categories, statusOptions
                         </div>
                     </div>
 
+                    {/* Responsável */}
                     <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                        <Input label="Responsável" value={formData.responsible} onChange={e => setFormData({ ...formData, responsible: e.target.value })} />
+                        <Input
+                            label="Responsável pela Falha"
+                            value={formData.responsible}
+                            onChange={e => setFormData({ ...formData, responsible: e.target.value })}
+                            placeholder="Nome do responsável..."
+                        />
+                    </div>
+
+                    {/* Motivo | Ação Imediata | Contramedida — idêntico ao ScrapForm */}
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                         <div>
                             <label className="block text-xs font-medium text-gray-500 dark:text-zinc-400 mb-1.5 uppercase">Motivo Detalhado</label>
                             <textarea
-                                className="w-full bg-gray-50 dark:bg-zinc-950 border border-gray-300 dark:border-zinc-800 rounded-lg p-3 text-sm outline-none focus:ring-2 focus:ring-blue-600 min-h-[80px] text-gray-900 dark:text-zinc-100 placeholder-gray-400 dark:placeholder-zinc-600 transition-colors"
+                                className="w-full bg-gray-50 dark:bg-zinc-950 border border-gray-300 dark:border-zinc-800 rounded-lg p-3 text-sm outline-none focus:ring-2 focus:ring-blue-600 min-h-[100px] text-gray-900 dark:text-zinc-100 placeholder-gray-400 dark:placeholder-zinc-600 transition-colors"
                                 value={formData.reason || ''}
                                 onChange={e => setFormData({ ...formData, reason: e.target.value })}
-                                placeholder="Descreva..."
+                                placeholder="Descreva o motivo..."
                             />
                         </div>
-                    </div>
-
-                    {/* Countermeasure Field for Completeness */}
-                    <div>
-                        <label className="block text-xs font-medium text-green-700 dark:text-green-400 mb-1.5 uppercase font-bold">Contra Medida (Opcional na Edição)</label>
-                        <textarea
-                            className="w-full bg-slate-50 dark:bg-zinc-950 border-2 border-green-200 dark:border-green-900/50 rounded-lg p-3 text-sm outline-none focus:ring-2 focus:ring-green-500 min-h-[80px] text-slate-900 dark:text-zinc-100"
-                            value={formData.countermeasure || ''}
-                            onChange={e => setFormData({ ...formData, countermeasure: e.target.value })}
-                            placeholder="Descreva a ação tomada..."
-                        />
+                        <div>
+                            <label className="block text-xs font-bold text-yellow-600 dark:text-yellow-400 mb-1.5 uppercase">Ação Imediata</label>
+                            <textarea
+                                className="w-full bg-yellow-50 dark:bg-yellow-900/10 border-2 border-yellow-300 dark:border-yellow-700/50 rounded-lg p-3 text-sm outline-none focus:ring-2 focus:ring-yellow-500 min-h-[100px] text-gray-900 dark:text-zinc-100 placeholder-yellow-400 dark:placeholder-yellow-700 transition-colors"
+                                value={formData.immediateAction || ''}
+                                onChange={e => setFormData({ ...formData, immediateAction: e.target.value })}
+                                placeholder="Ação imediata tomada..."
+                            />
+                        </div>
+                        <div>
+                            <label className="block text-xs font-medium text-green-700 dark:text-green-400 mb-1.5 uppercase font-bold">Contra Medida</label>
+                            <textarea
+                                className="w-full bg-slate-50 dark:bg-zinc-950 border-2 border-green-200 dark:border-green-900/50 rounded-lg p-3 text-sm outline-none focus:ring-2 focus:ring-green-500 min-h-[100px] text-slate-900 dark:text-zinc-100 placeholder-slate-400 dark:placeholder-zinc-600 transition-colors"
+                                value={formData.countermeasure || ''}
+                                onChange={e => setFormData({ ...formData, countermeasure: e.target.value })}
+                                placeholder="Descreva a ação tomada..."
+                            />
+                        </div>
                     </div>
 
                     <div className="pt-4 flex justify-end">
@@ -1708,7 +1939,7 @@ const NewAdvancedDashboard = ({ scraps, users }: { scraps: ScrapData[], users: U
         const totalVal = filtered.reduce((acc, s) => acc + (s.totalValue || 0), 0);
         const totalQty = filtered.reduce((acc, s) => acc + (s.qty || 0), 0);
 
-        const specificItems = ['FRONT', 'REAR', 'OCTA', 'CAMERA', 'BATERIA RMA', 'BATERIA SCRAP'];
+        const specificItems = ['FRONT', 'REAR', 'OCTA', 'CAMERA', 'BATERIA RMA', 'BATERIA SCRAP', 'PLACA'];
         const byCategory: Record<string, number> = {};
         const byModel: Record<string, number> = {};
         const byLine: Record<string, number> = {};
@@ -1721,10 +1952,12 @@ const NewAdvancedDashboard = ({ scraps, users }: { scraps: ScrapData[], users: U
             const itemUpper = (s.item || '').toUpperCase();
 
             let catKey = 'MIUDEZAS';
-            if (itemUpper.includes('CAMERA')) {
+            if (itemUpper.includes('PLACA')) {
+                catKey = 'PLACA';
+            } else if (itemUpper.includes('CAMERA')) {
                 catKey = 'CAMERA';
             } else {
-                const found = specificItems.find(i => itemUpper.includes(i) && i !== 'CAMERA');
+                const found = specificItems.find(i => itemUpper.includes(i) && i !== 'CAMERA' && i !== 'PLACA');
                 if (found) catKey = found;
             }
 
@@ -1848,12 +2081,20 @@ const NewAdvancedDashboard = ({ scraps, users }: { scraps: ScrapData[], users: U
 export const ScrapConsulta = ({ scraps, users }: { scraps: ScrapData[], users: User[] }) => {
     const [qrInput, setQrInput] = useState('');
     const [result, setResult] = useState<ScrapData | null | 'NOT_FOUND'>(null);
+    const isAndroid = /Android/i.test(navigator.userAgent);
+    const [showQRReader, setShowQRReader] = useState(false);
 
-    const handleSearch = () => {
-        const q = qrInput.trim();
+    const handleSearch = (val?: string) => {
+        const q = (val ?? qrInput).trim();
         if (!q) return;
         const found = scraps.find(s => s.qrCode === q || String(s.id) === q);
         setResult(found || 'NOT_FOUND');
+    };
+
+    const handleQRScan = (text: string) => {
+        setShowQRReader(false);
+        setQrInput(text);
+        handleSearch(text);
     };
 
     const registeredBy = result && result !== 'NOT_FOUND'
@@ -1865,17 +2106,32 @@ export const ScrapConsulta = ({ scraps, users }: { scraps: ScrapData[], users: U
             <Card className="flex gap-2 items-end">
                 <div className="flex-1">
                     <label className="block text-xs uppercase font-bold text-blue-600 dark:text-blue-400 mb-1.5">QR Code / ID do Scrap</label>
-                    <input
-                        type="text"
-                        className="w-full bg-blue-50/50 dark:bg-blue-900/10 border-2 border-blue-400/50 dark:border-blue-500/50 rounded-lg p-2.5 text-sm outline-none focus:ring-2 focus:ring-blue-500 font-mono text-slate-900 dark:text-zinc-100 transition-all"
-                        placeholder="Bipe ou digite o QR Code..."
-                        value={qrInput}
-                        onChange={e => setQrInput(e.target.value)}
-                        onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); handleSearch(); } }}
-                        autoFocus
-                    />
+                    <div className="flex gap-2">
+                        <input
+                            type="text"
+                            className="flex-1 bg-blue-50/50 dark:bg-blue-900/10 border-2 border-blue-400/50 dark:border-blue-500/50 rounded-lg p-2.5 text-sm outline-none focus:ring-2 focus:ring-blue-500 font-mono text-slate-900 dark:text-zinc-100 transition-all"
+                            placeholder="Bipe ou digite o QR Code..."
+                            value={qrInput}
+                            onChange={e => setQrInput(e.target.value)}
+                            onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); handleSearch(); } }}
+                            autoFocus
+                        />
+                        {isAndroid && (
+                            <button
+                                type="button"
+                                onClick={() => setShowQRReader(true)}
+                                className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-2 rounded-lg flex items-center justify-center transition-colors shadow flex-shrink-0"
+                                title="Ler com a câmera"
+                            >
+                                <QrCode size={20} />
+                            </button>
+                        )}
+                    </div>
+                    {showQRReader && (
+                        <QRStreamReader onScanSuccess={handleQRScan} onClose={() => setShowQRReader(false)} />
+                    )}
                 </div>
-                <Button onClick={handleSearch}><Search size={16} /> Buscar</Button>
+                <Button onClick={() => handleSearch()}><Search size={16} /> Buscar</Button>
             </Card>
 
             {result === 'NOT_FOUND' && (
@@ -1896,7 +2152,6 @@ export const ScrapConsulta = ({ scraps, users }: { scraps: ScrapData[], users: U
                                 <span className={`text-xs font-bold px-2 py-0.5 rounded uppercase ${!result.countermeasure ? 'bg-red-100 text-red-600 dark:bg-red-900/30 dark:text-red-400' : 'bg-green-100 text-green-600 dark:bg-green-900/30 dark:text-green-400'}`}>
                                     {result.status}
                                 </span>
-                                {result.qrCode && <span className="text-xs font-mono text-slate-500 bg-slate-100 dark:bg-zinc-800 px-2 py-0.5 rounded truncate max-w-[200px]">{result.qrCode}</span>}
                             </div>
                         </div>
                     </div>
@@ -1922,6 +2177,7 @@ export const ScrapConsulta = ({ scraps, users }: { scraps: ScrapData[], users: U
                                 <DetailItem label="Cód. Matéria Prima" value={result.code || '-'} />
                                 <div className="md:col-span-2"><DetailItem label="Descrição" value={result.description || '-'} /></div>
                                 <DetailItem label="Modelo Usado" value={result.usedModel || '-'} />
+                                <div className="md:col-span-3"><DetailItem label="QR Code" value={result.qrCode || '-'} breakAll /></div>
                             </div>
                         </div>
 
@@ -1959,27 +2215,25 @@ export const ScrapConsulta = ({ scraps, users }: { scraps: ScrapData[], users: U
                                 <span className="text-xs font-mono text-slate-500">{result.time}</span>
                             </div>
 
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                                 <div>
-                                    <label className="block text-xs font-bold text-slate-500 dark:text-zinc-500 mb-2 uppercase">Motivo Detalhado</label>
+                                    <label className="flex items-center gap-1.5 text-xs font-bold text-slate-500 dark:text-zinc-500 mb-2 uppercase"><FileText size={12} /> Motivo Detalhado</label>
                                     <div className="bg-slate-100 dark:bg-zinc-950 p-4 rounded-lg border border-slate-200 dark:border-zinc-800 text-sm min-h-[80px] text-slate-700 dark:text-zinc-300 leading-relaxed">
                                         {result.reason || <span className="italic text-slate-400">Não informado.</span>}
                                     </div>
                                 </div>
                                 <div>
-                                    <label className="block text-xs font-bold text-green-600 dark:text-green-500 mb-2 uppercase">Contra Medida</label>
+                                    <label className="flex items-center gap-1.5 text-xs font-bold text-yellow-600 dark:text-yellow-500 mb-2 uppercase"><AlertTriangle size={12} /> Ação Imediata</label>
+                                    <div className="bg-yellow-50 dark:bg-yellow-900/10 p-4 rounded-lg border border-yellow-200 dark:border-yellow-900/30 text-sm min-h-[80px] text-slate-800 dark:text-zinc-200 leading-relaxed">
+                                        {result.immediateAction || <span className="italic text-slate-400">Não informado.</span>}
+                                    </div>
+                                </div>
+                                <div>
+                                    <label className="flex items-center gap-1.5 text-xs font-bold text-green-600 dark:text-green-500 mb-2 uppercase"><CheckCircle2 size={12} /> Contra Medida</label>
                                     <div className={`p-4 rounded-lg border text-sm min-h-[80px] leading-relaxed ${result.countermeasure ? 'bg-green-50 dark:bg-green-900/10 border-green-200 dark:border-green-900/30 text-slate-800 dark:text-zinc-200' : 'bg-slate-50 dark:bg-zinc-950 border-slate-200 dark:border-zinc-800 text-slate-400 italic'}`}>
                                         {result.countermeasure || 'Nenhuma contra medida registrada.'}
                                     </div>
                                 </div>
-                                {result.immediateAction && (
-                                    <div className="md:col-span-2">
-                                        <label className="block text-xs font-bold text-yellow-600 dark:text-yellow-500 mb-2 uppercase">Ação Imediata</label>
-                                        <div className="bg-yellow-50 dark:bg-yellow-900/10 p-4 rounded-lg border border-yellow-200 dark:border-yellow-900/30 text-sm text-slate-800 dark:text-zinc-200 leading-relaxed">
-                                            {result.immediateAction}
-                                        </div>
-                                    </div>
-                                )}
                             </div>
                         </div>
                     </div>

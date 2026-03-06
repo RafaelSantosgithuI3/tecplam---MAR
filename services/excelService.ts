@@ -725,7 +725,7 @@ export const exportExecutiveReport = async (scraps: ScrapData[], fileNamePrefix:
     // 1. DATA PROCESSING
     // --------------------------------------------------------------------------------
     const PLANTS = ['P81L', 'P81M', 'P81N'];
-    const CATEGORIES_PRIORITY = ['CAMERA', 'FRONT', 'REAR', 'OCTA', 'BATERIA RMA', 'BATERIA SCRAP'];
+    const CATEGORIES_PRIORITY = ['CAMERA', 'FRONT', 'REAR', 'OCTA', 'BATERIA RMA', 'BATERIA SCRAP', 'PLACA'];
 
     // Fetch materials for Plant lookup if missing in Scrap
     const materials = await getMaterials();
@@ -746,10 +746,12 @@ export const exportExecutiveReport = async (scraps: ScrapData[], fileNamePrefix:
         const itemUpper = (s.item || '').toUpperCase();
         let category = 'MIUDEZAS';
 
-        if (itemUpper.includes('CAMERA')) {
+        if (itemUpper.includes('PLACA')) {
+            category = 'PLACA';
+        } else if (itemUpper.includes('CAMERA')) {
             category = 'CAMERA';
         } else {
-            const found = CATEGORIES_PRIORITY.find(c => itemUpper.includes(c));
+            const found = CATEGORIES_PRIORITY.find(c => itemUpper.includes(c) && c !== 'CAMERA' && c !== 'PLACA');
             if (found) category = found;
         }
 

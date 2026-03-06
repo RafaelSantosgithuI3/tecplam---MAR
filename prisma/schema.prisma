@@ -177,8 +177,9 @@ model ConfigRole {
 }
 
 model ConfigModel {
-  name String  @id
-  sku  String?
+  name        String  @id
+  sku         String?
+  unifiedCode String?
 
   @@map("config_models")
 }

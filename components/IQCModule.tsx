@@ -6,7 +6,7 @@ import { Input } from './Input';
 import { User, ScrapData } from '../types';
 import {
     LayoutDashboard, CheckSquare, History, BarChart3,
-    ArrowLeft, Download, Filter, Truck, FileText, ChevronDown, ChevronUp, FileSpreadsheet, Box, QrCode
+    ArrowLeft, Download, Filter, Truck, FileText, ChevronDown, ChevronUp, FileSpreadsheet, Box, QrCode, X, Eye
 } from 'lucide-react';
 import {
     getScraps, batchProcessScraps
@@ -16,7 +16,7 @@ import { getLines, getModels, getWeekNumber } from '../services/storageService';
 import { exportExecutiveReport, exportInvoiceReport } from '../services/excelService';
 
 // Import shared components
-import { ScrapOperational, ScrapConsulta } from './ScrapModule';
+import { ScrapOperational, ScrapConsulta, ScrapDetailModal } from './ScrapModule';
 import { ScrapBoxMount, ScrapBoxIdentified } from './ScrapBoxViews';
 
 const formatCurrency = (val: number | undefined) => {
@@ -125,7 +125,7 @@ export const IQCModule = ({ currentUser, onBack }: { currentUser: User, onBack: 
                 )}
 
                 {activeTab === 'BOX_IDENTIFIED' && (
-                    <ScrapBoxIdentified currentUser={currentUser} onUpdate={refreshData} />
+                    <ScrapBoxIdentified currentUser={currentUser} onUpdate={refreshData} users={users} />
                 )}
 
                 {activeTab === 'CONSULTA' && (
@@ -182,7 +182,7 @@ const ExecutiveDashboard = ({ scraps }: { scraps: ScrapData[] }) => {
         const totalVal = filtered.reduce((acc, s) => acc + (s.totalValue || 0), 0);
         const totalQty = filtered.reduce((acc, s) => acc + (s.qty || 0), 0);
 
-        const specificItems = ['FRONT', 'REAR', 'OCTA', 'CAMERA', 'BATERIA RMA', 'BATERIA SCRAP'];
+        const specificItems = ['FRONT', 'REAR', 'OCTA', 'CAMERA', 'BATERIA RMA', 'BATERIA SCRAP', 'PLACA'];
         const byCategory: Record<string, number> = {};
         const byModel: Record<string, number> = {};
         const byLine: Record<string, number> = {};
@@ -197,10 +197,12 @@ const ExecutiveDashboard = ({ scraps }: { scraps: ScrapData[] }) => {
 
             // --- CATEGORIZATION LOGIC ---
             let catKey = 'MIUDEZAS';
-            if (itemUpper.includes('CAMERA')) {
+            if (itemUpper.includes('PLACA')) {
+                catKey = 'PLACA';
+            } else if (itemUpper.includes('CAMERA')) {
                 catKey = 'CAMERA';
             } else {
-                const found = specificItems.find(i => itemUpper.includes(i) && i !== 'CAMERA'); // Exclude CAMERA here as it's already handled
+                const found = specificItems.find(i => itemUpper.includes(i) && i !== 'CAMERA' && i !== 'PLACA');
                 if (found) catKey = found;
             }
             // ----------------------------
@@ -268,13 +270,13 @@ const ExecutiveDashboard = ({ scraps }: { scraps: ScrapData[] }) => {
             </Card>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <Card className="bg-blue-900 text-white border-blue-800">
-                    <p className="text-blue-200 text-xs font-bold uppercase">Valor Total (Filtrado)</p>
-                    <p className="text-3xl font-bold mt-1">{formatCurrency(stats.totalVal)}</p>
+                <Card className="bg-blue-50 dark:bg-blue-900/30 border-blue-200 dark:border-blue-800">
+                    <p className="text-blue-600 dark:text-blue-300 text-xs font-bold uppercase">Valor Total (Filtrado)</p>
+                    <p className="text-3xl font-bold mt-1 text-gray-900 dark:text-white">{formatCurrency(stats.totalVal)}</p>
                 </Card>
-                <Card className="bg-slate-900 text-white border-slate-800">
-                    <p className="text-slate-400 text-xs font-bold uppercase">Quantidade (Filtrado)</p>
-                    <p className="text-3xl font-bold mt-1">{stats.totalQty} <span className="text-base font-normal text-slate-500">itens</span></p>
+                <Card className="bg-slate-50 dark:bg-slate-900/30 border-slate-200 dark:border-slate-700">
+                    <p className="text-slate-500 dark:text-slate-400 text-xs font-bold uppercase">Quantidade (Filtrado)</p>
+                    <p className="text-3xl font-bold mt-1 text-gray-900 dark:text-white">{stats.totalQty} <span className="text-base font-normal text-slate-400 dark:text-slate-500">itens</span></p>
                 </Card>
             </div>
 
@@ -543,13 +545,15 @@ const HistorySentTab = ({ scraps, users }: { scraps: ScrapData[], users: User[] 
 
 const HistoryGroupCard = ({ nf, items, users }: { nf: string, items: ScrapData[], users: User[] }) => {
     const [expanded, setExpanded] = useState(false);
+    const [selectedScrap, setSelectedScrap] = useState<ScrapData | null>(null);
+    const [previewBox, setPreviewBox] = useState<boolean>(false);
 
     const totalValue = items.reduce((acc, s) => acc + (s.totalValue || 0), 0);
     const sentDate = items[0].sentAt ? new Date(items[0].sentAt).toLocaleDateString() : '-';
     const sentByMatricula = items[0].sentBy;
     const sentByName = users.find(u => u.matricula === sentByMatricula)?.name || sentByMatricula || '-';
 
-    const specificItems = ['FRONT', 'REAR', 'OCTA', 'CAMERA', 'BATERIA RMA', 'BATERIA SCRAP'];
+    const specificItems = ['FRONT', 'REAR', 'OCTA', 'CAMERA', 'BATERIA RMA', 'BATERIA SCRAP', 'PLACA'];
     const summary: Record<string, { qty: number, val: number }> = {};
 
     specificItems.forEach(k => summary[k] = { qty: 0, val: 0 });
@@ -558,8 +562,12 @@ const HistoryGroupCard = ({ nf, items, users }: { nf: string, items: ScrapData[]
     items.forEach(s => {
         let key = 'MIUDEZAS';
         const itemUpper = (s.item || '').toUpperCase();
-        const found = specificItems.find(spec => itemUpper.includes(spec));
-        if (found) key = found;
+        if (itemUpper.includes('PLACA')) {
+            key = 'PLACA';
+        } else {
+            const found = specificItems.find(spec => itemUpper.includes(spec));
+            if (found) key = found;
+        }
 
         summary[key].qty += (s.qty || 0);
         summary[key].val += (s.totalValue || 0);
@@ -610,7 +618,14 @@ const HistoryGroupCard = ({ nf, items, users }: { nf: string, items: ScrapData[]
                             {Object.entries(summary).map(([key, data]) => {
                                 if (data.qty === 0) return null;
                                 return (
-                                    <div key={key} className="bg-slate-50 dark:bg-zinc-950 border border-slate-200 dark:border-zinc-800 rounded px-3 py-1.5 text-xs">
+                                    <div
+                                        key={key}
+                                        className="bg-slate-50 dark:bg-zinc-950 border border-slate-200 dark:border-zinc-800 rounded px-3 py-1.5 text-xs cursor-pointer hover:bg-blue-50 dark:hover:bg-blue-900/20 hover:border-blue-300 dark:hover:border-blue-700 transition-colors"
+                                        onClick={(e) => {
+                                            e.stopPropagation();
+                                            setPreviewBox(true);
+                                        }}
+                                    >
                                         <span className="font-bold text-slate-700 dark:text-zinc-300">{key}:</span>
                                         <span className="ml-1 text-slate-500">{data.qty}un</span>
                                         <span className="ml-1 font-mono text-blue-600 dark:text-blue-400">({formatCurrency(data.val)})</span>
@@ -621,21 +636,23 @@ const HistoryGroupCard = ({ nf, items, users }: { nf: string, items: ScrapData[]
 
                         <div className="w-full overflow-x-auto pb-4 mb-4 touch-pan-x border border-gray-200 dark:border-zinc-800 rounded-xl">
                             <table className="w-full text-xs text-left min-w-[600px]">
-                                <thead className="bg-slate-100 dark:bg-zinc-900 text-slate-500">
+                                <thead className="bg-slate-100 dark:bg-zinc-900 text-slate-600 dark:text-zinc-400">
                                     <tr>
                                         <th className="p-2">Item</th>
                                         <th className="p-2">Modelo</th>
                                         <th className="p-2">Qtd</th>
                                         <th className="p-2 text-right">Valor</th>
+                                        <th className="p-2"></th>
                                     </tr>
                                 </thead>
                                 <tbody>
                                     {items.map(i => (
-                                        <tr key={i.id} className="border-b border-slate-100 dark:border-zinc-800 last:border-0">
-                                            <td className="p-2">{i.item}</td>
-                                            <td className="p-2">{i.model}</td>
-                                            <td className="p-2">{i.qty}</td>
-                                            <td className="p-2 text-right font-mono">{formatCurrency(i.totalValue)}</td>
+                                        <tr key={i.id} className="border-b border-slate-100 dark:border-zinc-800 last:border-0 hover:bg-blue-50/50 dark:hover:bg-blue-900/10 cursor-pointer transition-colors" onClick={(e) => { e.stopPropagation(); setSelectedScrap(i); }}>
+                                            <td className="p-2 text-slate-700 dark:text-zinc-300">{i.item}</td>
+                                            <td className="p-2 text-slate-700 dark:text-zinc-300">{i.model}</td>
+                                            <td className="p-2 text-slate-700 dark:text-zinc-300">{i.qty}</td>
+                                            <td className="p-2 text-right font-mono text-slate-700 dark:text-zinc-300">{formatCurrency(i.totalValue)}</td>
+                                            <td className="p-2"><Eye size={14} className="text-blue-500" /></td>
                                         </tr>
                                     ))}
                                 </tbody>
@@ -644,6 +661,59 @@ const HistoryGroupCard = ({ nf, items, users }: { nf: string, items: ScrapData[]
                     </div>
                 )}
             </div>
+
+            {/* Preview Modal for box items */}
+            {previewBox && (
+                <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={() => setPreviewBox(false)}>
+                    <Card className="max-w-2xl w-full max-h-[80vh] overflow-y-auto bg-white dark:bg-zinc-900 border-slate-200 dark:border-zinc-700" onClick={(e: React.MouseEvent) => e.stopPropagation()}>
+                        <div className="flex justify-between items-center mb-4">
+                            <h3 className="font-bold text-lg text-slate-900 dark:text-white">Detalhes da NF: {nf}</h3>
+                            <button onClick={() => setPreviewBox(false)} className="text-slate-400 hover:text-slate-700 dark:hover:text-zinc-200 bg-slate-100 dark:bg-zinc-800 rounded-full w-8 h-8 flex items-center justify-center">
+                                <X size={16} />
+                            </button>
+                        </div>
+                        <div className="space-y-3">
+                            {Object.entries(summary).filter(([, d]) => d.qty > 0).map(([key, data]) => (
+                                <div key={key} className="bg-slate-50 dark:bg-zinc-950 border border-slate-200 dark:border-zinc-800 rounded-lg p-3">
+                                    <div className="flex justify-between items-center text-sm">
+                                        <span className="font-bold text-slate-800 dark:text-zinc-200">{key}</span>
+                                        <span className="font-mono text-blue-600 dark:text-blue-400">{formatCurrency(data.val)}</span>
+                                    </div>
+                                    <p className="text-xs text-slate-500 dark:text-zinc-500 mt-1">{data.qty} unidade(s)</p>
+                                    <div className="mt-2 space-y-1">
+                                        {items.filter(i => {
+                                            const iu = (i.item || '').toUpperCase();
+                                            if (key === 'PLACA') return iu.includes('PLACA');
+                                            if (key === 'CAMERA') return iu.includes('CAMERA');
+                                            if (key === 'MIUDEZAS') {
+                                                return !specificItems.some(sp => iu.includes(sp));
+                                            }
+                                            return iu.includes(key);
+                                        }).map(si => (
+                                            <div
+                                                key={si.id}
+                                                className="flex justify-between items-center text-xs cursor-pointer hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded px-2 py-1 transition-colors"
+                                                onClick={() => { setPreviewBox(false); setSelectedScrap(si); }}
+                                            >
+                                                <span className="text-slate-600 dark:text-zinc-400">{si.model} • {si.code || '-'}</span>
+                                                <span className="font-mono text-slate-700 dark:text-zinc-300">{formatCurrency(si.totalValue)}</span>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    </Card>
+                </div>
+            )}
+
+            {/* Scrap Detail Modal */}
+            <ScrapDetailModal
+                isOpen={!!selectedScrap}
+                scrap={selectedScrap}
+                users={users}
+                onClose={() => setSelectedScrap(null)}
+            />
         </Card>
     );
 };

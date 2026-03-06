@@ -79,7 +79,8 @@ export const saveMaterials = async (materials: import('../types').Material[]) =>
 };
 
 export const SCRAP_ITEMS = [
-    'BATERIA SCRAP', 'BATERIA RMA', 'REAR', 'OCTA', 'FRONT', 'CAMERA RW1', 'CAMERA FW1', 'CAMERA RB1',
+    'BATERIA SCRAP', 'BATERIA RMA', 'REAR', 'OCTA', 'FRONT', 'PLACA',
+    'CAMERA RW1', 'CAMERA FW1', 'CAMERA RB1',
     'MIUDEZA(S)', 'BAG', 'SIMTRAY', 'CAIXA MASTER', 'CAIXA GIFT', 'TAPE',
     'CABO COAXIAL', 'CABO FLAT', 'BRACKET', 'BACK COVER', 'PARAFUSO',
     'SUB PBA', 'SPK', 'RCV', 'BLINDAGEM'
@@ -87,7 +88,8 @@ export const SCRAP_ITEMS = [
 
 export const SCRAP_STATUS = [
     'QUEBRADO', 'TRINCADO', 'DANIFICADO', 'BATIDO', 'RISCADO',
-    'ALTERADO', 'TRILHA ROMPIDA', 'EXCESSO DE RETRABALHO'
+    'ALTERADO', 'TRILHA ROMPIDA', 'EXCESSO DE RETRABALHO',
+    'BATERIA REMOVIDA SCRAP', 'BATERIA REMOVIDA RMA'
 ];
 
 export const CAUSA_RAIZ_OPTIONS = [
@@ -102,6 +104,18 @@ export const batchProcessScraps = async (scrapIds: number[], nfNumber: string, u
         });
     } catch (e) {
         console.error("Erro ao processar lote de scraps", e);
+        throw e;
+    }
+};
+
+export const saveBatchScraps = async (scraps: ScrapData[]) => {
+    try {
+        await apiFetch('/scraps/batch-create', {
+            method: 'POST',
+            body: JSON.stringify({ scraps })
+        });
+    } catch (e) {
+        console.error("Erro ao salvar lote de scraps", e);
         throw e;
     }
 };
