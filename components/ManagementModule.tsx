@@ -5,7 +5,7 @@ import { Input } from './Input';
 import { Card } from './Card';
 import { Plus, Trash2, Edit2, Save, X, Search, Smartphone, List, User as UserIcon, Shield, ArrowLeft } from 'lucide-react';
 import { ConfigItem, ConfigModel } from '../types';
-import { getLines, addLine, deleteLine, getRoles, addRole, deleteRole, getStations, saveStations, getModelsFull, saveModelsFull, getLayoutWorkstations, addLayoutWorkstation } from '../services/storageService';
+import { getLines, addLine, deleteLine, getRoles, addRole, deleteRole, getStations, saveStations, getModelsFull, saveModelsFull, getLayoutWorkstations, addLayoutWorkstation, getUnifiedModels } from '../services/storageService';
 import { apiFetch } from '../services/networkConfig';
 import { exportWorkstationsByModel } from '../services/excelService';
 import { getMaterials } from '../services/materialService';
@@ -26,12 +26,14 @@ export const ManagementModule: React.FC<ManagementModuleProps> = ({ onBack }) =>
     const [materials, setMaterials] = useState<any[]>([]);
 
     const [layoutStations, setLayoutStations] = useState<any[]>([]);
+    const [unifiedModels, setUnifiedModels] = useState<ConfigModel[]>([]);
     const [selectedLayoutModel, setSelectedLayoutModel] = useState<string>('');
     const [newLayoutStationName, setNewLayoutStationName] = useState('');
     const [newLayoutPeopleNeeded, setNewLayoutPeopleNeeded] = useState('');
 
     const [newItem, setNewItem] = useState('');
     const [newSku, setNewSku] = useState('');
+    const [newUnifiedCode, setNewUnifiedCode] = useState('');
     const [isEditing, setIsEditing] = useState<ConfigModel | null>(null);
     const [search, setSearch] = useState('');
 
@@ -55,8 +57,10 @@ export const ManagementModule: React.FC<ManagementModuleProps> = ({ onBack }) =>
             if (tab === 'STATIONS_LAYOUT') {
                 const ls = await getLayoutWorkstations();
                 setLayoutStations(ls);
-                if (!selectedLayoutModel && _models.length > 0) {
-                    setSelectedLayoutModel(_models[0].name);
+                const _unified = await getUnifiedModels();
+                setUnifiedModels(_unified);
+                if (!selectedLayoutModel && _unified.length > 0) {
+                    setSelectedLayoutModel(_unified[0].name);
                 }
             }
         }
@@ -98,18 +102,25 @@ export const ManagementModule: React.FC<ManagementModuleProps> = ({ onBack }) =>
 
     const handleSaveModel = async () => {
         if (!newItem) return;
+        // unifiedCode: usa o campo editado, senão auto-calcula pelos 7 primeiros chars
+        const finalUnifiedCode = newUnifiedCode.trim() || newItem.substring(0, 7);
 
         let updatedModels = [...models];
         if (isEditing && isEditing.name) {
-            updatedModels = updatedModels.map(m => m.name === isEditing.name ? { ...m, name: newItem, sku: newSku } : m);
+            updatedModels = updatedModels.map(m =>
+                m.name === isEditing.name
+                    ? { ...m, name: newItem, sku: newSku, unifiedCode: finalUnifiedCode } as any
+                    : m
+            );
         } else {
             if (updatedModels.find(m => m.name === newItem)) return alert('Modelo já existe');
-            updatedModels.push({ id: newItem, name: newItem, sku: newSku });
+            updatedModels.push({ id: newItem, name: newItem, sku: newSku, unifiedCode: finalUnifiedCode } as any);
         }
 
         await saveModelsFull(updatedModels);
         setNewItem('');
         setNewSku('');
+        setNewUnifiedCode('');
         setIsEditing(null);
         loadData();
     };
@@ -173,50 +184,91 @@ export const ManagementModule: React.FC<ManagementModuleProps> = ({ onBack }) =>
     );
 
     const renderModels = () => {
-        const filtered = models.filter(m => m.name.toLowerCase().includes(search.toLowerCase()) || (m.sku || '').toLowerCase().includes(search.toLowerCase()));
+        const q = search.toLowerCase();
+        const filtered = models
+            .filter(m =>
+                m.name.toLowerCase().includes(q) ||
+                (m.sku || '').toLowerCase().includes(q) ||
+                ((m as any).unifiedCode || '').toLowerCase().includes(q)
+            )
+            .sort((a, b) => {
+                const ua = ((a as any).unifiedCode || a.name.substring(0, 7)).toLowerCase();
+                const ub = ((b as any).unifiedCode || b.name.substring(0, 7)).toLowerCase();
+                return ua.localeCompare(ub) || a.name.localeCompare(b.name);
+            });
 
         return (
             <div className="space-y-4">
                 <div className="flex gap-2">
-                    <Input placeholder="Buscar modelo ou SKU..." value={search} onChange={e => setSearch(e.target.value)} icon={<Search size={16} />} />
-                    <Button onClick={() => { setIsEditing({ id: '', name: '' }); setNewItem(''); setNewSku(''); }}><Plus size={16} /> Novo Modelo</Button>
+                    <Input placeholder="Buscar por unificado, modelo ou SKU..." value={search} onChange={e => setSearch(e.target.value)} icon={<Search size={16} />} />
+                    <Button onClick={() => { setIsEditing({ id: '', name: '' }); setNewItem(''); setNewSku(''); setNewUnifiedCode(''); }}><Plus size={16} /> Novo Modelo</Button>
                 </div>
 
                 <div className="bg-white dark:bg-zinc-900 rounded-xl border border-slate-200 dark:border-zinc-800 overflow-hidden">
                     <table className="w-full text-left text-sm">
                         <thead className="bg-slate-50 dark:bg-zinc-950 text-slate-500 dark:text-zinc-500 border-b border-slate-200 dark:border-zinc-800">
                             <tr>
-                                <th className="p-4 font-medium">Modelo</th>
-                                <th className="p-4 font-medium">SKU</th>
-                                <th className="p-4 font-medium text-right">Ações</th>
+                                <th className="p-3 font-medium w-28">Cód. Unificado</th>
+                                <th className="p-3 font-medium">Modelo Completo</th>
+                                <th className="p-3 font-medium w-32">SKU</th>
+                                <th className="p-3 font-medium text-right w-24">Ações</th>
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-200 dark:divide-zinc-800">
-                            {filtered.map(m => (
-                                <tr key={m.name} className="hover:bg-slate-50 dark:hover:bg-zinc-800/50">
-                                    <td className="p-4 text-slate-900 dark:text-zinc-100 font-medium">{m.name}</td>
-                                    <td className="p-4 text-slate-500 dark:text-zinc-400 font-mono">{m.sku || '-'}</td>
-                                    <td className="p-4 text-right flex justify-end gap-2">
-                                        <Button variant="secondary" onClick={() => { setIsEditing(m); setNewItem(m.name); setNewSku(m.sku || ''); }}><Edit2 size={16} /></Button>
-                                        <Button variant="danger" onClick={() => handleDeleteModel(m.name)}><Trash2 size={16} /></Button>
-                                    </td>
-                                </tr>
-                            ))}
+                            {filtered.map(m => {
+                                const uCode = (m as any).unifiedCode || m.name.substring(0, 7);
+                                return (
+                                    <tr key={m.name} className="hover:bg-slate-50 dark:hover:bg-zinc-800/50">
+                                        <td className="p-3">
+                                            <span className="inline-block bg-cyan-100 dark:bg-cyan-900/30 text-cyan-700 dark:text-cyan-300 font-mono font-bold text-xs px-2 py-1 rounded">
+                                                {uCode}
+                                            </span>
+                                        </td>
+                                        <td className="p-3 text-slate-900 dark:text-zinc-100 font-medium">{m.name}</td>
+                                        <td className="p-3 text-slate-500 dark:text-zinc-400 font-mono text-xs">{m.sku || '-'}</td>
+                                        <td className="p-3 text-right">
+                                            <div className="flex justify-end gap-2">
+                                                <Button variant="secondary" onClick={() => { setIsEditing(m); setNewItem(m.name); setNewSku(m.sku || ''); setNewUnifiedCode(uCode); }}><Edit2 size={16} /></Button>
+                                                <Button variant="danger" onClick={() => handleDeleteModel(m.name)}><Trash2 size={16} /></Button>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                );
+                            })}
                         </tbody>
                     </table>
                 </div>
 
                 {isEditing !== null && (
-                    <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
+                    <div className="fixed inset-0 bg-black/60 flex items-center justify-center p-4 z-50 backdrop-blur-sm">
                         <Card className="w-full max-w-md">
-                            <h3 className="text-lg font-bold mb-4 text-slate-900 dark:text-white">
+                            <h3 className="text-lg font-bold mb-1 text-slate-900 dark:text-white">
                                 {isEditing.name ? 'Editar Modelo' : 'Novo Modelo'}
                             </h3>
-                            <div className="space-y-4">
-                                <Input label="Nome do Modelo" value={newItem} onChange={e => setNewItem(e.target.value)} />
+                            <p className="text-xs text-slate-400 mb-4">O Código Unificado é auto-gerado pelos 7 primeiros chars — mas pode ser editado manualmente.</p>
+                            <div className="space-y-3">
+                                <div>
+                                    <Input
+                                        label="Código Unificado (7 chars)"
+                                        value={newUnifiedCode}
+                                        onChange={e => setNewUnifiedCode(e.target.value.substring(0, 12))}
+                                        placeholder="Auto (ex: SM-X400)"
+                                    />
+                                </div>
+                                <Input
+                                    label="Nome Completo do Modelo"
+                                    value={newItem}
+                                    onChange={e => {
+                                        setNewItem(e.target.value);
+                                        // Auto-preenche unifiedCode só se o campo estiver vazio (não editado)
+                                        if (!newUnifiedCode || newUnifiedCode === (isEditing?.name || '').substring(0, 7)) {
+                                            setNewUnifiedCode(e.target.value.substring(0, 7));
+                                        }
+                                    }}
+                                />
                                 <Input label="SKU (Opcional)" value={newSku} onChange={e => setNewSku(e.target.value)} />
                                 <div className="flex gap-2 justify-end mt-4">
-                                    <Button variant="outline" onClick={() => setIsEditing(null)}>Cancelar</Button>
+                                    <Button variant="outline" onClick={() => { setIsEditing(null); setNewUnifiedCode(''); }}>Cancelar</Button>
                                     <Button onClick={handleSaveModel}><Save size={16} /> Salvar</Button>
                                 </div>
                             </div>
@@ -270,7 +322,7 @@ export const ManagementModule: React.FC<ManagementModuleProps> = ({ onBack }) =>
                                 onChange={e => setSelectedLayoutModel(e.target.value)}
                             >
                                 <option value="">Selecione...</option>
-                                {models.map(m => <option key={m.name} value={m.name}>{m.name}</option>)}
+                                {unifiedModels.map(m => <option key={m.name} value={m.name}>{m.name}</option>)}
                             </select>
                         </div>
                         <div className="flex flex-col gap-2 md:col-span-2">

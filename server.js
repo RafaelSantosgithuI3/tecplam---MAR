@@ -1420,16 +1420,24 @@ app.get('/api/employees/search/:matricula', async (req, res) => {
 app.put('/api/employees/:matricula/deactivate', async (req, res) => {
     try {
         const mat = String(req.params.matricula).trim();
+        let found = false;
         await prisma.$transaction(async (tx) => {
             const emp = await tx.employee.findUnique({ where: { matricula: mat } });
             if (emp) {
                 await tx.employee.update({ where: { matricula: mat }, data: { status: 'INATIVO' } });
+                found = true;
             }
             const user = await tx.user.findUnique({ where: { matricula: mat } });
             if (user) {
                 await tx.user.update({ where: { matricula: mat }, data: { status: 'INATIVO' } });
+                found = true;
             }
         });
+
+        if (!found) {
+            return res.status(404).json({ error: "Colaborador não localizado em nenhuma das bases (Employees/Users)." });
+        }
+
         res.json({ message: "Desligado com sucesso" });
     } catch (e) {
         console.error("Deactivate Error:", e);

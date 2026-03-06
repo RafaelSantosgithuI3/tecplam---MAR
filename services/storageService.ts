@@ -145,6 +145,14 @@ export const saveModelsFull = async (models: ConfigModel[]) => {
     } catch (e) { console.error(e); }
 };
 
+export const getUnifiedModels = async (): Promise<ConfigModel[]> => {
+    try {
+        const models = await apiFetch('/config/models/unified');
+        if (Array.isArray(models)) return models;
+        return [];
+    } catch (e) { return []; }
+};
+
 export const getStations = async (): Promise<string[]> => {
     try { const stations = await apiFetch('/config/stations'); if (Array.isArray(stations)) return stations.map((s: any) => s.name); return []; } catch (e) { return []; }
 };
