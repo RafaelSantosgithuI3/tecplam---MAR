@@ -14,6 +14,9 @@ import {
 import { getAllUsers } from '../services/authService';
 import { getLines, getModels, getWeekNumber } from '../services/storageService';
 import { exportExecutiveReport, exportInvoiceReport } from '../services/excelService';
+import { getMaterials } from '../services/materialService';
+import { MaterialsManager } from './MaterialsManager';
+import { Material } from '../types';
 
 // Import shared components
 import { ScrapOperational, ScrapConsulta, ScrapDetailModal } from './ScrapModule';
@@ -29,7 +32,7 @@ const formatDateDisplay = (dateString: string | undefined) => {
     return `${day}/${month}/${year}`;
 };
 
-type IQCTab = 'MONITORING' | 'BATCH_PROCESS' | 'HISTORY_SENT' | 'DASHBOARD' | 'BOX_MOUNT' | 'BOX_IDENTIFIED' | 'CONSULTA';
+type IQCTab = 'MONITORING' | 'BATCH_PROCESS' | 'HISTORY_SENT' | 'DASHBOARD' | 'BOX_MOUNT' | 'BOX_IDENTIFIED' | 'CONSULTA' | 'MATERIALS';
 
 export const IQCModule = ({ currentUser, onBack }: { currentUser: User, onBack: () => void }) => {
     const [activeTab, setActiveTab] = useState<IQCTab>('MONITORING');
@@ -37,18 +40,21 @@ export const IQCModule = ({ currentUser, onBack }: { currentUser: User, onBack: 
     const [users, setUsers] = useState<User[]>([]);
     const [lines, setLines] = useState<string[]>([]);
     const [models, setModels] = useState<string[]>([]);
+    const [materials, setMaterials] = useState<Material[]>([]);
 
     const loadData = async () => {
-        const [s, u, l, m] = await Promise.all([
+        const [s, u, l, m, mats] = await Promise.all([
             getScraps(),
             getAllUsers(),
             getLines(),
-            getModels()
+            getModels(),
+            getMaterials()
         ]);
         setScraps(s);
         setUsers(u);
         setLines(l.map(x => x.name));
         setModels(m);
+        setMaterials(mats);
     };
 
     useEffect(() => {
@@ -58,6 +64,10 @@ export const IQCModule = ({ currentUser, onBack }: { currentUser: User, onBack: 
     const refreshData = async () => {
         const s = await getScraps();
         setScraps(s);
+    };
+
+    const refreshMaterials = async () => {
+        setMaterials(await getMaterials());
     };
 
     return (
@@ -99,6 +109,9 @@ export const IQCModule = ({ currentUser, onBack }: { currentUser: User, onBack: 
                     <Button variant={activeTab === 'CONSULTA' ? 'primary' : 'ghost'} onClick={() => setActiveTab('CONSULTA')} size="sm">
                         <FileText size={16} /> Consulta
                     </Button>
+                    <Button variant={activeTab === 'MATERIALS' ? 'primary' : 'ghost'} onClick={() => setActiveTab('MATERIALS')} size="sm">
+                        <Box size={16} /> Itens de Scrap
+                    </Button>
                 </div>
             </div>
 
@@ -130,6 +143,10 @@ export const IQCModule = ({ currentUser, onBack }: { currentUser: User, onBack: 
 
                 {activeTab === 'CONSULTA' && (
                     <ScrapConsulta scraps={scraps} users={users} />
+                )}
+
+                {activeTab === 'MATERIALS' && (
+                    <MaterialsManager materials={materials} setMaterials={setMaterials} onRefresh={refreshMaterials} disableDelete />
                 )}
             </div>
         </div>

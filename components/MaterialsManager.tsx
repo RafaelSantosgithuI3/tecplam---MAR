@@ -11,9 +11,10 @@ interface MaterialsManagerProps {
     materials: Material[];
     setMaterials: React.Dispatch<React.SetStateAction<Material[]>>;
     onRefresh: () => void;
+    disableDelete?: boolean;
 }
 
-export const MaterialsManager: React.FC<MaterialsManagerProps> = ({ materials, setMaterials, onRefresh }) => {
+export const MaterialsManager: React.FC<MaterialsManagerProps> = ({ materials, setMaterials, onRefresh, disableDelete = false }) => {
     const [searchTerm, setSearchTerm] = useState('');
     const [isUploading, setIsUploading] = useState(false);
 
@@ -270,7 +271,7 @@ export const MaterialsManager: React.FC<MaterialsManagerProps> = ({ materials, s
                             onChange={e => setSearchTerm(e.target.value)}
                         />
                     </div>
-                    {selectedCodes.size > 0 && (
+                    {selectedCodes.size > 0 && !disableDelete && (
                         <Button variant="danger" onClick={handleDeleteSelected}>
                             <Trash2 size={16} /> Excluir Selecionados ({selectedCodes.size})
                         </Button>
@@ -283,14 +284,16 @@ export const MaterialsManager: React.FC<MaterialsManagerProps> = ({ materials, s
                     <table className="w-full text-sm text-left">
                         <thead className="text-xs text-slate-600 dark:text-zinc-400 uppercase bg-slate-100 dark:bg-zinc-950 sticky top-0 border-b border-slate-200 dark:border-zinc-800">
                             <tr>
-                                <th className="px-3 py-3 w-10">
-                                    <input
-                                        type="checkbox"
-                                        checked={allSelected}
-                                        onChange={toggleSelectAll}
-                                        className="w-4 h-4 rounded border-slate-300 dark:border-zinc-600 accent-blue-600"
-                                    />
-                                </th>
+                                {!disableDelete && (
+                                    <th className="px-3 py-3 w-10">
+                                        <input
+                                            type="checkbox"
+                                            checked={allSelected}
+                                            onChange={toggleSelectAll}
+                                            className="w-4 h-4 rounded border-slate-300 dark:border-zinc-600 accent-blue-600"
+                                        />
+                                    </th>
+                                )}
                                 <th className="px-4 py-3">Código</th>
                                 <th className="px-4 py-3">Modelo</th>
                                 <th className="px-4 py-3">Descrição</th>
@@ -303,14 +306,16 @@ export const MaterialsManager: React.FC<MaterialsManagerProps> = ({ materials, s
                         <tbody className="divide-y divide-slate-200 dark:divide-zinc-800 bg-white dark:bg-zinc-900">
                             {filteredMaterials.map((m, idx) => (
                                 <tr key={m.code || idx} className={`hover:bg-slate-50 dark:hover:bg-zinc-800/50 transition-colors ${selectedCodes.has(m.code) ? 'bg-blue-50/50 dark:bg-blue-900/10' : ''}`}>
-                                    <td className="px-3 py-2">
-                                        <input
-                                            type="checkbox"
-                                            checked={selectedCodes.has(m.code)}
-                                            onChange={() => toggleSelect(m.code)}
-                                            className="w-4 h-4 rounded border-slate-300 dark:border-zinc-600 accent-blue-600"
-                                        />
-                                    </td>
+                                    {!disableDelete && (
+                                        <td className="px-3 py-2">
+                                            <input
+                                                type="checkbox"
+                                                checked={selectedCodes.has(m.code)}
+                                                onChange={() => toggleSelect(m.code)}
+                                                className="w-4 h-4 rounded border-slate-300 dark:border-zinc-600 accent-blue-600"
+                                            />
+                                        </td>
+                                    )}
                                     <td className="px-4 py-2 font-mono text-slate-500 dark:text-zinc-400">{m.code || '-'}</td>
                                     <td className="px-4 py-2 font-bold text-slate-900 dark:text-white">{m.model || '-'}</td>
                                     <td className="px-4 py-2 text-slate-700 dark:text-zinc-300">{m.description || '-'}</td>
@@ -328,13 +333,15 @@ export const MaterialsManager: React.FC<MaterialsManagerProps> = ({ materials, s
                                             >
                                                 <Edit2 size={14} />
                                             </button>
-                                            <button
-                                                onClick={() => handleDeleteSingle(m.code)}
-                                                className="p-1.5 rounded hover:bg-red-50 dark:hover:bg-red-900/20 text-red-500 transition-colors"
-                                                title="Excluir"
-                                            >
-                                                <Trash2 size={14} />
-                                            </button>
+                                            {!disableDelete && (
+                                                <button
+                                                    onClick={() => handleDeleteSingle(m.code)}
+                                                    className="p-1.5 rounded hover:bg-red-50 dark:hover:bg-red-900/20 text-red-500 transition-colors"
+                                                    title="Excluir"
+                                                >
+                                                    <Trash2 size={14} />
+                                                </button>
+                                            )}
                                         </div>
                                     </td>
                                 </tr>

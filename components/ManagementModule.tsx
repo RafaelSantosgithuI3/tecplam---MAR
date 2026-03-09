@@ -3,13 +3,14 @@ import React, { useState, useEffect } from 'react';
 import { Button } from './Button';
 import { Input } from './Input';
 import { Card } from './Card';
-import { Plus, Trash2, Edit2, Save, X, Search, Smartphone, List, User as UserIcon, Shield, ArrowLeft } from 'lucide-react';
+import { ArrowLeft, Save, Plus, Trash2, Edit2, List, FileSpreadsheet, Box, Ban, UserX, Download, Upload, X, Search, Smartphone, User as UserIcon, Shield } from 'lucide-react';
 import { ConfigItem, ConfigModel } from '../types';
-import { getLines, addLine, deleteLine, getRoles, addRole, deleteRole, getStations, saveStations, getModelsFull, saveModelsFull, getLayoutWorkstations, addLayoutWorkstation, getUnifiedModels } from '../services/storageService';
+import { getLines, addLine, deleteLine, getRoles, addRole, deleteRole, getStations, saveStations, getModelsFull, saveModelsFull, getLayoutWorkstations, addLayoutWorkstation, editLayoutWorkstation, deleteLayoutWorkstation, getUnifiedModels, saveLayoutWorkstationsBulk } from '../services/storageService';
 import { apiFetch } from '../services/networkConfig';
 import { exportWorkstationsByModel } from '../services/excelService';
 import { getMaterials } from '../services/materialService';
 import { MaterialsManager } from './MaterialsManager';
+import * as XLSX from 'xlsx';
 
 interface ManagementModuleProps {
     onBack: () => void;
@@ -30,6 +31,10 @@ export const ManagementModule: React.FC<ManagementModuleProps> = ({ onBack }) =>
     const [selectedLayoutModel, setSelectedLayoutModel] = useState<string>('');
     const [newLayoutStationName, setNewLayoutStationName] = useState('');
     const [newLayoutPeopleNeeded, setNewLayoutPeopleNeeded] = useState('');
+    const [editingStationId, setEditingStationId] = useState<number | null>(null);
+    const [editStationName, setEditStationName] = useState('');
+    const [editStationOrder, setEditStationOrder] = useState('');
+    const [editStationPeople, setEditStationPeople] = useState('');
 
     const [newItem, setNewItem] = useState('');
     const [newSku, setNewSku] = useState('');
@@ -37,10 +42,20 @@ export const ManagementModule: React.FC<ManagementModuleProps> = ({ onBack }) =>
     const [isEditing, setIsEditing] = useState<ConfigModel | null>(null);
     const [search, setSearch] = useState('');
 
+    const fileInputRef = React.useRef<HTMLInputElement>(null);
+    const [isUploading, setIsUploading] = useState(false);
+
     // DESLIGAMENTO state
     const [deactivateSearch, setDeactivateSearch] = useState('');
     const [deactivatePreview, setDeactivatePreview] = useState<any>(null);
     const [allEmployees, setAllEmployees] = useState<any[]>([]);
+
+    // PEOPLE_MANAGEMENT state
+    const [peopleSearch, setPeopleSearch] = useState('');
+    const [peopleSearchResults, setPeopleSearchResults] = useState<any[]>([]);
+    const [selectedEmployee, setSelectedEmployee] = useState<any>(null);
+    const [isEditingEmployee, setIsEditingEmployee] = useState(false);
+    const [editEmployeeData, setEditEmployeeData] = useState<any>(null);
 
     useEffect(() => {
         loadData();
@@ -298,14 +313,164 @@ export const ManagementModule: React.FC<ManagementModuleProps> = ({ onBack }) =>
 
     const handleSaveLayoutStation = async () => {
         if (!selectedLayoutModel || !newLayoutStationName || !newLayoutPeopleNeeded) return;
+        const exists = layoutStations.some(s => s.modelName === selectedLayoutModel && s.name === newLayoutStationName);
+        if (exists) {
+            if (!window.confirm('Este posto já existe neste modelo. Deseja atualizar/sobrescrever?')) return;
+            // Upsert / or simply replace, but here backend does append. Let's just alert since exact requirement asks for update.
+            // If the user wants to upsert, we might need a specific edit/update API, or we rely on the backend.
+            // Since we implemented editLayoutWorkstation, we should check if they want to edit.
+            const existingStation = layoutStations.find(s => s.modelName === selectedLayoutModel && s.name === newLayoutStationName);
+            if (existingStation) {
+                await editLayoutWorkstation(existingStation.id, newLayoutStationName, selectedLayoutModel, existingStation.order, parseInt(newLayoutPeopleNeeded));
+                setNewLayoutStationName('');
+                setNewLayoutPeopleNeeded('');
+                loadData();
+                return;
+            }
+        }
         await addLayoutWorkstation(newLayoutStationName, selectedLayoutModel, parseInt(newLayoutPeopleNeeded));
         setNewLayoutStationName('');
         setNewLayoutPeopleNeeded('');
         loadData();
     };
 
+    const handleEditLayoutStationSave = async (id: number) => {
+        await editLayoutWorkstation(id, editStationName, selectedLayoutModel, editStationOrder, parseInt(editStationPeople));
+        setEditingStationId(null);
+        loadData();
+    };
+
+    const handleDeleteLayoutStation = async (id: number) => {
+        if (window.confirm('Confirmar exclusão deste posto do layout?')) {
+            await deleteLayoutWorkstation(id);
+            loadData();
+        }
+    };
+
+    const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+
+        setIsUploading(true);
+        const reader = new FileReader();
+
+        reader.onload = async (evt) => {
+            try {
+                const bstr = evt.target?.result;
+                const wb = XLSX.read(bstr, { type: 'binary' });
+                const wsname = wb.SheetNames[0];
+                const ws = wb.Sheets[wsname];
+                const data = XLSX.utils.sheet_to_json(ws);
+
+                const parsedStations: any[] = [];
+                let skipEmpty = false;
+
+                data.forEach((row: any, index: number) => {
+                    const getCol = (possibleCols: string[]) => {
+                        const rowKeys = Object.keys(row);
+                        for (const pk of possibleCols) {
+                            const foundKey = rowKeys.find(k => k.trim().toLowerCase() === pk.toLowerCase());
+                            if (foundKey) return row[foundKey];
+                        }
+                        return undefined;
+                    };
+
+                    const rawModel = getCol(['A1', 'modelo', 'modelname', 'model', 'modelName']);
+                    if (!rawModel) return;
+
+                    const rawOrder = getCol(['B1', 'Nposto', 'nposto', 'order', 'ordem']);
+                    const rawName = getCol(['C1', 'postos', 'name', 'posto', 'nome']);
+                    const rawQty = getCol(['D1', 'qty pessoas', 'peopleneeded', 'qty', 'pessoas', 'quantidade']);
+
+                    if (!rawName) return;
+
+                    const unified = unifiedModels.find(m => (m as any).unifiedCode?.toLowerCase() === String(rawModel).trim().toLowerCase() || m.name.toLowerCase() === String(rawModel).trim().toLowerCase());
+                    const finalModelName = unified ? unified.name : String(rawModel).trim();
+
+                    parsedStations.push({
+                        modelName: finalModelName,
+                        order: String(rawOrder || '').trim(),
+                        name: String(rawName).trim(),
+                        peopleNeeded: parseInt(String(rawQty || '1').trim()) || 1
+                    });
+                });
+
+                if (parsedStations.length > 0) {
+                    const uniqueModelsInUpload = [...new Set(parsedStations.map(p => p.modelName))];
+                    const existingInDb = uniqueModelsInUpload.some(m => layoutStations.some(s => s.modelName === m));
+                    let proceed = true;
+                    if (existingInDb) {
+                        proceed = window.confirm('Atenção: Alguns modelos neste arquivo já possuem postos cadastrados. Ao importar, os postos antigos destes modelos serão substituídos/atualizados. Deseja prosseguir sem gerar duplicidade?');
+                    } else {
+                        proceed = window.confirm(`Deseja importar ${parsedStations.length} postos?`);
+                    }
+                    if (proceed) {
+                        await saveLayoutWorkstationsBulk(parsedStations);
+                        alert('Importação concluída com sucesso!');
+                        loadData();
+                    }
+                } else {
+                    alert('Nenhum dado válido encontrado.');
+                }
+            } catch (err) {
+                console.error("Critical Import Error:", err);
+                alert(`Erro ao processar arquivo.`);
+            } finally {
+                setIsUploading(false);
+                if (fileInputRef.current) fileInputRef.current.value = '';
+            }
+        };
+
+        reader.onerror = () => {
+            alert("Erro de leitura do arquivo.");
+            setIsUploading(false);
+        }
+
+        reader.readAsBinaryString(file);
+    };
+
+    const generateTemplate = () => {
+        const ws = XLSX.utils.json_to_sheet([{
+            modelname: 'SM-X400',
+            order: '1',
+            name: 'Montagem 1',
+            peopleneeded: 2
+        }]);
+        XLSX.utils.sheet_add_aoa(ws, [['modelo', 'Nposto', 'postos', 'qty pessoas']], { origin: 'A1' });
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, "template_layout");
+        XLSX.writeFile(wb, "template_layout.xlsx");
+        alert("Coloque por modelo, o numero do posto é a sequencia na linha de produção, os postos que tiverem mais de uma pessoa não precisa repetir só coloque na quantidade de pessoas o numero certo de pessoas necessárias.");
+    };
+
+    const downloadCurrentLayouts = (filterModel?: string) => {
+        let exportData = layoutStations;
+        if (filterModel && filterModel !== 'ALL') {
+            exportData = layoutStations.filter(s => s.modelName === filterModel);
+        }
+
+        const data = exportData.map(s => ({
+            modelname: s.modelName,
+            order: s.order || '',
+            name: s.name,
+            peopleneeded: s.peopleNeeded
+        }));
+
+        const ws = XLSX.utils.json_to_sheet(data);
+        XLSX.utils.sheet_add_aoa(ws, [['modelo', 'Nposto', 'postos', 'qty pessoas']], { origin: 'A1' });
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, "layout_export");
+        XLSX.writeFile(wb, `layout_export_${filterModel || 'ALL'}.xlsx`);
+    };
+
     const renderStationsLayout = () => {
-        const currentModelStations = layoutStations.filter(s => s.modelName === selectedLayoutModel);
+        const currentModelStations = layoutStations
+            .filter(s => s.modelName === selectedLayoutModel)
+            .sort((a, b) => {
+                const orderA = parseInt(a.order || '0', 10) || 0;
+                const orderB = parseInt(b.order || '0', 10) || 0;
+                return orderA - orderB;
+            });
         const totalPeople = currentModelStations.reduce((acc, curr) => acc + curr.peopleNeeded, 0);
         const uniqueStationNames = Array.from(new Set(layoutStations.map(s => s.name)));
 
@@ -355,30 +520,72 @@ export const ManagementModule: React.FC<ManagementModuleProps> = ({ onBack }) =>
                 </Card>
 
                 <Card className="space-y-4">
-                    <div className="flex justify-between items-center">
+                    <div className="flex justify-between items-center flex-wrap gap-2">
                         <h3 className="font-bold text-slate-800 dark:text-zinc-100">Postos do Modelo: {selectedLayoutModel || 'Nenhum'}</h3>
-                        <Button variant="secondary" onClick={() => exportWorkstationsByModel(currentModelStations)}><List size={16} /> Exportar Excel</Button>
+                        <div className="flex flex-wrap gap-2">
+                            <input
+                                type="file"
+                                ref={fileInputRef}
+                                className="hidden"
+                                accept=".xlsx, .xls, .csv"
+                                onChange={handleFileUpload}
+                            />
+                            <Button variant="outline" onClick={generateTemplate}><Download size={16} /> Gerar Template</Button>
+                            <Button variant="outline" onClick={() => fileInputRef.current?.click()} disabled={isUploading}>
+                                {isUploading ? 'Processando...' : <><Upload size={16} /> Importar Excel</>}
+                            </Button>
+                            <Button variant="secondary" onClick={() => downloadCurrentLayouts('ALL')}><List size={16} /> Baixar Todos</Button>
+                            <Button variant="secondary" onClick={() => downloadCurrentLayouts(selectedLayoutModel)}><List size={16} /> Baixar Deste Modelo</Button>
+                        </div>
                     </div>
 
                     <div className="bg-white dark:bg-zinc-900 rounded-xl border border-slate-200 dark:border-zinc-800 overflow-hidden">
                         <table className="w-full text-left text-sm">
                             <thead className="bg-slate-50 dark:bg-zinc-950 text-slate-500 dark:text-zinc-500 border-b border-slate-200 dark:border-zinc-800">
                                 <tr>
-                                    <th className="p-4 font-medium">Posto</th>
+                                    <th className="p-4 font-medium">Ordem</th>
+                                    <th className="p-4 font-medium">Posto</th>                                    
                                     <th className="p-4 font-medium text-right">Pessoas Necessárias</th>
+                                    <th className="p-4 font-medium text-right">Ações</th>
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-slate-200 dark:divide-zinc-800">
                                 {currentModelStations.map(s => (
                                     <tr key={s.id} className="hover:bg-slate-50 dark:hover:bg-zinc-800/50">
-                                        <td className="p-4 text-slate-900 dark:text-zinc-100">{s.name}</td>
-                                        <td className="p-4 text-right font-medium text-slate-900 dark:text-zinc-100">{s.peopleNeeded}</td>
+                                        <td className="p-4 text-slate-900 dark:text-zinc-100">
+                                            {editingStationId === s.id ? (
+                                                <input className="border p-1 rounded font-normal bg-white dark:bg-zinc-800 w-full" value={editStationName} onChange={e => setEditStationName(e.target.value)} />
+                                            ) : s.name}
+                                        </td>
+                                        <td className="p-4 font-mono text-slate-500 text-sm">
+                                            {editingStationId === s.id ? (
+                                                <input className="border p-1 rounded font-normal bg-white dark:bg-zinc-800 w-16" value={editStationOrder} onChange={e => setEditStationOrder(e.target.value)} placeholder="Ord" />
+                                            ) : (s.order || '-')}
+                                        </td>
+                                        <td className="p-4 text-right font-medium text-slate-900 dark:text-zinc-100">
+                                            {editingStationId === s.id ? (
+                                                <input className="border p-1 rounded font-normal bg-white dark:bg-zinc-800 w-20 text-right" type="number" value={editStationPeople} onChange={e => setEditStationPeople(e.target.value)} />
+                                            ) : s.peopleNeeded}
+                                        </td>
+                                        <td className="p-4 text-right">
+                                            {editingStationId === s.id ? (
+                                                <div className="flex gap-2 justify-end">
+                                                    <Button onClick={() => handleEditLayoutStationSave(s.id)}>Salvar</Button>
+                                                    <Button variant="outline" onClick={() => setEditingStationId(null)}><X size={16} /></Button>
+                                                </div>
+                                            ) : (
+                                                <div className="flex gap-2 justify-end">
+                                                    <Button variant="secondary" onClick={() => { setEditingStationId(s.id); setEditStationName(s.name); setEditStationOrder(s.order || ''); setEditStationPeople(String(s.peopleNeeded)); }}><Edit2 size={16} /></Button>
+                                                    <Button variant="danger" onClick={() => handleDeleteLayoutStation(s.id)}><Trash2 size={16} /></Button>
+                                                </div>
+                                            )}
+                                        </td>
                                     </tr>
                                 ))}
                             </tbody>
                             <tfoot className="bg-slate-50 dark:bg-zinc-950">
                                 <tr>
-                                    <td className="p-4 font-bold text-slate-900 dark:text-zinc-100 text-right">Soma Total:</td>
+                                    <td colSpan={3} className="p-4 font-bold text-slate-900 dark:text-zinc-100 text-right">Soma Total:</td>
                                     <td className="p-4 font-bold text-slate-900 dark:text-zinc-100 text-right">{totalPeople}</td>
                                 </tr>
                             </tfoot>

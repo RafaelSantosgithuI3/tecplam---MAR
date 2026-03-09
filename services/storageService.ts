@@ -177,6 +177,38 @@ export const addLayoutWorkstation = async (name: string, modelName: string, peop
     } catch (e) { console.error(e); throw e; }
 };
 
+export const editLayoutWorkstation = async (id: number, name: string, modelName: string, order: string, peopleNeeded: number) => {
+    try {
+        await apiFetch(`/workstations/${id}`, {
+            method: 'PUT',
+            body: JSON.stringify({ name, modelName, order, peopleNeeded })
+        });
+    } catch (e) {
+        console.error(e);
+        throw e;
+    }
+};
+
+export const deleteLayoutWorkstation = async (id: number) => {
+    try {
+        await apiFetch(`/workstations/${id}`, {
+            method: 'DELETE'
+        });
+    } catch (e) {
+        console.error(e);
+        throw e;
+    }
+};
+
+export const saveLayoutWorkstationsBulk = async (workstations: any[]) => {
+    try {
+        return await apiFetch('/workstations/bulk', {
+            method: 'POST',
+            body: JSON.stringify({ items: workstations })
+        });
+    } catch (e) { console.error(e); throw e; }
+};
+
 // --- LOGS ---
 
 export const saveLog = async (log: ChecklistLog) => {

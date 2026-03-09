@@ -1358,7 +1358,11 @@ function getLocalIp() {
 
 app.get('/api/employees', async (req, res) => {
     try {
+        const { superiorId } = req.query;
+        const whereClause = superiorId ? { superiorId: String(superiorId) } : {};
+
         const employees = await prisma.employee.findMany({
+            where: whereClause,
             select: {
                 matricula: true,
                 fullName: true,
@@ -1371,7 +1375,10 @@ app.get('/api/employees', async (req, res) => {
                 status: true,
                 gloveSize: true,
                 gloveType: true,
-                gloveExchanges: true
+                gloveExchanges: true,
+                m1: true, m2: true, m3: true, m4: true, m5: true, m6: true,
+                nm1: true, nm2: true, nm3: true, nm4: true, nm5: true, nm6: true,
+                pm1: true, pm2: true, pm3: true, pm4: true, pm5: true, pm6: true
             }
         });
         res.json(employees);
@@ -1404,13 +1411,19 @@ app.post('/api/employees', async (req, res) => {
 app.get('/api/employees/search/:matricula', async (req, res) => {
     try {
         const queryMatricula = String(req.params.matricula).trim().toUpperCase();
+        const { superiorId } = req.query;
+
+        const whereClause = { matricula: queryMatricula };
+        if (superiorId) {
+            whereClause.superiorId = String(superiorId);
+        }
 
         const employee = await prisma.employee.findFirst({
-            where: { matricula: queryMatricula },
+            where: whereClause,
             include: { attendanceLogs: true }
         });
 
-        if (!employee) return res.status(404).json({ error: "Colaborador não encontrado" });
+        if (!employee) return res.status(404).json({ error: "Colaborador não encontrado ou você não tem permissão." });
         res.json(employee);
     } catch (e) {
         res.status(500).json({ error: e.message });
@@ -1527,6 +1540,57 @@ app.post('/api/workstations', async (req, res) => {
         });
         res.json({ message: "Posto criado", workstation });
     } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+app.post('/api/workstations/bulk', async (req, res) => {
+    try {
+        const { items } = req.body;
+        if (!items || !Array.isArray(items) || items.length === 0) {
+            return res.status(400).json({ error: "Lista de postos vazia ou inválida." });
+        }
+
+        const configModels = await prisma.configModel.findMany();
+
+        const findUnifiedModel = (rawModel) => {
+            if (!rawModel) return rawModel;
+            const up = rawModel.toUpperCase();
+
+            let match = configModels.find(cm => cm.unifiedCode && cm.unifiedCode.toUpperCase().includes(up));
+            if (match && match.unifiedCode) return match.unifiedCode;
+
+            match = configModels.find(cm => cm.name && cm.name.toUpperCase().includes(up));
+            if (match && match.name) return match.name;
+
+            return rawModel;
+        };
+
+        const mappedItems = items.map(i => ({
+            ...i,
+            modelName: findUnifiedModel(i.modelName)
+        }));
+
+        const uniqueModels = [...new Set(mappedItems.map(i => i.modelName))];
+
+        await prisma.$transaction(async (tx) => {
+            await tx.workstation.deleteMany({
+                where: { modelName: { in: uniqueModels } }
+            });
+
+            await tx.workstation.createMany({
+                data: mappedItems.map(i => ({
+                    name: i.name,
+                    modelName: i.modelName,
+                    order: i.order || null,
+                    peopleNeeded: parseInt(i.peopleNeeded) || 1
+                }))
+            });
+        });
+
+        res.json({ message: "Layouts importados com sucesso" });
+    } catch (e) {
+        console.error("Bulk Workstation Import Error:", e);
         res.status(500).json({ error: e.message });
     }
 });

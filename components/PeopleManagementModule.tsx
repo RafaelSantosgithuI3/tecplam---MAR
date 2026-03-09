@@ -37,7 +37,7 @@ export const PeopleManagementModule = ({ onBack, currentUser }: PeopleManagement
             if (Array.isArray(users)) {
                 setLeaders(users.filter(u => u.role && (u.role.toLowerCase().includes('lider') || u.role.toLowerCase().includes('líder') || u.role.toLowerCase().includes('supervisor'))));
             }
-            const emp = await apiFetch('/employees');
+            const emp = await apiFetch(`/employees?superiorId=${currentUser.matricula}`);
             if (Array.isArray(emp)) setEmployees(emp);
 
             const mods = await apiFetch('/config/models');
@@ -59,7 +59,7 @@ export const PeopleManagementModule = ({ onBack, currentUser }: PeopleManagement
     // TAB 1: CADASTRO
     const [formData, setFormData] = useState({
         matricula: '', photo: '', fullName: '', shift: '', role: '', sector: '',
-        superiorId: '', idlSt: '', type: '', status: '', address: '', addressNum: '', whatsapp: ''
+        superiorId: '', idlSt: '', type: '', status: '', address: '', addressNum: '', whatsapp: '', neighborhood: ''
     });
     const [isEdit, setIsEdit] = useState(false);
 
@@ -83,7 +83,7 @@ export const PeopleManagementModule = ({ onBack, currentUser }: PeopleManagement
             alert('Salvo!');
             setFormData({
                 matricula: '', photo: '', fullName: '', shift: '', role: '', sector: '',
-                superiorId: '', idlSt: '', type: '', status: '', address: '', addressNum: '', whatsapp: ''
+                superiorId: '', idlSt: '', type: '', status: '', address: '', addressNum: '', whatsapp: '', neighborhood: ''
             });
             setIsEdit(false);
             loadBaseData();
@@ -114,7 +114,7 @@ export const PeopleManagementModule = ({ onBack, currentUser }: PeopleManagement
                 setFormData(prev => ({
                     ...prev,
                     photo: '', fullName: '', shift: '', role: '', sector: '',
-                    superiorId: '', idlSt: '', type: '', status: '', address: '', addressNum: '', whatsapp: ''
+                    superiorId: '', idlSt: '', type: '', status: '', address: '', addressNum: '', whatsapp: '', neighborhood: ''
                 }));
             }
         } catch (e) {
@@ -123,7 +123,7 @@ export const PeopleManagementModule = ({ onBack, currentUser }: PeopleManagement
             setFormData(prev => ({
                 ...prev,
                 photo: '', fullName: '', shift: '', role: '', sector: '',
-                superiorId: '', idlSt: '', type: '', status: '', address: '', addressNum: '', whatsapp: ''
+                superiorId: '', idlSt: '', type: '', status: '', address: '', addressNum: '', whatsapp: '', neighborhood: ''
             }));
         }
     };
@@ -174,9 +174,9 @@ export const PeopleManagementModule = ({ onBack, currentUser }: PeopleManagement
 
                 <Input label="IDL-ST" value={formData.idlSt} onChange={e => setFormData({ ...formData, idlSt: e.target.value })} />
                 <Input label="Tipo" value={formData.type} onChange={e => setFormData({ ...formData, type: e.target.value })} />
-                <Input label="Status" value={formData.status} onChange={e => setFormData({ ...formData, status: e.target.value })} />
                 <Input label="Logradouro" value={formData.address} onChange={e => setFormData({ ...formData, address: e.target.value })} />
                 <Input label="Número (Endereço)" value={formData.addressNum} onChange={e => setFormData({ ...formData, addressNum: e.target.value })} />
+                <Input label="Bairro" value={formData.neighborhood} onChange={e => setFormData({ ...formData, neighborhood: e.target.value })} />
                 <Input label="WhatsApp" value={formData.whatsapp} onChange={e => setFormData({ ...formData, whatsapp: e.target.value })} />
             </div>
             <div className="flex justify-end mt-4">
@@ -203,7 +203,7 @@ export const PeopleManagementModule = ({ onBack, currentUser }: PeopleManagement
         const queryToUse = typeof overrideQuery === 'string' ? overrideQuery : searchQuery;
         if (!queryToUse) return;
         try {
-            const res = await apiFetch('/employees/search/' + encodeURIComponent(queryToUse.trim()));
+            const res = await apiFetch(`/employees/search/${encodeURIComponent(queryToUse.trim())}?superiorId=${currentUser.matricula}`);
             if (res && res.matricula) {
                 // Initialize current dates
                 const now = new Date();
@@ -236,7 +236,7 @@ export const PeopleManagementModule = ({ onBack, currentUser }: PeopleManagement
                 });
 
                 // Extração dos postos habilitados lendo m1-m6, nm1-nm6, pm1-pm6
-                const habList = [];
+                const habList: string[] = [];
                 for (let i = 1; i <= 6; i++) {
                     const m = res[`m${i}`];
                     const nm = res[`nm${i}`];
@@ -281,6 +281,23 @@ export const PeopleManagementModule = ({ onBack, currentUser }: PeopleManagement
                     }}
                     onClose={() => setShowScanner(false)}
                 />
+            )}
+
+            {!consultResult && !searchQuery && (
+                <div className="mt-4">
+                    <p className="text-sm font-bold text-slate-500 uppercase tracking-wide mb-2">Colaboradores da sua equipe</p>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                        {employees.filter(e => e.superiorId === currentUser.matricula).map(emp => (
+                            <div key={emp.matricula} onClick={() => { setSearchQuery(emp.matricula); handleConsult(emp.matricula); }} className="flex items-center gap-3 p-3 rounded-xl border border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 hover:border-cyan-500 cursor-pointer">
+                                {emp.photo ? <img src={emp.photo} className="w-10 h-10 rounded-full object-cover shrink-0" /> : <div className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center shrink-0"><UserIcon size={20} className="text-slate-400" /></div>}
+                                <div className="min-w-0">
+                                    <p className="font-bold text-sm text-slate-800 dark:text-zinc-100 truncate">{emp.fullName}</p>
+                                    <p className="text-xs text-slate-500 font-mono truncate">{emp.matricula}</p>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                </div>
             )}
 
             {consultResult && (
@@ -357,6 +374,7 @@ export const PeopleManagementModule = ({ onBack, currentUser }: PeopleManagement
                             <div className="grid grid-cols-1 gap-y-3 text-sm">
                                 <div><p className="text-xs text-slate-500 uppercase font-bold">WhatsApp</p><p className="font-medium text-slate-700 dark:text-zinc-300">{consultResult.whatsapp || 'Não informado'}</p></div>
                                 <div><p className="text-xs text-slate-500 uppercase font-bold">Endereço</p><p className="font-medium text-slate-700 dark:text-zinc-300">{consultResult.address || 'Não informado'}, {consultResult.addressNum || ''}</p></div>
+                                <div><p className="text-xs text-slate-500 uppercase font-bold">Bairro</p><p className="font-medium text-slate-700 dark:text-zinc-300">{consultResult.neighborhood || 'Não informado'}</p></div>
                             </div>
                         </Card>
 
@@ -650,6 +668,7 @@ export const PeopleManagementModule = ({ onBack, currentUser }: PeopleManagement
     const [alocModel, setAlocModel] = useState('');
     const [alocStation, setAlocStation] = useState('');
     const [alocOrder, setAlocOrder] = useState('');
+    const [layoutMasterModel, setLayoutMasterModel] = useState('');
 
     const handleSearchLine = () => {
         const found = employees.find(e => e.matricula.includes(lineSearch) || e.fullName.toLowerCase().includes(lineSearch.toLowerCase()));
@@ -686,6 +705,15 @@ export const PeopleManagementModule = ({ onBack, currentUser }: PeopleManagement
 
     const handleBindStation = async () => {
         if (!selectedAlocationEmp || !alocStation || !alocModel) return alert('Selecione Modelo e Posto');
+
+        const isDuplicate = selectedAlocationEmp.allocatedWorkstations?.some((ws: string) =>
+            ws.toLowerCase().includes(alocModel.toLowerCase()) && ws.toLowerCase().includes(alocStation.toLowerCase())
+        );
+
+        if (isDuplicate) {
+            return alert('Erro! O colaborador já está alocado neste posto.');
+        }
+
         try {
             await apiFetch(`/employees/${selectedAlocationEmp.matricula}/workstation-slots`, {
                 method: 'POST',
@@ -705,6 +733,11 @@ export const PeopleManagementModule = ({ onBack, currentUser }: PeopleManagement
             alert('Não foi possível vincular. (Todos os 6 slots podem estar cheios?)');
         }
     };
+
+    const [showEditStation, setShowEditStation] = useState<any>(null);
+    const [editingStation, setEditingStation] = useState<any>(null);
+    const [showLayoutUpdateModal, setShowLayoutUpdateModal] = useState(false);
+    const [pendingLayoutUpdate, setPendingLayoutUpdate] = useState<any>(null);
     const subordinados = employees.filter(e => e.superiorId === currentUser.matricula);
 
     const renderLayoutLinha = () => (
@@ -738,9 +771,40 @@ export const PeopleManagementModule = ({ onBack, currentUser }: PeopleManagement
                         <Button variant="secondary" onClick={() => setShowPrintModal(true)}><List size={16} /> Imprimir (Modelo)</Button>
                     </div>
                 </div>
-                <div className="bg-white dark:bg-zinc-900 rounded-xl border border-slate-200 dark:border-zinc-800 overflow-hidden text-sm">
+                <div className="bg-white dark:bg-zinc-900 rounded-xl border border-slate-200 dark:border-zinc-800 p-4">
+                    <label className="text-sm font-bold text-slate-700 dark:text-zinc-300 block mb-2">Filtro Mestre de Modelo</label>
+                    <select
+                        className="w-full bg-slate-50 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 rounded-xl px-4 py-3 outline-none"
+                        value={layoutMasterModel}
+                        onChange={(e) => setLayoutMasterModel(e.target.value)}
+                    >
+                        <option value="">Selecione um Modelo para Filtrar...</option>
+                        {unifiedModels.map(m => <option key={m.name} value={m.name}>{m.name}</option>)}
+                    </select>
+                </div>
+
+                <div className="bg-white dark:bg-zinc-900 rounded-xl border border-slate-200 dark:border-zinc-800 overflow-hidden text-sm mt-4">
                     {subordinados.length === 0 ? (
                         <p className="p-4 text-slate-500">Nenhum colaborador na sua linha.</p>
+                    ) : !layoutMasterModel ? (
+                        <div className="divide-y divide-slate-200 dark:divide-zinc-800">
+                            {subordinados.map(s => (
+                                <div
+                                    key={s.matricula}
+                                    onClick={() => setSelectedAlocationEmp(s)}
+                                    className="p-4 hover:bg-cyan-50 dark:hover:bg-cyan-900/20 cursor-pointer flex justify-between items-center border-b last:border-b-0 transition-colors"
+                                >
+                                    <div className="flex-1">
+                                        <p className="font-mono text-sm text-slate-600 dark:text-zinc-400">{s.matricula}</p>
+                                        <p className="font-bold text-slate-900 dark:text-zinc-100">{s.fullName}</p>
+                                        <p className="text-xs text-slate-500">{s.role}</p>
+                                    </div>
+                                    <Button variant="danger" onClick={(e) => { e.stopPropagation(); handleRemoveLine(s.matricula); }}>Retirar</Button>
+                                </div>
+                            ))}
+                        </div>
+                    ) : (subordinados.filter(s => (s.allocatedWorkstations || []).some((ws: string) => ws.toLowerCase().includes(layoutMasterModel.toLowerCase()))).length === 0) ? (
+                        <p className="p-4 text-slate-500">Nenhum colaborador capacitado neste modelo na sua linha.</p>
                     ) : (
                         <table className="w-full text-left">
                             <thead className="bg-slate-50 dark:bg-zinc-950 text-slate-500">
@@ -748,20 +812,47 @@ export const PeopleManagementModule = ({ onBack, currentUser }: PeopleManagement
                                     <th className="p-4">Matrícula</th>
                                     <th className="p-4">Nome</th>
                                     <th className="p-4">Função</th>
+                                    <th className="p-4">Postos Habilitados</th>
                                     <th className="p-4 text-right">Ações</th>
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-slate-200 dark:divide-zinc-800">
-                                {subordinados.map(s => (
-                                    <tr key={s.matricula} className="hover:bg-slate-50 dark:hover:bg-zinc-800/50">
-                                        <td className="p-4 font-mono">{s.matricula}</td>
-                                        <td className="p-4 cursor-pointer text-cyan-600 font-medium" onClick={() => setSelectedAlocationEmp(s)}>{s.fullName}</td>
-                                        <td className="p-4">{s.role}</td>
-                                        <td className="p-4 text-right">
-                                            <Button variant="danger" onClick={() => handleRemoveLine(s.matricula)}>Retirar</Button>
-                                        </td>
-                                    </tr>
-                                ))}
+                                {subordinados.filter(s => (s.allocatedWorkstations || []).some((ws: string) => ws.toLowerCase().includes(layoutMasterModel.toLowerCase()))).map(s => {
+                                    const employeeStations = (s.allocatedWorkstations || []).filter((ws: string) => ws.toLowerCase().includes(layoutMasterModel.toLowerCase()));
+                                    return (
+                                        <tr key={s.matricula} className="hover:bg-slate-50 dark:hover:bg-zinc-800/50">
+                                            <td className="p-4 font-mono">{s.matricula}</td>
+                                            <td className="p-4 font-medium text-slate-900 dark:text-zinc-100">{s.fullName}</td>
+                                            <td className="p-4">{s.role}</td>
+                                            <td className="p-4 text-xs text-slate-600">
+                                                <select
+                                                    className="bg-slate-50 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 rounded px-2 py-1 text-xs outline-none"
+                                                    onChange={(e) => {
+                                                        if (e.target.value) {
+                                                            setSelectedAlocationEmp(s);
+                                                            setAlocModel(layoutMasterModel);
+                                                            setAlocStation(e.target.value);
+                                                        }
+                                                    }}
+                                                    defaultValue=""
+                                                >
+                                                    <option value="">Selecionar posto...</option>
+                                                    {employeeStations.map((ws: string, idx: number) => {
+                                                        const stationName = ws.match(/\[Pos: (.+?)\]/)?.[1] || ws;
+                                                        return (
+                                                            <option key={idx} value={stationName}>
+                                                                {stationName}
+                                                            </option>
+                                                        );
+                                                    })}
+                                                </select>
+                                            </td>
+                                            <td className="p-4 text-right flex justify-end gap-2">
+                                                <Button variant="danger" onClick={() => handleRemoveLine(s.matricula)}>Retirar</Button>
+                                            </td>
+                                        </tr>
+                                    );
+                                })}
                             </tbody>
                         </table>
                     )}
@@ -778,7 +869,7 @@ export const PeopleManagementModule = ({ onBack, currentUser }: PeopleManagement
                         <p className="text-sm text-slate-500">Colaborador: {selectedAlocationEmp.fullName}</p>
 
                         <div className="grid grid-cols-2 gap-2 mt-4">
-                            <select className="bg-slate-50 dark:bg-zinc-800 p-2 rounded" value={alocModel} onChange={e => { setAlocModel(e.target.value); setAlocStation(''); }}>
+                            <select className="bg-slate-50 dark:bg-zinc-800 p-2 rounded" value={alocModel} onChange={e => { setAlocModel(e.target.value); setAlocStation(''); }} disabled={!layoutMasterModel || alocModel === layoutMasterModel}>
                                 <option value="">Selecione Modelo</option>
                                 {models.map(m => <option key={m.name} value={m.name}>{m.name}</option>)}
                             </select>
@@ -786,11 +877,42 @@ export const PeopleManagementModule = ({ onBack, currentUser }: PeopleManagement
                                 <option value="">Selecione Posto</option>
                                 {workstations.filter(w => w.modelName === alocModel).map(w => <option key={w.id} value={w.name}>{w.name}</option>)}
                             </select>
-                            <Input label="Ordem (Ex: 1, 2...)" value={alocOrder} onChange={e => setAlocOrder(e.target.value)} />
                         </div>
                         <Button className="w-full mt-2" onClick={handleBindStation}>Vincular Posto</Button>
                         <div className="flex justify-end mt-4">
                             <Button variant="secondary" onClick={() => setSelectedAlocationEmp(null)}>Fechar</Button>
+                        </div>
+                    </Card>
+                </div>
+            )}
+
+            {showLayoutUpdateModal && pendingLayoutUpdate && (
+                <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+                    <Card className="w-full max-w-lg space-y-4">
+                        <div className="flex justify-between items-center">
+                            <h3 className="font-bold text-lg text-slate-900 dark:text-white">Atenção!</h3>
+                            <button onClick={() => { setShowLayoutUpdateModal(false); setPendingLayoutUpdate(null); }} className="text-slate-500"><X size={20} /></button>
+                        </div>
+                        <div className="space-y-2">
+                            <p className="text-sm text-slate-600">Este modelo já possui postos configurados. Deseja atualizar?</p>
+                            <p className="text-xs text-slate-500 italic">Nota: Ao confirmar, os postos antigos serão removidos e os novos serão criados.</p>
+                        </div>
+                        <div className="flex gap-2 mt-6">
+                            <Button variant="secondary" className="flex-1" onClick={() => { setShowLayoutUpdateModal(false); setPendingLayoutUpdate(null); }}>Cancelar</Button>
+                            <Button className="flex-1" onClick={async () => {
+                                try {
+                                    await apiFetch('/api/workstations/bulk', {
+                                        method: 'POST',
+                                        body: JSON.stringify({ items: pendingLayoutUpdate })
+                                    });
+                                    alert('Layout atualizado com sucesso!');
+                                    setShowLayoutUpdateModal(false);
+                                    setPendingLayoutUpdate(null);
+                                    loadBaseData();
+                                } catch (e) {
+                                    alert('Erro ao atualizar layout');
+                                }
+                            }}>Atualizar</Button>
                         </div>
                     </Card>
                 </div>
@@ -911,7 +1033,7 @@ export const PeopleManagementModule = ({ onBack, currentUser }: PeopleManagement
     const handleEditSearch = async () => {
         if (!editQuery.trim()) return;
         try {
-            const res = await apiFetch('/employees/search/' + encodeURIComponent(editQuery.trim()));
+            const res = await apiFetch(`/employees/search/${encodeURIComponent(editQuery.trim())}?superiorId=${currentUser.matricula}`);
             if (res && res.matricula) {
                 setFormData({ ...res, photo: res.photo || '', superiorId: res.superiorId || '' });
                 setEditFound(true);
@@ -987,9 +1109,9 @@ export const PeopleManagementModule = ({ onBack, currentUser }: PeopleManagement
                         </div>
                         <Input label="IDL-ST" value={formData.idlSt} onChange={e => setFormData({ ...formData, idlSt: e.target.value })} />
                         <Input label="Tipo" value={formData.type} onChange={e => setFormData({ ...formData, type: e.target.value })} />
-                        <Input label="Status" value={formData.status} onChange={e => setFormData({ ...formData, status: e.target.value })} />
                         <Input label="Logradouro" value={formData.address} onChange={e => setFormData({ ...formData, address: e.target.value })} />
                         <Input label="Número (Endereço)" value={formData.addressNum} onChange={e => setFormData({ ...formData, addressNum: e.target.value })} />
+                        <Input label="Bairro" value={formData.neighborhood} onChange={e => setFormData({ ...formData, neighborhood: e.target.value })} />
                         <Input label="WhatsApp" value={formData.whatsapp} onChange={e => setFormData({ ...formData, whatsapp: e.target.value })} />
                     </div>
                     <div className="flex justify-end pt-2 border-t border-slate-100 dark:border-zinc-800">

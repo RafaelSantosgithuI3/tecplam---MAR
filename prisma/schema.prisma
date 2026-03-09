@@ -280,6 +280,7 @@ model Employee {
   gloveSize       String?
   gloveType       String?
   gloveExchanges  Int?
+  neighborhood    String?
   attendanceLogs  AttendanceLog[]
 
   @@map("employees")

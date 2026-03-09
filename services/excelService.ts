@@ -229,7 +229,7 @@ export const createExcelBuffer = async (
             const cell = worksheet.getCell(`${colLetter}${currentRow}`);
 
             const log = logsByDateMap[dateStr];
-            let val = undefined;
+            let val: string | undefined = undefined;
 
             if (log && log.data) {
                 val = (log.data as ChecklistData)[item.id];
@@ -1089,6 +1089,7 @@ export const exportExecutiveReport = async (scraps: ScrapData[], fileNamePrefix:
     // Auto-Ajuste do Tamanho das Colunas (Auto-fit Width)
     [sheet1, sheet2, sheet3].forEach(worksheet => {
         worksheet.columns.forEach((column) => {
+            if (!column || !column.eachCell) return;
             let maxLength = 0;
             column.eachCell({ includeEmpty: true }, (cell) => {
                 const columnLength = cell.value ? cell.value.toString().length : 10;
@@ -1477,9 +1478,9 @@ export const exportModelLayout = async (model: string, workstations: any[], empl
     const workbook = new ExcelJS.Workbook();
     const sheet = workbook.addWorksheet('Layout por Modelo');
 
-    sheet.columns = [
-        { header: 'Posto de Trabalho', key: 'posto', width: 30 },
+    sheet.columns = [        
         { header: 'ID do Posto', key: 'posto_id', width: 15 },
+        { header: 'Posto de Trabalho', key: 'posto', width: 30 },
         { header: 'Colaboradores Habilitados', key: 'colaboradores', width: 60 }
     ];
 

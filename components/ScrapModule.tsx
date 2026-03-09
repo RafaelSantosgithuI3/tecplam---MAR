@@ -239,8 +239,16 @@ export const ScrapModule: React.FC<ScrapModuleProps> = ({ currentUser, onBack, i
 const ScrapForm = ({ users, models, stations, lines, materials, onSuccess, currentUser }: any) => {
     const ORIGIN_OPTIONS = [...lines];
 
-    const initialState = {
-        date: getManausDate().toISOString().split('T')[0],
+    const getInitialDate = () => {
+        const now = getManausDate();
+        if (now.getHours() < 4) {
+            now.setDate(now.getDate() - 1);
+        }
+        return now.toISOString().split('T')[0];
+    };
+
+    const getInitialState = () => ({
+        date: getInitialDate(),
         week: getWeekNumber(getManausDate()),
         shift: '1',
         qty: 1,
@@ -260,9 +268,9 @@ const ScrapForm = ({ users, models, stations, lines, materials, onSuccess, curre
         station: '',
         qrCode: '',
         immediateAction: ''
-    };
+    });
 
-    const [formData, setFormData] = useState<Partial<ScrapData>>(initialState);
+    const [formData, setFormData] = useState<Partial<ScrapData>>(getInitialState());
 
     const isAndroid = /Android/i.test(navigator.userAgent);
     const [showQRReader, setShowQRReader] = useState(false);
@@ -295,17 +303,10 @@ const ScrapForm = ({ users, models, stations, lines, materials, onSuccess, curre
         }
 
         // Single-scan: show prompt to enter multi-scan mode
-        let extractedDate = undefined;
         let extractedQty = undefined;
 
         if (text && text.length >= 38) {
-            const dateStr = text.substring(30, 34);
             const qtyStr = text.substring(35, 38);
-
-            const day = dateStr.substring(0, 2);
-            const month = dateStr.substring(2, 4);
-            const year = new Date().getFullYear();
-            extractedDate = `${year}-${month}-${day}`;
 
             const parsedQty = parseInt(qtyStr, 10);
             if (!isNaN(parsedQty)) {
@@ -316,7 +317,6 @@ const ScrapForm = ({ users, models, stations, lines, materials, onSuccess, curre
         setFormData((prev: any) => ({
             ...prev,
             qrCode: text,
-            ...(extractedDate ? { date: extractedDate } : {}),
             ...(extractedQty !== undefined ? { qty: extractedQty } : {})
         }));
 
@@ -425,7 +425,7 @@ const ScrapForm = ({ users, models, stations, lines, materials, onSuccess, curre
             try {
                 await saveBatchScraps(batchPayloads);
                 alert(`${multiQRs.length} scraps lançados com sucesso (lote)!`);
-                setFormData(initialState);
+                setFormData(getInitialState());
                 setMultiScanMode(false);
                 setMultiQRs([]);
                 onSuccess();
@@ -449,7 +449,7 @@ const ScrapForm = ({ users, models, stations, lines, materials, onSuccess, curre
             try {
                 await saveScrap(payload);
                 alert("Scrap lançado com sucesso!");
-                setFormData(initialState);
+                setFormData(getInitialState());
                 onSuccess();
             } catch (e: any) {
                 const msg = e?.message || e?.error || "Erro ao salvar scrap.";
