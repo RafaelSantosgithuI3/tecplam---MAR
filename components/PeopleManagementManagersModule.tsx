@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { Button } from './Button';
 import { Card } from './Card';
 import { Input } from './Input';
-import { Shield, Plus, Search, User as UserIcon, List, ArrowLeft, CheckCircle, Clock, Save, Download, HandMetal, Scan } from 'lucide-react';
+import { Shield, Plus, Search, User as UserIcon, List, ArrowLeft, CheckCircle, Clock, Save, Download, HandMetal, Scan, X } from 'lucide-react';
 import { apiFetch } from '../services/networkConfig';
 import { QRStreamReader } from './QRStreamReader';
 import { exportLeaderLayout, exportModelLayout, exportGloveControl } from '../services/excelService';
@@ -24,6 +24,8 @@ export const PeopleManagementManagersModule: React.FC<Props> = ({ onBack, curren
     const [unifiedModels, setUnifiedModels] = useState<ConfigModel[]>([]);
     const [workstations, setWorkstations] = useState<Workstation[]>([]);
     const [configRoles, setConfigRoles] = useState<ConfigRole[]>([]);
+    const [showPrintModal, setShowPrintModal] = useState(false);
+    const [printSelectedModel, setPrintSelectedModel] = useState('');
 
     // --- FILTRO GLOBAL DE LÍDER ---
     const [selectedLeaderId, setSelectedLeaderId] = useState<string>('');
@@ -719,10 +721,7 @@ export const PeopleManagementManagersModule: React.FC<Props> = ({ onBack, curren
                             const leaderObj = leaders.find(l => l.matricula === selectedLeaderId);
                             if (leaderObj) exportLeaderLayout(leaderObj, subordinados);
                         }}><List size={16} /> Imprimir (Líder)</Button>
-                        <Button variant="secondary" onClick={() => {
-                            if (!alocModel) return alert('Selecione um modelo para imprimir.');
-                            exportModelLayout(alocModel, workstations, employees);
-                        }}><List size={16} /> Imprimir (Modelo)</Button>
+                        <Button variant="secondary" onClick={() => setShowPrintModal(true)}><List size={16} /> Imprimir (Modelo)</Button>
                     </div>
                 </div>
                 <div className="bg-white dark:bg-zinc-900 rounded-xl border border-slate-200 dark:border-zinc-800 overflow-hidden text-sm">
@@ -986,6 +985,35 @@ export const PeopleManagementManagersModule: React.FC<Props> = ({ onBack, curren
             {tab === 'PRESENCA' && renderPresenca()}
             {tab === 'LAYOUT' && renderLayoutLinha()}
             {tab === 'LUVAS' && renderLuvas()}
+            {showPrintModal && (
+                <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
+                    <Card className="w-full max-w-sm space-y-4">
+                        <div className="flex justify-between items-center">
+                            <h3 className="font-bold text-lg text-slate-900 dark:text-white">Imprimir Layout</h3>
+                            <button onClick={() => setShowPrintModal(false)} className="text-slate-500 hover:text-red-500"><X size={20} /></button>
+                        </div>
+                        <div className="space-y-2">
+                            <label className="text-sm font-medium text-slate-700 dark:text-zinc-300">Escolha o Modelo</label>
+                            <select
+                                className="w-full bg-slate-50 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 rounded-xl px-4 py-3 text-slate-900 dark:text-zinc-100 focus:ring-2 focus:ring-cyan-500"
+                                value={printSelectedModel}
+                                onChange={e => setPrintSelectedModel(e.target.value)}
+                            >
+                                <option value="">Selecione...</option>
+                                {unifiedModels.map(m => <option key={m.name} value={m.name}>{m.name || m.id}</option>)}
+                            </select>
+                        </div>
+                        <div className="flex gap-2 pt-2">
+                            <Button variant="outline" className="flex-1" onClick={() => setShowPrintModal(false)}>Cancelar</Button>
+                            <Button className="flex-1" onClick={() => {
+                                if (!printSelectedModel) return alert('Selecione um modelo');
+                                exportModelLayout(printSelectedModel, workstations, employees);
+                                setShowPrintModal(false);
+                            }}>Gerar Excel</Button>
+                        </div>
+                    </Card>
+                </div>
+            )}
         </div>
     );
 };
