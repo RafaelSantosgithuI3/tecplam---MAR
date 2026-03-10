@@ -20,10 +20,54 @@ export const QRScannerInput = ({ onScan }: { onScan: (qrCode: string, extractedC
         }
     };
 
+    const parseQRData = (qr: string) => {
+        // Validate input
+        if (!qr || typeof qr !== 'string' || qr.trim().length === 0) {
+            return { material: '', quantidade: '', data: '' };
+        }
+
+        // 1. Extract first 11 characters as material code (pad with spaces if shorter)
+        const materialCode = qr.substring(0, 11).padEnd(11, ' ');
+
+        // 2. Find last occurrence of "ASSY" (case-insensitive)
+        const upperQr = qr.toUpperCase();
+        const assyLastIndex = upperQr.lastIndexOf('ASSY');
+        if (assyLastIndex === -1) {
+            return { material: materialCode.trim(), quantidade: '', data: '' };
+        }
+
+        // 3. From ASSY position, search backwards for letter "Q" (case-insensitive)
+        let qIndex = -1;
+        for (let i = assyLastIndex - 1; i >= 0; i--) {
+            if (upperQr[i] === 'Q') {
+                qIndex = i;
+                break;
+            }
+        }
+
+        if (qIndex === -1) {
+            return { material: materialCode.trim(), quantidade: '', data: '' };
+        }
+
+        // 4. Extract quantity: characters between Q and ASSY (preserve spacing)
+        const quantidade = qr.substring(qIndex + 1, assyLastIndex);
+
+        // 5. Extract date: 4 characters before Q, format as XX/XX (validate digits)
+        let data = '';
+        if (qIndex >= 4) {
+            const dateRaw = qr.substring(qIndex - 4, qIndex);
+            if (dateRaw.length === 4 && /^\d{4}$/.test(dateRaw)) {
+                data = `${dateRaw.substring(0, 2)}/${dateRaw.substring(2, 4)}`;
+            }
+        }
+
+        return { material: materialCode.trim(), quantidade: quantidade.trim(), data };
+    };
+
     const processQR = (qr: string) => {
         if (!qr) return;
-        const extracted = qr.substring(0, 11);
-        onScan(qr, extracted);
+        const parsed = parseQRData(qr);
+        onScan(qr, parsed.material);
         setScanned(''); // Clear input after scan
     };
 

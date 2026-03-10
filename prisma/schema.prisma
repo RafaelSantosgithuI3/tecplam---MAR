@@ -259,31 +259,25 @@ model Employee {
   addressNum      String?
   whatsapp        String?
   previousLeaders String?
-  m1              String?
-  m2              String?
-  m3              String?
-  m4              String?
-  m5              String?
-  m6              String?
-  nm1             String?
-  nm2             String?
-  nm3             String?
-  nm4             String?
-  nm5             String?
-  nm6             String?
-  pm1             String?
-  pm2             String?
-  pm3             String?
-  pm4             String?
-  pm5             String?
-  pm6             String?
   gloveSize       String?
   gloveType       String?
   gloveExchanges  Int?
   neighborhood    String?
   attendanceLogs  AttendanceLog[]
+  layouts         Layout[]
 
   @@map("employees")
+}
+
+model Layout {
+  id         Int      @id @default(autoincrement())
+  matricula  String
+  modelo     String
+  ordemPosto String
+  postoAtual Boolean  @default(false)
+  employee   Employee @relation(fields: [matricula], references: [matricula])
+
+  @@map("layout")
 }
 
 model ProductionModel {

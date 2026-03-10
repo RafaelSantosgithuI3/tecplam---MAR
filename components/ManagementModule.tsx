@@ -81,8 +81,29 @@ export const ManagementModule: React.FC<ManagementModuleProps> = ({ onBack }) =>
         }
         if (tab === 'DESLIGAMENTO') {
             try {
-                const emps = await apiFetch('/employees');
-                setAllEmployees(emps || []);
+                const [emps, users] = await Promise.all([
+                    apiFetch('/employees'),
+                    apiFetch('/users')
+                ]);
+
+                const employeesData = Array.isArray(emps) ? emps : [];
+                const usersData = Array.isArray(users) ? users : [];
+
+                // Extrair matrículas dos employees para filtrar duplicatas
+                const existingMatriculas = new Set(employeesData.map(e => e.matricula).filter(Boolean));
+
+                // Mapear usuários e filtrar duplicatas
+                const mappedUsers = usersData
+                    .filter(u => !existingMatriculas.has(u.matricula))
+                    .map(u => ({
+                        ...u,
+                        fullName: u.name,
+                        status: u.status || 'ATIVO'
+                    }));
+
+                // Combinar listas
+                const combined = [...employeesData, ...mappedUsers];
+                setAllEmployees(combined);
             } catch (e) { setAllEmployees([]); }
         }
     };
@@ -335,15 +356,35 @@ export const ManagementModule: React.FC<ManagementModuleProps> = ({ onBack }) =>
     };
 
     const handleEditLayoutStationSave = async (id: number) => {
-        await editLayoutWorkstation(id, editStationName, selectedLayoutModel, editStationOrder, parseInt(editStationPeople));
-        setEditingStationId(null);
-        loadData();
+        try {
+            await editLayoutWorkstation(id, editStationName, selectedLayoutModel, editStationOrder, parseInt(editStationPeople));
+            setLayoutStations(prev => 
+                prev.map(s => s.id === id ? {
+                    ...s,
+                    name: editStationName,
+                    modelName: selectedLayoutModel,
+                    order: editStationOrder,
+                    peopleNeeded: parseInt(editStationPeople)
+                } : s)
+            );
+            setEditingStationId(null);
+            alert('Posto atualizado com sucesso');
+        } catch (error) {
+            console.error('Erro ao atualizar posto:', error);
+            alert('Erro ao atualizar posto');
+        }
     };
 
     const handleDeleteLayoutStation = async (id: number) => {
         if (window.confirm('Confirmar exclusão deste posto do layout?')) {
-            await deleteLayoutWorkstation(id);
-            loadData();
+            try {
+                await deleteLayoutWorkstation(id);
+                setLayoutStations(prev => prev.filter(s => s.id !== id));
+                alert('Posto deletado com sucesso');
+            } catch (error) {
+                console.error('Erro ao deletar posto:', error);
+                alert('Erro ao deletar posto');
+            }
         }
     };
 
@@ -552,15 +593,15 @@ export const ManagementModule: React.FC<ManagementModuleProps> = ({ onBack }) =>
                             <tbody className="divide-y divide-slate-200 dark:divide-zinc-800">
                                 {currentModelStations.map(s => (
                                     <tr key={s.id} className="hover:bg-slate-50 dark:hover:bg-zinc-800/50">
-                                        <td className="p-4 text-slate-900 dark:text-zinc-100">
-                                            {editingStationId === s.id ? (
-                                                <input className="border p-1 rounded font-normal bg-white dark:bg-zinc-800 w-full" value={editStationName} onChange={e => setEditStationName(e.target.value)} />
-                                            ) : s.name}
-                                        </td>
                                         <td className="p-4 font-mono text-slate-500 text-sm">
                                             {editingStationId === s.id ? (
                                                 <input className="border p-1 rounded font-normal bg-white dark:bg-zinc-800 w-16" value={editStationOrder} onChange={e => setEditStationOrder(e.target.value)} placeholder="Ord" />
                                             ) : (s.order || '-')}
+                                        </td>
+                                        <td className="p-4 text-slate-900 dark:text-zinc-100">
+                                            {editingStationId === s.id ? (
+                                                <input className="border p-1 rounded font-normal bg-white dark:bg-zinc-800 w-full" value={editStationName} onChange={e => setEditStationName(e.target.value)} />
+                                            ) : s.name}
                                         </td>
                                         <td className="p-4 text-right font-medium text-slate-900 dark:text-zinc-100">
                                             {editingStationId === s.id ? (
@@ -575,7 +616,7 @@ export const ManagementModule: React.FC<ManagementModuleProps> = ({ onBack }) =>
                                                 </div>
                                             ) : (
                                                 <div className="flex gap-2 justify-end">
-                                                    <Button variant="secondary" onClick={() => { setEditingStationId(s.id); setEditStationName(s.name); setEditStationOrder(s.order || ''); setEditStationPeople(String(s.peopleNeeded)); }}><Edit2 size={16} /></Button>
+                                                    <Button variant="secondary" onClick={() => { setEditingStationId(s.id); setEditStationOrder(s.order || ''); setEditStationName(s.name); setEditStationPeople(String(s.peopleNeeded)); }}><Edit2 size={16} /></Button>
                                                     <Button variant="danger" onClick={() => handleDeleteLayoutStation(s.id)}><Trash2 size={16} /></Button>
                                                 </div>
                                             )}

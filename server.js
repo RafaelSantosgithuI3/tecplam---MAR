@@ -933,6 +933,35 @@ app.get('/api/scraps', async (req, res) => {
     }
 });
 
+app.post('/api/scraps/check-duplicate', async (req, res) => {
+    try {
+        const { qrCode, code, qty, date } = req.body;
+
+        if (!qrCode) return res.status(400).json({ isDuplicate: false });
+
+        // Query precisa: busca exato QR Code OU combinação material+quantidade+data
+        const existing = await prisma.scrapLog.findFirst({
+            where: {
+                OR: [
+                    { qrCode: String(qrCode) },
+                    {
+                        AND: [
+                            { code: code ? String(code) : undefined },
+                            { qty: qty ? Number(qty) : undefined },
+                            { date: date ? String(date) : undefined }
+                        ].filter(c => Object.values(c).some(v => v !== undefined))
+                    }
+                ]
+            }
+        });
+
+        res.status(existing ? 409 : 200).json({ isDuplicate: !!existing });
+    } catch (e) {
+        console.error("Check Duplicate Error:", e);
+        res.status(500).json({ error: e.message, isDuplicate: false });
+    }
+});
+
 app.post('/api/scraps', async (req, res) => {
     try {
         const { id, ...rest } = req.body; // Remove ID to let DB autoincrement
@@ -940,7 +969,7 @@ app.post('/api/scraps', async (req, res) => {
         // ---- VALIDAÇÃO QR CODE ÚNICO ----
         if (rest.qrCode) {
             const existing = await prisma.scrapLog.findFirst({ where: { qrCode: String(rest.qrCode) } });
-            if (existing) return res.status(400).json({ error: "Esta etiqueta já está atrelada a outro scrap." });
+            if (existing) return res.status(409).json({ error: "Esta etiqueta já está atrelada a outro scrap." });
         }
         // ---- FIM VALIDAÇÃO ----
 
@@ -1375,10 +1404,7 @@ app.get('/api/employees', async (req, res) => {
                 status: true,
                 gloveSize: true,
                 gloveType: true,
-                gloveExchanges: true,
-                m1: true, m2: true, m3: true, m4: true, m5: true, m6: true,
-                nm1: true, nm2: true, nm3: true, nm4: true, nm5: true, nm6: true,
-                pm1: true, pm2: true, pm3: true, pm4: true, pm5: true, pm6: true
+                gloveExchanges: true
             }
         });
         res.json(employees);
@@ -1389,7 +1415,7 @@ app.get('/api/employees', async (req, res) => {
 
 app.post('/api/employees', async (req, res) => {
     try {
-        const { matricula, photo, fullName, shift, role, sector, superiorId, idlSt, type, status, address, addressNum, whatsapp, gloveSize, gloveType, gloveExchanges, isEdit } = req.body;
+        const { matricula, photo, fullName, shift, role, sector, superiorId, idlSt, type, status, address, addressNum, whatsapp, neighborhood, gloveSize, gloveType, gloveExchanges, isEdit } = req.body;
 
         if (!isEdit) {
             const existing = await prisma.employee.findUnique({ where: { matricula: String(matricula) } });
@@ -1398,8 +1424,8 @@ app.post('/api/employees', async (req, res) => {
 
         const employee = await prisma.employee.upsert({
             where: { matricula: String(matricula) },
-            update: { photo, fullName, shift, role, sector, superiorId, idlSt, type, status, address, addressNum, whatsapp, gloveSize, gloveType, gloveExchanges: gloveExchanges ? Number(gloveExchanges) : null },
-            create: { matricula: String(matricula), photo, fullName, shift, role, sector, superiorId, idlSt, type, status, address, addressNum, whatsapp, gloveSize, gloveType, gloveExchanges: gloveExchanges ? Number(gloveExchanges) : null }
+            update: { photo, fullName, shift, role, sector, superiorId, idlSt, type, status, address, addressNum, neighborhood, whatsapp, gloveSize, gloveType, gloveExchanges: gloveExchanges ? Number(gloveExchanges) : null },
+            create: { matricula: String(matricula), photo, fullName, shift, role, sector, superiorId, idlSt, type, status: status || 'ATIVO', address, addressNum, neighborhood, whatsapp, gloveSize, gloveType, gloveExchanges: gloveExchanges ? Number(gloveExchanges) : null }
         });
         res.json({ message: "Salvo com sucesso", employee });
     } catch (e) {
@@ -1595,47 +1621,218 @@ app.post('/api/workstations/bulk', async (req, res) => {
     }
 });
 
+app.put('/api/workstations/:id', async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { name, modelName, order, peopleNeeded } = req.body;
+
+        const updated = await prisma.workstation.update({
+            where: { id: parseInt(id) },
+            data: {
+                name: name || undefined,
+                modelName: modelName || undefined,
+                order: order || null,
+                peopleNeeded: peopleNeeded ? parseInt(peopleNeeded) : undefined
+            }
+        });
+
+        res.json({ message: "Posto atualizado com sucesso", workstation: updated });
+    } catch (e) {
+        console.error("Workstation Update Error:", e);
+        res.status(500).json({ error: e.message });
+    }
+});
+
+app.delete('/api/workstations/:id', async (req, res) => {
+    try {
+        const { id } = req.params;
+
+        await prisma.workstation.delete({
+            where: { id: parseInt(id) }
+        });
+
+        res.json({ message: "Posto deletado com sucesso" });
+    } catch (e) {
+        console.error("Workstation Delete Error:", e);
+        res.status(500).json({ error: e.message });
+    }
+});
+
+app.post('/api/layout', async (req, res) => {
+    try {
+        const { matricula, modelo, ordemPosto, postoAtual } = req.body;
+
+        if (!matricula || !modelo || !ordemPosto) {
+            return res.status(400).json({ error: "Matrícula, modelo e ordemPosto são obrigatórios" });
+        }
+
+        // Validar que colaborador existe
+        const employee = await prisma.employee.findUnique({
+            where: { matricula: String(matricula) }
+        });
+        if (!employee) {
+            return res.status(404).json({ error: "Colaborador não encontrado" });
+        }
+
+        // Validar duplicata
+        const existing = await prisma.layout.findFirst({
+            where: { 
+                matricula: String(matricula), 
+                modelo: String(modelo),
+                ordemPosto: String(ordemPosto)
+            }
+        });
+        if (existing) {
+            return res.status(400).json({ error: "Este posto já está alocado para este colaborador neste modelo" });
+        }
+
+        const layout = await prisma.layout.create({
+            data: {
+                matricula: String(matricula),
+                modelo: String(modelo),
+                ordemPosto: String(ordemPosto),
+                postoAtual: !!postoAtual
+            }
+        });
+
+        res.json({ message: "Posto vinculado com sucesso", layout });
+    } catch (e) {
+        console.error("Create Layout Error:", e);
+        res.status(500).json({ error: e.message });
+    }
+});
+
+app.get('/api/layout', async (req, res) => {
+    try {
+        const { matricula, modelo } = req.query;
+        const whereClause = {};
+        
+        if (matricula) whereClause.matricula = String(matricula);
+        if (modelo) whereClause.modelo = String(modelo);
+
+        const layouts = await prisma.layout.findMany({
+            where: whereClause,
+            include: {
+                employee: {
+                    select: {
+                        matricula: true,
+                        fullName: true,
+                        role: true,
+                        shift: true,
+                        sector: true
+                    }
+                }
+            },
+            orderBy: { ordemPosto: 'asc' }
+        });
+
+        res.json(layouts);
+    } catch (e) {
+        console.error("Get Layout Error:", e);
+        res.status(500).json({ error: e.message });
+    }
+});
+
+app.put('/api/layout/:id', async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { postoAtual, modelo, ordemPosto } = req.body;
+
+        const dataToUpdate = {};
+        if (postoAtual !== undefined) dataToUpdate.postoAtual = !!postoAtual;
+        if (modelo) dataToUpdate.modelo = String(modelo);
+        if (ordemPosto) dataToUpdate.ordemPosto = String(ordemPosto);
+
+        // Se atualizando postoAtual para true, desativar os outros postos do mesmo colaborador
+        if (postoAtual === true) {
+            const layout = await prisma.layout.findUnique({
+                where: { id: parseInt(id) }
+            });
+            if (layout) {
+                await prisma.layout.updateMany({
+                    where: { matricula: layout.matricula, id: { not: parseInt(id) } },
+                    data: { postoAtual: false }
+                });
+            }
+        }
+
+        const updated = await prisma.layout.update({
+            where: { id: parseInt(id) },
+            data: dataToUpdate,
+            include: {
+                employee: {
+                    select: {
+                        matricula: true,
+                        fullName: true,
+                        role: true
+                    }
+                }
+            }
+        });
+
+        res.json({ message: "Posto atualizado com sucesso", layout: updated });
+    } catch (e) {
+        console.error("Update Layout Error:", e);
+        res.status(500).json({ error: e.message });
+    }
+});
+
+app.delete('/api/layout/:id', async (req, res) => {
+    try {
+        const { id } = req.params;
+
+        const deleted = await prisma.layout.delete({
+            where: { id: parseInt(id) }
+        });
+
+        res.json({ message: "Posto removido com sucesso", layout: deleted });
+    } catch (e) {
+        console.error("Delete Layout Error:", e);
+        res.status(500).json({ error: e.message });
+    }
+});
+
 app.post('/api/employees/:matricula/workstation-slots', async (req, res) => {
     try {
-        const { modelText, orderText, workstationName } = req.body;
+        const { modelText, workstationName } = req.body;
+        const matricula = String(req.params.matricula);
+        
+        if (!modelText || !workstationName) {
+            return res.status(400).json({ error: "Modelo e Posto são obrigatórios" });
+        }
+
+        // Validar que colaborador existe
         const employee = await prisma.employee.findUnique({
-            where: { matricula: String(req.params.matricula) }
+            where: { matricula }
         });
+        if (!employee) {
+            return res.status(404).json({ error: "Colaborador não encontrado" });
+        }
 
-        if (!employee) return res.status(404).json({ error: "Colaborador não encontrado" });
-
-        const slots = [
-            { m: 'm1', pm: 'pm1', nm: 'nm1' },
-            { m: 'm2', pm: 'pm2', nm: 'nm2' },
-            { m: 'm3', pm: 'pm3', nm: 'nm3' },
-            { m: 'm4', pm: 'pm4', nm: 'nm4' },
-            { m: 'm5', pm: 'pm5', nm: 'nm5' },
-            { m: 'm6', pm: 'pm6', nm: 'nm6' }
-        ];
-
-        let slotToUpdate = null;
-        for (const slot of slots) {
-            if (!employee[slot.m]) {
-                slotToUpdate = slot;
-                break;
+        // Validar duplicata
+        const existing = await prisma.layout.findFirst({
+            where: { 
+                matricula,
+                modelo: String(modelText),
+                ordemPosto: String(workstationName)
             }
+        });
+        if (existing) {
+            return res.status(400).json({ error: "Este posto já está alocado para este colaborador neste modelo" });
         }
 
-        if (!slotToUpdate) {
-            return res.status(400).json({ error: "Todos os 6 slots de posto já estão preenchidos para este colaborador." });
-        }
-
-        const updated = await prisma.employee.update({
-            where: { matricula: String(req.params.matricula) },
+        const layout = await prisma.layout.create({
             data: {
-                [slotToUpdate.m]: modelText,
-                [slotToUpdate.pm]: orderText,
-                [slotToUpdate.nm]: workstationName
+                matricula,
+                modelo: String(modelText),
+                ordemPosto: String(workstationName),
+                postoAtual: false
             }
         });
 
-        res.json({ message: `Posto vinculado com sucesso no slot ${slotToUpdate.m.replace('m', '')}`, employee: updated });
+        res.json({ message: "Posto vinculado com sucesso", layout });
     } catch (e) {
+        console.error("Workstation Slots Error:", e);
         res.status(500).json({ error: e.message });
     }
 });

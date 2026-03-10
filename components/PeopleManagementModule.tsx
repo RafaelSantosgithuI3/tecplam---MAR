@@ -26,10 +26,33 @@ export const PeopleManagementModule = ({ onBack, currentUser }: PeopleManagement
     const [showPrintModal, setShowPrintModal] = useState(false);
     const [unifiedModels, setUnifiedModels] = useState<any[]>([]);
     const [printSelectedModel, setPrintSelectedModel] = useState('');
+    const [layoutMasterModel, setLayoutMasterModel] = useState('');
 
     useEffect(() => {
         loadBaseData();
     }, []);
+
+    useEffect(() => {
+        loadLayoutsByModel(layoutMasterModel);
+    }, [layoutMasterModel]);
+
+    // Reset states when tab changes
+    useEffect(() => {
+        setFormData({
+            matricula: '', photo: '', fullName: '', shift: '', role: '', sector: '',
+            superiorId: '', idlSt: '', type: '', status: '', address: '', addressNum: '', whatsapp: '', neighborhood: ''
+        });
+        setIsEdit(false);
+        setSearchQuery('');
+        setConsultResult(null);
+        setShowMissesModal(false);
+        setEditQuery('');
+        setEditFound(false);
+        setAttSearchQuery('');
+        setAttSelectedEmployee(null);
+        setLineSearch('');
+        setLinePreview(null);
+    }, [tab]);
 
     const loadBaseData = async () => {
         try {
@@ -235,18 +258,12 @@ export const PeopleManagementModule = ({ onBack, currentUser }: PeopleManagement
                     if (d.getMonth() === currentMonth && d.getFullYear() === currentYear && (log.type === 'FALTA' || log.type === 'ATESTADO')) misses++;
                 });
 
-                // Extração dos postos habilitados lendo m1-m6, nm1-nm6, pm1-pm6
-                const habList: string[] = [];
-                for (let i = 1; i <= 6; i++) {
-                    const m = res[`m${i}`];
-                    const nm = res[`nm${i}`];
-                    const pm = res[`pm${i}`];
-                    if (m || nm || pm) {
-                        habList.push(`${m || '-'} — ${nm || '-'} [Pos: ${pm || '-'}]`);
-                    }
-                }
+                // Carregando layouts do colaborador
+                const layouts = await apiFetch(`/layout?matricula=${res.matricula}`);
+                const allocatedWorkstations = Array.isArray(layouts) ? layouts.map((l: any) => `${l.modelo} — ${l.ordemPosto}`) : [];
 
-                setConsultResult({ ...res, misses, rank: Math.max(0, 10 - misses * 0.5), allocatedWorkstations: habList });
+                setConsultResult({ ...res, misses, rank: Math.max(0, 10 - misses * 0.5), allocatedWorkstations });
+
 
             } else {
                 setConsultResult(null);
@@ -293,6 +310,7 @@ export const PeopleManagementModule = ({ onBack, currentUser }: PeopleManagement
                                 <div className="min-w-0">
                                     <p className="font-bold text-sm text-slate-800 dark:text-zinc-100 truncate">{emp.fullName}</p>
                                     <p className="text-xs text-slate-500 font-mono truncate">{emp.matricula}</p>
+                                    <p className="text-xs text-slate-500 truncate">{emp.role} • {emp.shift}</p>
                                 </div>
                             </div>
                         ))}
@@ -303,34 +321,40 @@ export const PeopleManagementModule = ({ onBack, currentUser }: PeopleManagement
             {consultResult && (
                 <div className="space-y-4">
                     <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-stretch">
-                        <Card className="flex gap-4 items-start w-full">
+                        <Card className="flex flex-col items-center text-center w-full">
                             {consultResult.photo ? (
-                                <img src={consultResult.photo} alt="Colaborador" className="w-40 h-40 object-cover rounded-xl border border-slate-200" />
+                                <img src={consultResult.photo} alt="Colaborador" className="w-52 h-52 object-cover rounded-2xl border border-slate-200 mx-auto" />
                             ) : (
-                                <div className="w-40 h-40 bg-slate-200 dark:bg-zinc-800 rounded-xl flex items-center justify-center shrink-0">
-                                    <UserIcon size={64} className="text-slate-400" />
+                                <div className="w-52 h-52 bg-slate-200 dark:bg-zinc-800 rounded-full flex items-center justify-center shrink-0 mx-auto">
+                                    <UserIcon size={80} className="text-slate-400" />
                                 </div>
                             )}
-                            <div className="flex-1 flex flex-col justify-between h-full">
+                            <div className="flex flex-col justify-center items-center w-full mt-4">
                                 <div>
                                     <h2 className="text-2xl font-bold text-slate-800 dark:text-zinc-100 mb-1">{consultResult.fullName}</h2>
                                     <p className="inline-block bg-slate-100 dark:bg-zinc-800 px-3 py-1 rounded-full text-sm font-medium text-slate-600 dark:text-zinc-400">
                                         Matrícula: {consultResult.matricula}
                                     </p>
                                 </div>
-                                <div className="flex gap-3 mt-4">
-                                    <div className="bg-cyan-50 dark:bg-cyan-900/20 text-cyan-700 dark:text-cyan-400 px-4 py-2 rounded-xl text-center border border-cyan-100 dark:border-cyan-900/40">
+                                <div className="flex flex-row justify-center gap-6 items-center w-full mt-4">
+                                    <div className="flex-1 bg-cyan-50 dark:bg-cyan-900/20 text-cyan-700 dark:text-cyan-400 px-4 py-2 rounded-xl text-center border border-cyan-100 dark:border-cyan-900/40">
                                         <p className="text-[10px] uppercase font-bold tracking-wider mb-1">Rank do Mês</p>
                                         <p className="text-xl font-black">{consultResult.rank.toFixed(1)}</p>
                                     </div>
                                     <button
                                         onClick={() => setShowMissesModal(true)}
-                                        className="bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400 px-4 py-2 rounded-xl text-center border border-red-100 dark:border-red-900/40 hover:bg-red-100 dark:hover:bg-red-900/50 transition-colors cursor-pointer flex flex-col items-center justify-center"
+                                        className="flex-1 bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400 px-4 py-2 rounded-xl text-center border border-red-100 dark:border-red-900/40 hover:bg-red-100 dark:hover:bg-red-900/50 transition-colors cursor-pointer flex flex-col items-center justify-center"
                                     >
-                                        <p className="text-[10px] uppercase font-bold tracking-wider mb-1">Histórico Completo</p>
+                                        <p className="text-[10px] uppercase font-bold tracking-wider mb-1 whitespace-nowrap">Histórico Completo</p>
                                         <p className="text-xl font-black">{consultResult.misses} Ausências</p>
                                     </button>
                                 </div>
+                                <button
+                                    onClick={() => { setConsultResult(null); setSearchQuery(''); }}
+                                    className="mt-4 px-4 py-2 bg-slate-100 dark:bg-zinc-800 text-slate-700 dark:text-zinc-300 rounded-xl text-sm font-bold hover:bg-slate-200 dark:hover:bg-zinc-700 transition-colors"
+                                >
+                                    <ArrowLeft size={14} className="inline mr-2" /> Voltar para Lista
+                                </button>
                             </div>
                         </Card>
                         <Card className="flex flex-col w-full">
@@ -384,7 +408,7 @@ export const PeopleManagementModule = ({ onBack, currentUser }: PeopleManagement
                                 Status & Liderança
                             </h3>
                             <div className="grid grid-cols-2 gap-y-3 text-sm">
-                                <div><p className="text-xs text-slate-500 uppercase font-bold">Status Ocupacional</p><p className="font-medium text-slate-700 dark:text-zinc-300">{consultResult.status || '-'}</p></div>
+                                <div><p className="text-xs text-slate-500 uppercase font-bold">STATUS</p><p className="font-medium text-slate-700 dark:text-zinc-300">{consultResult.status || '-'}</p></div>
                                 <div><p className="text-xs text-slate-500 uppercase font-bold">Tipo</p><p className="font-medium text-slate-700 dark:text-zinc-300">{consultResult.type || '-'}</p></div>
                                 <div><p className="text-xs text-slate-500 uppercase font-bold">IDL-ST</p><p className="font-medium text-slate-700 dark:text-zinc-300">{consultResult.idlSt || '-'}</p></div>
                                 <div className="col-span-2"><p className="text-xs text-slate-500 uppercase font-bold">Líder Atual</p><p className="font-medium text-slate-700 dark:text-zinc-300">{leaders.find(l => l.matricula === consultResult.superiorId)?.name || consultResult.superiorId || '-'}</p></div>
@@ -399,6 +423,7 @@ export const PeopleManagementModule = ({ onBack, currentUser }: PeopleManagement
                             <div className="grid grid-cols-2 gap-y-3 text-sm">
                                 <div><p className="text-xs text-slate-500 uppercase font-bold">Tamanho da Luva</p><p className="font-medium text-slate-700 dark:text-zinc-300">{consultResult.gloveSize || 'Não definido'}</p></div>
                                 <div><p className="text-xs text-slate-500 uppercase font-bold">Tipo da Luva</p><p className="font-medium text-slate-700 dark:text-zinc-300">{consultResult.gloveType || 'Não definido'}</p></div>
+                                <div className="col-span-2"><p className="text-xs text-slate-500 uppercase font-bold">Trocas a mais por semana</p><p className="font-medium text-slate-700 dark:text-zinc-300">{consultResult.gloveExchanges || '0'}</p></div>
                             </div>
                         </Card>
                     </div>
@@ -410,13 +435,13 @@ export const PeopleManagementModule = ({ onBack, currentUser }: PeopleManagement
                             return (
                                 <Card className="bg-indigo-50/50 dark:bg-indigo-900/10 border border-indigo-100 dark:border-indigo-900/30">
                                     <p className="text-xs font-bold text-indigo-700 dark:text-indigo-400 mb-2 uppercase tracking-wide">Histórico Recente de Líderes</p>
-                                    <ul className="text-sm text-slate-600 dark:text-slate-400 space-y-1">
+                                    <div className="text-sm text-slate-600 dark:text-slate-400 whitespace-nowrap overflow-hidden text-ellipsis">
                                         {hist.map((l: string, i: number) => {
                                             const leaderObj = leaders.find(ld => ld.matricula === l);
                                             const leaderName = leaderObj ? `${leaderObj.name} (${l})` : l;
-                                            return <li key={i}>• <span className="font-medium">{leaderName}</span></li>;
+                                            return <span key={i}>• <span className="font-medium">{leaderName}</span>{i < hist.length - 1 ? ' | ' : ''}</span>;
                                         })}
-                                    </ul>
+                                    </div>
                                 </Card>
                             );
                         }
@@ -667,8 +692,7 @@ export const PeopleManagementModule = ({ onBack, currentUser }: PeopleManagement
     const [selectedAlocationEmp, setSelectedAlocationEmp] = useState<any>(null);
     const [alocModel, setAlocModel] = useState('');
     const [alocStation, setAlocStation] = useState('');
-    const [alocOrder, setAlocOrder] = useState('');
-    const [layoutMasterModel, setLayoutMasterModel] = useState('');
+    const [layoutsList, setLayoutsList] = useState<any[]>([]);
 
     const handleSearchLine = () => {
         const found = employees.find(e => e.matricula.includes(lineSearch) || e.fullName.toLowerCase().includes(lineSearch.toLowerCase()));
@@ -703,6 +727,44 @@ export const PeopleManagementModule = ({ onBack, currentUser }: PeopleManagement
         } catch (e) { }
     };
 
+    const loadLayoutsByModel = async (modelo: string) => {
+        if (!modelo) {
+            setLayoutsList([]);
+            return;
+        }
+        try {
+            const layouts = await apiFetch(`/layout?modelo=${modelo}`);
+            if (Array.isArray(layouts)) {
+                // Filtrar apenas os layouts dos subordinados
+                const subordinadoMatriculas = subordinados.map(s => s.matricula);
+                setLayoutsList(layouts.filter(l => subordinadoMatriculas.includes(l.matricula)));
+            }
+        } catch (e) {
+            console.error('Erro ao carregar layouts:', e);
+        }
+    };
+
+    const handleRemoveLayoutEntry = async (layoutId: number) => {
+        try {
+            await apiFetch(`/layout/${layoutId}`, { method: 'DELETE' });
+            loadLayoutsByModel(layoutMasterModel);
+        } catch (e) {
+            alert('Erro ao remover posto');
+        }
+    };
+
+    const handleUpdatePostoAtual = async (layoutId: number) => {
+        try {
+            await apiFetch(`/layout/${layoutId}`, {
+                method: 'PUT',
+                body: JSON.stringify({ postoAtual: true })
+            });
+            loadLayoutsByModel(layoutMasterModel);
+        } catch (e) {
+            alert('Erro ao atualizar posto atual');
+        }
+    };
+
     const handleBindStation = async () => {
         if (!selectedAlocationEmp || !alocStation || !alocModel) return alert('Selecione Modelo e Posto');
 
@@ -719,7 +781,6 @@ export const PeopleManagementModule = ({ onBack, currentUser }: PeopleManagement
                 method: 'POST',
                 body: JSON.stringify({
                     modelText: alocModel,
-                    orderText: alocOrder,
                     workstationName: alocStation
                 })
             });
@@ -727,7 +788,6 @@ export const PeopleManagementModule = ({ onBack, currentUser }: PeopleManagement
             setSelectedAlocationEmp(null);
             setAlocModel('');
             setAlocStation('');
-            setAlocOrder('');
             loadBaseData();
         } catch (e) {
             alert('Não foi possível vincular. (Todos os 6 slots podem estar cheios?)');
@@ -803,7 +863,24 @@ export const PeopleManagementModule = ({ onBack, currentUser }: PeopleManagement
                                 </div>
                             ))}
                         </div>
-                    ) : (subordinados.filter(s => (s.allocatedWorkstations || []).some((ws: string) => ws.toLowerCase().includes(layoutMasterModel.toLowerCase()))).length === 0) ? (
+                    ) : !layoutMasterModel ? (
+                        <div className="divide-y divide-slate-200 dark:divide-zinc-800">
+                            {subordinados.map(s => (
+                                <div
+                                    key={s.matricula}
+                                    onClick={() => setSelectedAlocationEmp(s)}
+                                    className="p-4 hover:bg-cyan-50 dark:hover:bg-cyan-900/20 cursor-pointer flex justify-between items-center border-b last:border-b-0 transition-colors"
+                                >
+                                    <div className="flex-1">
+                                        <p className="font-mono text-sm text-slate-600 dark:text-zinc-400">{s.matricula}</p>
+                                        <p className="font-bold text-slate-900 dark:text-zinc-100">{s.fullName}</p>
+                                        <p className="text-xs text-slate-500">{s.role}</p>
+                                    </div>
+                                    <Button variant="danger" onClick={(e) => { e.stopPropagation(); handleRemoveLine(s.matricula); }}>Retirar</Button>
+                                </div>
+                            ))}
+                        </div>
+                    ) : layoutsList.length === 0 ? (
                         <p className="p-4 text-slate-500">Nenhum colaborador capacitado neste modelo na sua linha.</p>
                     ) : (
                         <table className="w-full text-left">
@@ -812,47 +889,72 @@ export const PeopleManagementModule = ({ onBack, currentUser }: PeopleManagement
                                     <th className="p-4">Matrícula</th>
                                     <th className="p-4">Nome</th>
                                     <th className="p-4">Função</th>
-                                    <th className="p-4">Postos Habilitados</th>
+                                    <th className="p-4">Postos</th>
+                                    <th className="p-4">Selecionar Posto Atual</th>
                                     <th className="p-4 text-right">Ações</th>
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-slate-200 dark:divide-zinc-800">
-                                {subordinados.filter(s => (s.allocatedWorkstations || []).some((ws: string) => ws.toLowerCase().includes(layoutMasterModel.toLowerCase()))).map(s => {
-                                    const employeeStations = (s.allocatedWorkstations || []).filter((ws: string) => ws.toLowerCase().includes(layoutMasterModel.toLowerCase()));
-                                    return (
-                                        <tr key={s.matricula} className="hover:bg-slate-50 dark:hover:bg-zinc-800/50">
-                                            <td className="p-4 font-mono">{s.matricula}</td>
-                                            <td className="p-4 font-medium text-slate-900 dark:text-zinc-100">{s.fullName}</td>
-                                            <td className="p-4">{s.role}</td>
-                                            <td className="p-4 text-xs text-slate-600">
-                                                <select
-                                                    className="bg-slate-50 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 rounded px-2 py-1 text-xs outline-none"
-                                                    onChange={(e) => {
-                                                        if (e.target.value) {
-                                                            setSelectedAlocationEmp(s);
-                                                            setAlocModel(layoutMasterModel);
-                                                            setAlocStation(e.target.value);
-                                                        }
-                                                    }}
-                                                    defaultValue=""
-                                                >
-                                                    <option value="">Selecionar posto...</option>
-                                                    {employeeStations.map((ws: string, idx: number) => {
-                                                        const stationName = ws.match(/\[Pos: (.+?)\]/)?.[1] || ws;
-                                                        return (
-                                                            <option key={idx} value={stationName}>
-                                                                {stationName}
+                                {(() => {
+                                    const groupedByEmployee: { [key: string]: any[] } = {};
+                                    layoutsList.forEach(layout => {
+                                        if (!groupedByEmployee[layout.matricula]) {
+                                            groupedByEmployee[layout.matricula] = [];
+                                        }
+                                        groupedByEmployee[layout.matricula].push(layout);
+                                    });
+
+                                    return Object.entries(groupedByEmployee).map(([matricula, layouts]) => {
+                                        const employee = subordinados.find(s => s.matricula === matricula);
+                                        if (!employee) return null;
+
+                                        const postoAtualLayout = layouts.find(l => l.postoAtual);
+
+                                        return (
+                                            <tr key={matricula} className="hover:bg-slate-50 dark:hover:bg-zinc-800/50">
+                                                <td className="p-4 font-mono">{matricula}</td>
+                                                <td className="p-4 font-medium text-slate-900 dark:text-zinc-100">{employee.fullName}</td>
+                                                <td className="p-4">{employee.role}</td>
+                                                <td className="p-4 text-xs text-slate-600">
+                                                    <div className="flex flex-col gap-1">
+                                                        {layouts.map((layout, idx) => (
+                                                            <div key={idx} className="flex items-center justify-between gap-2 bg-slate-50 dark:bg-zinc-800 px-2 py-1 rounded">
+                                                                <span>{layout.ordemPosto}</span>
+                                                                <button
+                                                                    onClick={() => handleRemoveLayoutEntry(layout.id)}
+                                                                    className="text-xs text-red-500 hover:text-red-700 font-bold"
+                                                                >
+                                                                    ✕
+                                                                </button>
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                </td>
+                                                <td className="p-4 text-xs text-slate-600">
+                                                    <select
+                                                        className="bg-slate-50 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 rounded px-2 py-1 text-xs outline-none"
+                                                        value={postoAtualLayout?.id || ''}
+                                                        onChange={(e) => {
+                                                            if (e.target.value) {
+                                                                handleUpdatePostoAtual(parseInt(e.target.value));
+                                                            }
+                                                        }}
+                                                    >
+                                                        <option value="">Nenhum</option>
+                                                        {layouts.map((layout) => (
+                                                            <option key={layout.id} value={layout.id}>
+                                                                {layout.ordemPosto}
                                                             </option>
-                                                        );
-                                                    })}
-                                                </select>
-                                            </td>
-                                            <td className="p-4 text-right flex justify-end gap-2">
-                                                <Button variant="danger" onClick={() => handleRemoveLine(s.matricula)}>Retirar</Button>
-                                            </td>
-                                        </tr>
-                                    );
-                                })}
+                                                        ))}
+                                                    </select>
+                                                </td>
+                                                <td className="p-4 text-right flex justify-end gap-2">
+                                                    <Button variant="danger" onClick={() => handleRemoveLine(matricula)}>Retirar Colaborador</Button>
+                                                </td>
+                                            </tr>
+                                        );
+                                    });
+                                })()}
                             </tbody>
                         </table>
                     )}
@@ -864,19 +966,25 @@ export const PeopleManagementModule = ({ onBack, currentUser }: PeopleManagement
                     <Card className="w-full max-w-lg space-y-4">
                         <div className="flex justify-between items-center">
                             <h3 className="font-bold text-lg text-slate-900 dark:text-white">Alocação de Postos</h3>
-                            <button onClick={() => setSelectedAlocationEmp(null)} className="text-slate-500"><UserIcon size={20} /></button>
+                            <button onClick={() => setSelectedAlocationEmp(null)} className="text-slate-500"><X size={20} /></button>
                         </div>
                         <p className="text-sm text-slate-500">Colaborador: {selectedAlocationEmp.fullName}</p>
 
-                        <div className="grid grid-cols-2 gap-2 mt-4">
-                            <select className="bg-slate-50 dark:bg-zinc-800 p-2 rounded" value={alocModel} onChange={e => { setAlocModel(e.target.value); setAlocStation(''); }} disabled={!layoutMasterModel || alocModel === layoutMasterModel}>
-                                <option value="">Selecione Modelo</option>
-                                {models.map(m => <option key={m.name} value={m.name}>{m.name}</option>)}
-                            </select>
-                            <select className="bg-slate-50 dark:bg-zinc-800 p-2 rounded" value={alocStation} onChange={e => setAlocStation(e.target.value)}>
-                                <option value="">Selecione Posto</option>
-                                {workstations.filter(w => w.modelName === alocModel).map(w => <option key={w.id} value={w.name}>{w.name}</option>)}
-                            </select>
+                        <div className="flex flex-col gap-3 mt-4">
+                            <div className="flex flex-col gap-2">
+                                <label className="text-sm font-medium text-slate-700 dark:text-zinc-300">Modelo</label>
+                                <select className="bg-slate-50 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 p-2 rounded outline-none focus:ring-2 focus:ring-cyan-500" value={alocModel} onChange={e => { setAlocModel(e.target.value); setAlocStation(''); }}>
+                                    <option value="">Selecione Modelo</option>
+                                    {models.map(m => <option key={m.name} value={m.name}>{m.name}</option>)}
+                                </select>
+                            </div>
+                            <div className="flex flex-col gap-2">
+                                <label className="text-sm font-medium text-slate-700 dark:text-zinc-300">Posto</label>
+                                <select className="bg-slate-50 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 p-2 rounded outline-none focus:ring-2 focus:ring-cyan-500" value={alocStation} onChange={e => setAlocStation(e.target.value)}>
+                                    <option value="">Selecione Posto</option>
+                                    {workstations.filter(w => w.modelName === alocModel).map(w => <option key={w.id} value={w.name}>{w.name}</option>)}
+                                </select>
+                            </div>
                         </div>
                         <Button className="w-full mt-2" onClick={handleBindStation}>Vincular Posto</Button>
                         <div className="flex justify-end mt-4">
@@ -1062,6 +1170,31 @@ export const PeopleManagementModule = ({ onBack, currentUser }: PeopleManagement
                 <Button onClick={handleEditSearch}><Search size={16} /> Buscar</Button>
             </Card>
 
+            {!editFound && (
+                <Card>
+                    <p className="text-sm font-bold text-slate-500 uppercase tracking-wide mb-3">Selecione um colaborador para editar</p>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                        {employees.filter(e => e.superiorId === currentUser.matricula).map(emp => (
+                            <div
+                                key={emp.matricula}
+                                onClick={() => {
+                                    setFormData({ ...emp, photo: emp.photo || '' });
+                                    setEditFound(true);
+                                }}
+                                className="flex items-center gap-3 p-3 rounded-xl border border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 hover:border-cyan-500 cursor-pointer transition-all"
+                            >
+                                {emp.photo ? <img src={emp.photo} className="w-10 h-10 rounded-full object-cover shrink-0" /> : <div className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center shrink-0"><UserIcon size={20} className="text-slate-400" /></div>}
+                                <div className="min-w-0 flex-1">
+                                    <p className="font-bold text-sm text-slate-800 dark:text-zinc-100 truncate">{emp.fullName}</p>
+                                    <p className="text-xs text-slate-500 font-mono truncate">{emp.matricula}</p>
+                                    <p className="text-xs text-slate-500 truncate">{emp.role} • {emp.shift}</p>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                </Card>
+            )}
+
             {editFound && (
                 <Card className="space-y-4">
                     <div className="flex items-center gap-3 pb-3 border-b border-slate-100 dark:border-zinc-800">
@@ -1114,7 +1247,8 @@ export const PeopleManagementModule = ({ onBack, currentUser }: PeopleManagement
                         <Input label="Bairro" value={formData.neighborhood} onChange={e => setFormData({ ...formData, neighborhood: e.target.value })} />
                         <Input label="WhatsApp" value={formData.whatsapp} onChange={e => setFormData({ ...formData, whatsapp: e.target.value })} />
                     </div>
-                    <div className="flex justify-end pt-2 border-t border-slate-100 dark:border-zinc-800">
+                    <div className="flex justify-between pt-2 border-t border-slate-100 dark:border-zinc-800">
+                        <Button variant="secondary" onClick={() => { setEditFound(false); setEditQuery(''); }}><ArrowLeft size={16} /> Voltar</Button>
                         <Button onClick={handleUpdateEmployee} disabled={editSaving}><Save size={16} /> {editSaving ? 'Salvando...' : 'Salvar Alterações'}</Button>
                     </div>
                 </Card>

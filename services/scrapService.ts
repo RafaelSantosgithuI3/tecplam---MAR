@@ -57,6 +57,19 @@ export const deleteScrap = async (id: string) => {
     }
 };
 
+export const checkDuplicateScrap = async (qrCode: string, code?: string, qty?: number, date?: string): Promise<{ isDuplicate: boolean }> => {
+    try {
+        const response = await apiFetch('/scraps/check-duplicate', {
+            method: 'POST',
+            body: JSON.stringify({ qrCode, code, qty, date })
+        });
+        return response;
+    } catch (e) {
+        console.error("Erro ao verificar duplicidade", e);
+        return { isDuplicate: false };
+    }
+};
+
 export const getMaterials = async (): Promise<import('../types').Material[]> => {
     try {
         return await apiFetch('/materials');

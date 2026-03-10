@@ -263,6 +263,7 @@ const App = () => {
     // Refs
     const categoryRefs = useRef<{ [key: string]: HTMLDivElement | null }>({});
     const passwordInputRef = useRef<HTMLInputElement>(null);
+    const inactivityTimerRef = useRef<NodeJS.Timeout | null>(null);
 
     const isSuperAdmin = currentUser ? (currentUser.matricula === 'admin' || currentUser.role === 'Admin' || currentUser.isAdmin === true) : false;
 
@@ -348,6 +349,37 @@ const App = () => {
     useEffect(() => {
         initApp();
     }, []);
+
+    useEffect(() => {
+        if (!currentUser) {
+            if (inactivityTimerRef.current) clearTimeout(inactivityTimerRef.current);
+            return;
+        }
+
+        const INACTIVITY_TIMEOUT = 3600000; // 1 hour
+
+        const resetInactivityTimer = () => {
+            if (inactivityTimerRef.current) clearTimeout(inactivityTimerRef.current);
+            inactivityTimerRef.current = setTimeout(() => {
+                console.warn('Inatividade detectada. Realizando logout automático.');
+                handleLogout();
+            }, INACTIVITY_TIMEOUT);
+        };
+
+        const events = ['mousemove', 'keydown', 'mousedown', 'touchstart'];
+        events.forEach(event => {
+            window.addEventListener(event, resetInactivityTimer);
+        });
+
+        resetInactivityTimer();
+
+        return () => {
+            if (inactivityTimerRef.current) clearTimeout(inactivityTimerRef.current);
+            events.forEach(event => {
+                window.removeEventListener(event, resetInactivityTimer);
+            });
+        };
+    }, [currentUser]);
 
     useEffect(() => {
         const handleBack = (e: PopStateEvent) => {

@@ -17,7 +17,7 @@ import {
 } from '../services/storageService';
 import {
     getScraps, saveScrap, updateScrap, deleteScrap, getMaterials, saveMaterials,
-    SCRAP_ITEMS, SCRAP_STATUS, CAUSA_RAIZ_OPTIONS, saveBatchScraps
+    SCRAP_ITEMS, SCRAP_STATUS, CAUSA_RAIZ_OPTIONS, saveBatchScraps, checkDuplicateScrap
 } from '../services/scrapService';
 import * as authService from '../services/authService';
 import { exportScrapToExcel, exportExecutiveReport } from '../services/excelService';
@@ -280,48 +280,123 @@ const ScrapForm = ({ users, models, stations, lines, materials, onSuccess, curre
     const [multiQRs, setMultiQRs] = useState<string[]>([]);
     const [showMultiScanPrompt, setShowMultiScanPrompt] = useState(false);
     const [pendingQR, setPendingQR] = useState<string>('');
+    const [isDuplicateAlertVisible, setIsDuplicateAlertVisible] = useState(false);
+    const [duplicateMessage, setDuplicateMessage] = useState('');
 
     // QR Code optional if origin contains LOGÍSTICA or RETRABALHO
-    const originUpper = formData.line.toUpperCase();
+    const originUpper = (formData.line || '').toUpperCase();
     const isQRRequired = !originUpper.includes('LOGÍSTICA') && !originUpper.includes('RETRABALHO');
 
-    const handleQRScanSuccess = (text: string) => {
+    const convertQRDateToInputFormat = (qrDateStr: string) => {
+        if (!qrDateStr || qrDateStr.length < 5) return '';
+        const [day, month] = qrDateStr.split('/');
+        const year = new Date().getFullYear();
+        return `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
+    };
+
+    const parseQRData = (qr: string) => {
+        // Validate input
+        if (!qr || typeof qr !== 'string' || qr.trim().length === 0) {
+            return { material: '', quantidade: '', data: '' };
+        }
+
+        // 1. Extract first 11 characters as material code (pad with spaces if shorter)
+        const materialCode = qr.substring(0, 11).padEnd(11, ' ');
+
+        // 2. Find last occurrence of "ASSY" (case-insensitive)
+        const upperQr = qr.toUpperCase();
+        const assyLastIndex = upperQr.lastIndexOf('ASSY');
+        if (assyLastIndex === -1) {
+            return { material: materialCode.trim(), quantidade: '', data: '' };
+        }
+
+        // 3. From ASSY position, search backwards for letter "Q" (case-insensitive)
+        let qIndex = -1;
+        for (let i = assyLastIndex - 1; i >= 0; i--) {
+            if (upperQr[i] === 'Q') {
+                qIndex = i;
+                break;
+            }
+        }
+
+        if (qIndex === -1) {
+            return { material: materialCode.trim(), quantidade: '', data: '' };
+        }
+
+        // 4. Extract quantity: characters between Q and ASSY (preserve spacing)
+        const quantidade = qr.substring(qIndex + 1, assyLastIndex);
+
+        // 5. Extract date: 4 characters before Q, format as XX/XX (validate digits)
+        let data = '';
+        if (qIndex >= 4) {
+            const dateRaw = qr.substring(qIndex - 4, qIndex);
+            if (dateRaw.length === 4 && /^\d{4}$/.test(dateRaw)) {
+                data = `${dateRaw.substring(0, 2)}/${dateRaw.substring(2, 4)}`;
+            }
+        }
+
+        return { material: materialCode.trim(), quantidade: quantidade.trim(), data };
+    };
+
+    const handleQRScanSuccess = async (text: string) => {
         setShowQRReader(false);
 
         if (multiScanMode) {
             // In multi-scan mode, add to list
             if (text && !multiQRs.includes(text)) {
+                // Validate duplicates in batch
+                const parsed = parseQRData(text);
+                const { isDuplicate } = await checkDuplicateScrap(text, formData.code, formData.qty, formData.date);
+                if (isDuplicate) {
+                    setDuplicateMessage(`QR Code ${text} já está registrado no sistema.`);
+                    setIsDuplicateAlertVisible(true);
+                    return;
+                }
                 setMultiQRs(prev => [...prev, text]);
             } else if (multiQRs.includes(text)) {
-                alert('Este QR Code já foi lido neste lote.');
+                setDuplicateMessage('Este QR Code já foi lido neste lote.');
+                setIsDuplicateAlertVisible(true);
             }
             // Also auto-fill code/material from first scan if list is empty
-            if (multiQRs.length === 0 && text && text.length >= 11) {
-                handleCodeChange(text.substring(0, 11));
+            if (multiQRs.length === 0 && text) {
+                const parsed = parseQRData(text);
+                handleCodeChange(parsed.material);
             }
             return;
         }
 
-        // Single-scan: show prompt to enter multi-scan mode
-        let extractedQty = undefined;
+        // Single-scan: validate duplicate first
+        const parsed = parseQRData(text);
+        const { isDuplicate } = await checkDuplicateScrap(text, formData.code, formData.qty, formData.date);
+        if (isDuplicate) {
+            setDuplicateMessage(`QR Code ${text} já está registrado no sistema com material, quantidade ou data correspondente.`);
+            setIsDuplicateAlertVisible(true);
+            return;
+        }
 
-        if (text && text.length >= 38) {
-            const qtyStr = text.substring(35, 38);
+        let extractedQty: number | undefined = undefined;
+        let extractedDate = '';
 
-            const parsedQty = parseInt(qtyStr, 10);
+        if (parsed.quantidade) {
+            const parsedQty = parseInt(parsed.quantidade, 10);
             if (!isNaN(parsedQty)) {
                 extractedQty = parsedQty;
             }
         }
 
+        if (parsed.data) {
+            extractedDate = convertQRDateToInputFormat(parsed.data);
+        }
+
         setFormData((prev: any) => ({
             ...prev,
             qrCode: text,
+            ...(extractedDate ? { date: extractedDate } : {}),
             ...(extractedQty !== undefined ? { qty: extractedQty } : {})
         }));
 
-        if (text && text.length >= 11) {
-            handleCodeChange(text.substring(0, 11));
+        if (text) {
+            handleCodeChange(parsed.material);
         }
 
         // Trigger multi-scan prompt
@@ -430,8 +505,8 @@ const ScrapForm = ({ users, models, stations, lines, materials, onSuccess, curre
                 setMultiQRs([]);
                 onSuccess();
             } catch (e: any) {
-                const msg = e?.message || e?.error || "Erro ao salvar lote de scraps.";
-                alert(msg);
+                const errorMsg = e?.message || e?.error || "Erro ao salvar lote de scraps.";
+                alert(errorMsg);
             }
         } else {
             // Single create
@@ -452,8 +527,8 @@ const ScrapForm = ({ users, models, stations, lines, materials, onSuccess, curre
                 setFormData(getInitialState());
                 onSuccess();
             } catch (e: any) {
-                const msg = e?.message || e?.error || "Erro ao salvar scrap.";
-                alert(msg);
+                const errorMsg = e?.message || e?.error || "Erro ao salvar scrap.";
+                alert(errorMsg);
             }
         }
     };
@@ -1560,11 +1635,56 @@ const ScrapEditModal = ({ scrap, users, lines, models, categories, statusOptions
     const isAndroid = /Android/i.test(navigator.userAgent);
     const [showQRReader, setShowQRReader] = useState(false);
 
+    const parseQRData = (qr: string) => {
+        // Validate input
+        if (!qr || typeof qr !== 'string' || qr.trim().length === 0) {
+            return { material: '', quantidade: '', data: '' };
+        }
+
+        // 1. Extract first 11 characters as material code (pad with spaces if shorter)
+        const materialCode = qr.substring(0, 11).padEnd(11, ' ');
+
+        // 2. Find last occurrence of "ASSY" (case-insensitive)
+        const upperQr = qr.toUpperCase();
+        const assyLastIndex = upperQr.lastIndexOf('ASSY');
+        if (assyLastIndex === -1) {
+            return { material: materialCode.trim(), quantidade: '', data: '' };
+        }
+
+        // 3. From ASSY position, search backwards for letter "Q" (case-insensitive)
+        let qIndex = -1;
+        for (let i = assyLastIndex - 1; i >= 0; i--) {
+            if (upperQr[i] === 'Q') {
+                qIndex = i;
+                break;
+            }
+        }
+
+        if (qIndex === -1) {
+            return { material: materialCode.trim(), quantidade: '', data: '' };
+        }
+
+        // 4. Extract quantity: characters between Q and ASSY (preserve spacing)
+        const quantidade = qr.substring(qIndex + 1, assyLastIndex);
+
+        // 5. Extract date: 4 characters before Q, format as XX/XX (validate digits)
+        let data = '';
+        if (qIndex >= 4) {
+            const dateRaw = qr.substring(qIndex - 4, qIndex);
+            if (dateRaw.length === 4 && /^\d{4}$/.test(dateRaw)) {
+                data = `${dateRaw.substring(0, 2)}/${dateRaw.substring(2, 4)}`;
+            }
+        }
+
+        return { material: materialCode.trim(), quantidade: quantidade.trim(), data };
+    };
+
     const handleQRScanSuccess = (text: string) => {
         setShowQRReader(false);
+        const parsed = parseQRData(text);
         setFormData((prev: any) => ({ ...prev, qrCode: text }));
-        if (text && text.length >= 11) {
-            handleCodeChange(text.substring(0, 11));
+        if (text) {
+            handleCodeChange(parsed.material);
         }
     };
 
@@ -1735,7 +1855,10 @@ const ScrapEditModal = ({ scrap, users, lines, models, categories, statusOptions
                                         if (e.key === 'Enter') {
                                             e.preventDefault();
                                             const qr = formData.qrCode || '';
-                                            if (qr && qr.length >= 11) handleCodeChange(qr.substring(0, 11));
+                                            if (qr) {
+                                                const parsed = parseQRData(qr);
+                                                handleCodeChange(parsed.material);
+                                            }
                                         }
                                     }}
                                     placeholder="Bipe o código..."
@@ -1868,7 +1991,7 @@ const ScrapEditModal = ({ scrap, users, lines, models, categories, statusOptions
                             />
                         </div>
                         <div>
-                            <label className="block text-xs font-medium text-green-700 dark:text-green-400 mb-1.5 uppercase font-bold">Contra Medida</label>
+                            <label className="block text-xs font-bold text-green-700 dark:text-green-400 mb-1.5 uppercase">Contra Medida</label>
                             <textarea
                                 className="w-full bg-slate-50 dark:bg-zinc-950 border-2 border-green-200 dark:border-green-900/50 rounded-lg p-3 text-sm outline-none focus:ring-2 focus:ring-green-500 min-h-[100px] text-slate-900 dark:text-zinc-100 placeholder-slate-400 dark:placeholder-zinc-600 transition-colors"
                                 value={formData.countermeasure || ''}
