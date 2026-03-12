@@ -274,7 +274,7 @@ export const ScrapBoxMount = ({ currentUser, onUpdate }: any) => {
 
             <div className="grid gap-6">
                 {boxes.map(box => {
-                    const totalItens = box.scraps?.length || 0;
+                    const totalItens = box.scraps?.reduce((acc: number, s: any) => acc + (Number(s.qty) || 0), 0) || 0;
                     const valorTotal = box.scraps?.reduce((acc: number, s: any) => acc + (Number(s.totalValue) || 0), 0) || 0;
 
                     return (
@@ -372,6 +372,9 @@ export const ScrapBoxIdentified = ({ currentUser, onUpdate, users = [] }: { curr
     const [loading, setLoading] = useState(true);
     const [previewBox, setPreviewBox] = useState<any | null>(null);
     const [selectedScrap, setSelectedScrap] = useState<ScrapData | null>(null);
+    const [qrSearchInput, setQrSearchInput] = useState('');
+    const isAndroid = /Android/i.test(navigator.userAgent);
+    const [showQRCamera, setShowQRCamera] = useState(false);
 
     const loadBoxes = async () => {
         try {
@@ -381,6 +384,19 @@ export const ScrapBoxIdentified = ({ currentUser, onUpdate, users = [] }: { curr
             console.error(e);
         } finally {
             setLoading(false);
+        }
+    };
+
+    const handleQRInput = (qrCode: string) => {
+        if (qrCode.trim()) {
+            const found = boxes.find(box => box.scraps?.some((s: any) => s.qrCode === qrCode));
+            if (found) {
+                setPreviewBox(found);
+                setQrSearchInput('');
+            } else {
+                alert('QR Code não encontrado nesta lista');
+                setQrSearchInput('');
+            }
         }
     };
 

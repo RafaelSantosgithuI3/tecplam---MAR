@@ -1136,6 +1136,15 @@ export const downloadPreparationExcel = async (logs: PreparationLog[], filters: 
 
     const sheet = workbook.worksheets[0];
 
+    // Injetar a data EXATAMENTE na célula T6
+    let formattedDate = new Date().toLocaleDateString('pt-BR');
+    if (filters.date) {
+        const d = new Date(filters.date);
+        const userTimezoneOffset = d.getTimezoneOffset() * 60000;
+        formattedDate = new Date(d.getTime() + userTimezoneOffset).toLocaleDateString('pt-BR');
+    }
+    sheet.getCell('T6').value = formattedDate;
+
     // Filter Logs
     const shift1 = logs.filter(l => (l.shift.includes('1') || l.shift.toUpperCase().includes('TURNO 1')));
     const shift2 = logs.filter(l => (l.shift.includes('2') || l.shift.toUpperCase().includes('TURNO 2')));
@@ -1213,9 +1222,7 @@ export const downloadPreparationExcel = async (logs: PreparationLog[], filters: 
     // If Filter is specifically '2', we just use the main header as 2nd Turno
     if (filters.shift === '2' || (shift1.length === 0 && shift2.length > 0 && filters.shift !== '1')) {
         // SCENARIO: Only 2nd Shift (or requested 2, or Is All but only 2 exists)
-        const row6 = sheet.getRow(6);
-        const cellB6 = row6.getCell(2);
-        cellB6.value = "2º TURNO";
+        sheet.getCell('B6').value = "2º TURNO";
 
         shift2.forEach((l, idx) => {
             writeLog(currentRow + idx, l);
@@ -1223,9 +1230,7 @@ export const downloadPreparationExcel = async (logs: PreparationLog[], filters: 
         currentRow += shift2.length;
     } else {
         // SCENARIO: 1st Shift (or ALL with 1st Shift data)
-        const row6 = sheet.getRow(6);
-        const cellB6 = row6.getCell(2);
-        cellB6.value = "1º TURNO";
+        sheet.getCell('B6').value = "1º TURNO";
 
         if (shift1.length > 0) {
             shift1.forEach((l, idx) => {
@@ -1244,18 +1249,26 @@ export const downloadPreparationExcel = async (logs: PreparationLog[], filters: 
             // Copy Headers (Rows 6 and 7)
             copyRowStyleAndValue(6, headerRowIdx);
 
-            // 1. Update Title
-            sheet.getRow(headerRowIdx).getCell(2).value = "2º TURNO";
+            // 1. Update Title (Modifica exclusivamente a célula alvo do turno)
+            sheet.getCell(`B${headerRowIdx}`).value = "2º TURNO";
 
-            // 2. Fix Merges for Header Row (Row 6 copy)
+            // Atribuição explícita do valor da data formatada na célula da coluna T
+            sheet.getCell(`T${headerRowIdx}`).value = formattedDate;
+
+            // 2. Fix Merges for Header Row (Row 6 copy) apenas onde necessário
             try {
                 sheet.unMergeCells(`B${headerRowIdx}:D${headerRowIdx}`); // Safety unmerge
                 sheet.mergeCells(`B${headerRowIdx}:D${headerRowIdx}`);   // Title
-            } catch (e) { }
 
-            try {
-                sheet.unMergeCells(`T${headerRowIdx}:V${headerRowIdx}`); // Safety unmerge
-                sheet.mergeCells(`T${headerRowIdx}:V${headerRowIdx}`);   // Defeitos Group
+                // Mesclagem explícita T:V para alinhar com a formatação (Defeitos)
+                sheet.unMergeCells(`T${headerRowIdx}:V${headerRowIdx}`);
+                sheet.mergeCells(`T${headerRowIdx}:V${headerRowIdx}`);
+
+                // Configuração SheetJS fallback (instrução explícita ws['!merges'])
+                const ws: any = sheet;
+                if (!ws['!merges']) ws['!merges'] = [];
+                ws['!merges'].push({ s: { r: headerRowIdx - 1, c: 19 }, e: { r: headerRowIdx - 1, c: 21 } });
+
             } catch (e) { }
 
             copyRowStyleAndValue(7, subHeaderRowIdx);
@@ -1396,16 +1409,24 @@ export const generateBoxLabels = async (boxId: number | string, scraps: any[], e
         try { outputSheet.mergeCells(`B${row14Abs}:F${row14Abs}`); } catch (e) { }
         outputSheet.getCell(`B${row14Abs}`).value = templateSheet.getCell('B14').value;
 
-        // Apply borders iteratively
+        // Apply borders iteratively (skip row 15 to avoid format conflicts)
         for (let r = 1; r <= BLOCK_SIZE; r++) {
+            if (r === 15) continue; // Skip last row to prevent border bleeding
             const destRow = outputSheet.getRow(startRowOutput + r - 1);
-            destRow.eachCell({ includeEmpty: true }, (cell) => {
-                cell.border = {
-                    top: { style: 'thin' },
-                    left: { style: 'thin' },
-                    bottom: { style: 'thin' },
-                    right: { style: 'thin' }
-                };
+            destRow.eachCell({ includeEmpty: true }, (cell, colNumber) => {
+                if (!cell.border) {
+                    cell.border = {
+                        top: { style: 'thin' },
+                        left: { style: 'thin' },
+                        bottom: { style: 'thin' },
+                        right: { style: 'thin' }
+                    };
+                }
+                // Apply right border specifically for column F (6) on rows 6, 7, 8, 9, 12, 14
+                if (colNumber === 6 && [6, 7, 8, 9, 12, 14].includes(r)) {
+                    if (!cell.border) cell.border = {};
+                    cell.border.right = { style: 'thin' };
+                }
             });
         }
     };
@@ -1478,7 +1499,7 @@ export const exportModelLayout = async (model: string, workstations: any[], empl
     const workbook = new ExcelJS.Workbook();
     const sheet = workbook.addWorksheet('Layout por Modelo');
 
-    sheet.columns = [        
+    sheet.columns = [
         { header: 'ID do Posto', key: 'posto_id', width: 15 },
         { header: 'Posto de Trabalho', key: 'posto', width: 30 },
         { header: 'Colaboradores Habilitados', key: 'colaboradores', width: 60 }

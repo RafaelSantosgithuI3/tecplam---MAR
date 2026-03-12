@@ -122,7 +122,7 @@ export const IQCModule = ({ currentUser, onBack }: { currentUser: User, onBack: 
                 )}
 
                 {activeTab === 'BATCH_PROCESS' && (
-                    <BatchProcessTab scraps={scraps} onProcess={refreshData} currentUser={currentUser} lines={lines} />
+                    <BatchProcessTab scraps={scraps} onProcess={refreshData} currentUser={currentUser} lines={lines} models={models} />
                 )}
 
                 {activeTab === 'HISTORY_SENT' && (
@@ -336,7 +336,7 @@ const ExecutiveDashboard = ({ scraps }: { scraps: ScrapData[] }) => {
     );
 };
 
-const BatchProcessTab = ({ scraps, onProcess, currentUser, lines }: { scraps: ScrapData[], onProcess: () => void, currentUser: User, lines: string[] }) => {
+const BatchProcessTab = ({ scraps, onProcess, currentUser, lines, models }: { scraps: ScrapData[], onProcess: () => void, currentUser: User, lines: string[], models: string[] }) => {
     const [filters, setFilters] = useState({
         period: 'ALL',
         specificDate: '',
@@ -344,7 +344,10 @@ const BatchProcessTab = ({ scraps, onProcess, currentUser, lines }: { scraps: Sc
         specificMonth: '',
         specificYear: '',
         shift: 'ALL',
-        line: 'ALL'
+        line: 'ALL',
+        model: 'ALL',
+        item: 'ALL',
+        status: 'ALL'
     });
 
     const [selectedIds, setSelectedIds] = useState<number[]>([]);
@@ -370,6 +373,9 @@ const BatchProcessTab = ({ scraps, onProcess, currentUser, lines }: { scraps: Sc
 
         if (filters.shift !== 'ALL') res = res.filter(s => String(s.shift) === filters.shift);
         if (filters.line !== 'ALL') res = res.filter(s => s.line === filters.line);
+        if (filters.model !== 'ALL') res = res.filter(s => s.model === filters.model);
+        if (filters.item !== 'ALL') res = res.filter(s => s.item === filters.item);
+        if (filters.status !== 'ALL') res = res.filter(s => s.status === filters.status);
 
         return res.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
     }, [scraps, filters]);
@@ -433,6 +439,22 @@ const BatchProcessTab = ({ scraps, onProcess, currentUser, lines }: { scraps: Sc
                     <select className="bg-slate-50 dark:bg-zinc-950 border border-slate-300 dark:border-zinc-800 p-2 rounded text-sm outline-none" value={filters.line} onChange={e => setFilters({ ...filters, line: e.target.value })}>
                         <option value="ALL">Todas Linhas</option>
                         {lines.map(l => <option key={l} value={l}>{l}</option>)}
+                    </select>
+
+                    <select className="bg-slate-50 dark:bg-zinc-950 border border-slate-300 dark:border-zinc-800 p-2 rounded text-sm outline-none" value={filters.model} onChange={e => setFilters({ ...filters, model: e.target.value })}>
+                        <option value="ALL">Todos Modelos</option>
+                        {models.map(m => <option key={m} value={m}>{m}</option>)}
+                    </select>
+
+                    <select className="bg-slate-50 dark:bg-zinc-950 border border-slate-300 dark:border-zinc-800 p-2 rounded text-sm outline-none" value={filters.item} onChange={e => setFilters({ ...filters, item: e.target.value })}>
+                        <option value="ALL">Todos Itens</option>
+                        {Array.from(new Set(pendingScraps.map(s => s.item).filter(Boolean))).sort().map(item => <option key={item} value={item}>{item}</option>)}
+                    </select>
+
+                    <select className="bg-slate-50 dark:bg-zinc-950 border border-slate-300 dark:border-zinc-800 p-2 rounded text-sm outline-none" value={filters.status} onChange={e => setFilters({ ...filters, status: e.target.value })}>
+                        <option value="ALL">Todos Status</option>
+                        <option value="OK">OK</option>
+                        <option value="NG">NG</option>
                     </select>
 
                     <div className="ml-auto text-sm text-slate-500">
@@ -535,20 +557,50 @@ const BatchProcessTab = ({ scraps, onProcess, currentUser, lines }: { scraps: Sc
 };
 
 const HistorySentTab = ({ scraps, users }: { scraps: ScrapData[], users: User[] }) => {
+    const [filters, setFilters] = useState({ item: 'ALL', model: 'ALL', status: 'ALL' });
+    
     const sentScraps = useMemo(() => scraps.filter(s => s.situation === 'SENT'), [scraps]);
+    
+    const uniqueItems = useMemo(() => Array.from(new Set(sentScraps.map(s => s.item).filter(Boolean))).sort(), [sentScraps]);
+    const uniqueModels = useMemo(() => Array.from(new Set(sentScraps.map(s => s.model).filter(Boolean))).sort(), [sentScraps]);
+    
+    const filteredScraps = useMemo(() => {
+        let res = [...sentScraps];
+        if (filters.item !== 'ALL') res = res.filter(s => s.item === filters.item);
+        if (filters.model !== 'ALL') res = res.filter(s => s.model === filters.model);
+        return res;
+    }, [sentScraps, filters]);
 
     const groups = useMemo(() => {
         const g: Record<string, ScrapData[]> = {};
-        sentScraps.forEach(s => {
+        filteredScraps.forEach(s => {
             const nf = s.nfNumber || 'SEM_NF';
             if (!g[nf]) g[nf] = [];
             g[nf].push(s);
         });
         return g;
-    }, [sentScraps]);
+    }, [filteredScraps]);
 
     return (
         <div className="space-y-4">
+            <Card>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <select className="bg-slate-50 dark:bg-zinc-950 border border-slate-300 dark:border-zinc-800 p-2 rounded text-sm outline-none" value={filters.item} onChange={e => setFilters({ ...filters, item: e.target.value })}>
+                        <option value="ALL">Todos Itens</option>
+                        {uniqueItems.map(item => <option key={item} value={item}>{item}</option>)}
+                    </select>
+                    <select className="bg-slate-50 dark:bg-zinc-950 border border-slate-300 dark:border-zinc-800 p-2 rounded text-sm outline-none" value={filters.model} onChange={e => setFilters({ ...filters, model: e.target.value })}>
+                        <option value="ALL">Todos Modelos</option>
+                        {uniqueModels.map(model => <option key={model} value={model}>{model}</option>)}
+                    </select>
+                    <select className="bg-slate-50 dark:bg-zinc-950 border border-slate-300 dark:border-zinc-800 p-2 rounded text-sm outline-none h-fit" value={filters.status} onChange={e => setFilters({ ...filters, status: e.target.value })}>
+                        <option value="ALL">Status: Todos</option>
+                        <option value="ENVIADO">Enviado</option>
+                        <option value="PENDENTE">Pendente</option>
+                    </select>
+                </div>
+            </Card>
+            
             {Object.keys(groups).length === 0 && <p className="text-center text-slate-500 py-10">Nenhum envio registrado.</p>}
 
             {Object.entries(groups)
@@ -657,6 +709,7 @@ const HistoryGroupCard = ({ nf, items, users }: { nf: string, items: ScrapData[]
                                     <tr>
                                         <th className="p-2">Item</th>
                                         <th className="p-2">Modelo</th>
+                                        <th className="p-2">Código</th>
                                         <th className="p-2">Qtd</th>
                                         <th className="p-2 text-right">Valor</th>
                                         <th className="p-2"></th>
@@ -667,6 +720,7 @@ const HistoryGroupCard = ({ nf, items, users }: { nf: string, items: ScrapData[]
                                         <tr key={i.id} className="border-b border-slate-100 dark:border-zinc-800 last:border-0 hover:bg-blue-50/50 dark:hover:bg-blue-900/10 cursor-pointer transition-colors" onClick={(e) => { e.stopPropagation(); setSelectedScrap(i); }}>
                                             <td className="p-2 text-slate-700 dark:text-zinc-300">{i.item}</td>
                                             <td className="p-2 text-slate-700 dark:text-zinc-300">{i.model}</td>
+                                            <td className="p-2 font-mono text-slate-700 dark:text-zinc-300">{i.code || '-'}</td>
                                             <td className="p-2 text-slate-700 dark:text-zinc-300">{i.qty}</td>
                                             <td className="p-2 text-right font-mono text-slate-700 dark:text-zinc-300">{formatCurrency(i.totalValue)}</td>
                                             <td className="p-2"><Eye size={14} className="text-blue-500" /></td>

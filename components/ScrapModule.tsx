@@ -953,13 +953,13 @@ const ScrapHistory = ({ scraps, currentUser, users }: any) => {
     return (
         <div className="space-y-6">
             <div className="grid grid-cols-2 gap-4">
-                <Card className="bg-indigo-900/20 border-indigo-500/30">
-                    <h3 className="text-indigo-400 text-xs font-bold uppercase">Meu Total (Período)</h3>
-                    <p className="text-3xl font-bold mt-2">{formatCurrency(total)}</p>
+                <Card className="bg-indigo-50 dark:bg-indigo-900/20 border-indigo-200 dark:border-indigo-500/30">
+                    <h3 className="text-indigo-600 dark:text-indigo-400 text-xs font-bold uppercase">Meu Total (Período)</h3>
+                    <p className="text-3xl font-bold mt-2 text-slate-900 dark:text-zinc-100">{formatCurrency(total)}</p>
                 </Card>
-                <Card className="bg-orange-900/20 border-orange-500/30">
-                    <h3 className="text-orange-400 text-xs font-bold uppercase">Minhas Pendências</h3>
-                    <p className="text-3xl font-bold mt-2">{pendingCount}</p>
+                <Card className="bg-orange-50 dark:bg-orange-900/20 border-orange-200 dark:border-orange-500/30">
+                    <h3 className="text-orange-600 dark:text-orange-400 text-xs font-bold uppercase">Minhas Pendências</h3>
+                    <p className="text-3xl font-bold mt-2 text-slate-900 dark:text-zinc-100">{pendingCount}</p>
                 </Card>
             </div>
 
@@ -1115,9 +1115,9 @@ export const ScrapOperational = ({ scraps, users, lines, models }: any) => {
             </Card>
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <Card className="bg-blue-900/20 border-blue-900/50 p-6">
-                    <h3 className="text-blue-400 font-bold uppercase text-xs">Total Filtrado</h3>
-                    <p className="text-3xl font-bold mt-2">{formatCurrency(filtered.reduce((a, b) => a + (b.totalValue || 0), 0))}</p>
+                <Card className="bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-900/50 p-6">
+                    <h3 className="text-blue-600 dark:text-blue-400 font-bold uppercase text-xs">Total Filtrado</h3>
+                    <p className="text-3xl font-bold mt-2 text-slate-900 dark:text-zinc-100">{formatCurrency(filtered.reduce((a, b) => a + (b.totalValue || 0), 0))}</p>
                 </Card>
                 <Card className="bg-white dark:bg-zinc-900 border-slate-200 dark:border-zinc-800 p-6 flex flex-col justify-center items-center cursor-pointer hover:bg-slate-50 dark:hover:bg-zinc-800 shadow-sm" onClick={downloadExcel}>
                     <Download size={32} className="text-green-600 dark:text-green-500 mb-2" />
@@ -1239,9 +1239,9 @@ export const ScrapManagementAdvanced = ({ scraps }: any) => {
         <div className="space-y-6">
             <Card>
                 <div className="flex justify-between items-center flex-wrap gap-4">
-                    <h3 className="font-bold text-lg">Dashboard de Gestão</h3>
+                    <h3 className="font-bold text-lg text-slate-900 dark:text-zinc-100">Dashboard de Gestão</h3>
                     <div className="flex gap-2 items-center flex-wrap">
-                        <select className="bg-slate-50 dark:bg-zinc-950 border border-slate-300 dark:border-zinc-800 p-2 rounded text-sm text-slate-900 dark:text-zinc-300 outline-none focus:ring-2 focus:ring-blue-600" onChange={e => setFilters({ ...filters, period: e.target.value })} value={filters.period}>
+                        <select className="bg-white dark:bg-zinc-900 border border-slate-300 dark:border-zinc-800 p-2 rounded text-sm text-slate-900 dark:text-zinc-100 outline-none focus:ring-2 focus:ring-blue-600" onChange={e => setFilters({ ...filters, period: e.target.value })} value={filters.period}>
                             <option value="ALL">Todo Período</option>
                             <option value="DAY">Dia Específico</option>
                             <option value="WEEK">Semana Específica</option>
@@ -1257,9 +1257,9 @@ export const ScrapManagementAdvanced = ({ scraps }: any) => {
             </Card>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <Card className="bg-blue-900/20 border-blue-900/50 p-6">
-                    <h3 className="text-blue-400 font-bold uppercase text-xs">Total Filtrado (Gestão)</h3>
-                    <p className="text-3xl font-bold mt-2">{formatCurrency(filtered.reduce((a, b) => a + (b.totalValue || 0), 0))}</p>
+                <Card className="bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-900/50 p-6">
+                    <h3 className="text-blue-600 dark:text-blue-400 font-bold uppercase text-xs">Total Filtrado (Gestão)</h3>
+                    <p className="text-3xl font-bold mt-2 !text-slate-900 dark:!text-zinc-100">{formatCurrency(filtered.reduce((a, b) => a + (b.totalValue || 0), 0))}</p>
                 </Card>
                 <Card className="bg-white dark:bg-zinc-900 border-slate-200 dark:border-zinc-800 p-6 flex flex-col justify-center items-center cursor-pointer hover:bg-slate-50 dark:hover:bg-zinc-800 shadow-sm" onClick={() => exportExecutiveReport(filtered)}>
                     <Download size={32} className="text-green-600 dark:text-green-500 mb-2" />
@@ -1270,34 +1270,34 @@ export const ScrapManagementAdvanced = ({ scraps }: any) => {
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                 {/* Reordered: Shift -> Line -> Model -> Leaders -> Pending */}
                 <Card>
-                    <h3 className="font-bold text-emerald-400 mb-4 uppercase text-sm">Ranking Turnos (R$)</h3>
+                    <h3 className="font-bold text-slate-900 dark:text-zinc-100 mb-4 uppercase text-sm">Ranking Turnos (R$)</h3>
                     <div className="space-y-2">
                         {rankings.shift.map(([name, val], i) => (
-                            <div key={name} className="flex justify-between items-center p-2 bg-slate-50 dark:bg-zinc-950 rounded border border-slate-200 dark:border-zinc-800">
-                                <span className="text-sm text-slate-700 dark:text-zinc-300">Turno {name}</span>
-                                <span className="font-mono font-bold text-emerald-600 dark:text-emerald-400">{formatCurrency(val)}</span>
+                            <div key={name} className="flex justify-between items-center p-2 bg-white dark:bg-zinc-900 rounded border border-slate-200 dark:border-zinc-800">
+                                <span className="text-sm text-slate-500 dark:text-zinc-400">Turno {name}</span>
+                                <span className="font-mono font-bold !text-slate-900 dark:!text-zinc-100">{formatCurrency(val)}</span>
                             </div>
                         ))}
                     </div>
                 </Card>
                 <Card>
-                    <h3 className="font-bold text-purple-400 mb-4 uppercase text-sm">Ranking Linhas (R$)</h3>
+                    <h3 className="font-bold text-slate-900 dark:text-zinc-100 mb-4 uppercase text-sm">Ranking Linhas (R$)</h3>
                     <div className="space-y-2">
                         {rankings.line.map(([name, val], i) => (
-                            <div key={name} className="flex justify-between items-center p-2 bg-slate-50 dark:bg-zinc-950 rounded border border-slate-200 dark:border-zinc-800">
-                                <span className="text-sm text-slate-700 dark:text-zinc-300">{name}</span>
-                                <span className="font-mono font-bold text-purple-600 dark:text-purple-400">{formatCurrency(val)}</span>
+                            <div key={name} className="flex justify-between items-center p-2 bg-white dark:bg-zinc-900 rounded border border-slate-200 dark:border-zinc-800">
+                                <span className="text-sm text-slate-500 dark:text-zinc-400">{name}</span>
+                                <span className="font-mono font-bold !text-slate-900 dark:!text-zinc-100">{formatCurrency(val)}</span>
                             </div>
                         ))}
                     </div>
                 </Card>
                 <Card>
-                    <h3 className="font-bold text-blue-400 mb-4 uppercase text-sm">Ranking Modelos (R$)</h3>
+                    <h3 className="font-bold text-slate-900 dark:text-zinc-100 mb-4 uppercase text-sm">Ranking Modelos (R$)</h3>
                     <div className="space-y-2">
                         {rankings.model.slice(0, 10).map(([name, val], i) => (
-                            <div key={name} className="flex justify-between items-center p-2 bg-slate-50 dark:bg-zinc-950 rounded border border-slate-200 dark:border-zinc-800">
-                                <span className="text-sm truncate max-w-[150px] text-slate-700 dark:text-zinc-300">{name}</span>
-                                <span className="font-mono font-bold text-blue-600 dark:text-blue-400">{formatCurrency(val)}</span>
+                            <div key={name} className="flex justify-between items-center p-2 bg-white dark:bg-zinc-900 rounded border border-slate-200 dark:border-zinc-800">
+                                <span className="text-sm truncate max-w-[150px] text-slate-500 dark:text-zinc-400">{name}</span>
+                                <span className="font-mono font-bold !text-slate-900 dark:!text-zinc-100">{formatCurrency(val)}</span>
                             </div>
                         ))}
                     </div>
@@ -1305,23 +1305,23 @@ export const ScrapManagementAdvanced = ({ scraps }: any) => {
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <Card>
-                    <h3 className="font-bold text-red-400 mb-4 uppercase text-sm">Ranking Líderes (R$)</h3>
+                    <h3 className="font-bold text-slate-900 dark:text-zinc-100 mb-4 uppercase text-sm">Ranking Líderes (R$)</h3>
                     <div className="space-y-2">
                         {rankings.leader.slice(0, 10).map(([name, val], i) => (
-                            <div key={name} className="flex justify-between items-center p-2 bg-slate-50 dark:bg-zinc-950 rounded border border-slate-200 dark:border-zinc-800">
-                                <span className="text-sm text-slate-700 dark:text-zinc-300"><span className="font-bold text-slate-500 dark:text-zinc-500 mr-2">#{i + 1}</span> {name}</span>
-                                <span className="font-mono font-bold text-red-600 dark:text-red-400">{formatCurrency(val)}</span>
+                            <div key={name} className="flex justify-between items-center p-2 bg-white dark:bg-zinc-900 rounded border border-slate-200 dark:border-zinc-800">
+                                <span className="text-sm text-slate-500 dark:text-zinc-400"><span className="font-bold text-slate-400 dark:text-zinc-500 mr-2">#{i + 1}</span> {name}</span>
+                                <span className="font-mono font-bold !text-slate-900 dark:!text-zinc-100">{formatCurrency(val)}</span>
                             </div>
                         ))}
                     </div>
                 </Card>
                 <Card>
-                    <h3 className="font-bold text-yellow-500 mb-4 uppercase text-sm">Pendências (Qtd)</h3>
+                    <h3 className="font-bold text-slate-900 dark:text-zinc-100 mb-4 uppercase text-sm">Pendências (Qtd)</h3>
                     <div className="space-y-2">
                         {rankings.pending.slice(0, 10).map(([name, val], i) => (
-                            <div key={name} className="flex justify-between items-center p-2 bg-slate-50 dark:bg-zinc-950 rounded border border-slate-200 dark:border-zinc-800">
-                                <span className="text-sm truncate max-w-[150px] text-slate-700 dark:text-zinc-300">{name}</span>
-                                <span className="font-mono font-bold text-yellow-600 dark:text-yellow-500">{val}</span>
+                            <div key={name} className="flex justify-between items-center p-2 bg-white dark:bg-zinc-900 rounded border border-slate-200 dark:border-zinc-800">
+                                <span className="text-sm truncate max-w-[150px] text-slate-500 dark:text-zinc-400">{name}</span>
+                                <span className="font-mono font-bold !text-slate-900 dark:!text-zinc-100">{val}</span>
                             </div>
                         ))}
                     </div>
@@ -1481,12 +1481,16 @@ const ScrapEditDelete = ({ scraps, users, lines, models, onUpdate, categories, s
         leader: '',
         line: '',
         model: '',
+        item: '',
+        qrCode: '',
         period: 'MONTH', // DAY, WEEK, MONTH, YEAR, ALL
         specificDate: '',
         specificWeek: '',
         specificMonth: '',
         specificYear: ''
     });
+    const isAndroid = /Android/i.test(navigator.userAgent);
+    const [showQRCamera, setShowQRCamera] = useState(false);
 
     const [editingScrap, setEditingScrap] = useState<ScrapData | null>(null);
 
@@ -1495,6 +1499,8 @@ const ScrapEditDelete = ({ scraps, users, lines, models, onUpdate, categories, s
         if (filters.leader) res = res.filter((s: ScrapData) => s.leaderName === filters.leader);
         if (filters.line) res = res.filter((s: ScrapData) => s.line === filters.line);
         if (filters.model) res = res.filter((s: ScrapData) => s.model === filters.model);
+        if (filters.item) res = res.filter((s: ScrapData) => (s.item || '').toUpperCase() === filters.item.toUpperCase());
+        if (filters.qrCode) res = res.filter((s: ScrapData) => (s.qrCode || '').toUpperCase().includes(filters.qrCode.toUpperCase()));
 
         const now = new Date();
         const d = new Date(now);
@@ -1542,7 +1548,7 @@ const ScrapEditDelete = ({ scraps, users, lines, models, onUpdate, categories, s
     return (
         <div className="space-y-6">
             <Card>
-                <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                <div className="grid grid-cols-1 md:grid-cols-6 gap-4">
                     <select className="bg-white dark:bg-zinc-950 border border-slate-300 dark:border-zinc-800 p-2 rounded text-sm outline-none" onChange={e => setFilters({ ...filters, leader: e.target.value })} value={filters.leader}>
                         <option value="">Todos Líderes</option>
                         {users.filter((u: User) => u.role.includes('Líder') || u.role.includes('Supervisor')).map((u: User) => <option key={u.matricula} value={u.name}>{u.name}</option>)}
@@ -1555,6 +1561,15 @@ const ScrapEditDelete = ({ scraps, users, lines, models, onUpdate, categories, s
                         <option value="">Todos Modelos</option>
                         {models.map((m: string) => <option key={m} value={m}>{m}</option>)}
                     </select>
+                    <select className="bg-white dark:bg-zinc-950 border border-slate-300 dark:border-zinc-800 p-2 rounded text-sm outline-none" onChange={e => setFilters({ ...filters, item: e.target.value })} value={filters.item}>
+                        <option value="">Todos Itens</option>
+                        {Array.from(new Set(filterScraps.map((s: ScrapData) => s.item).filter(Boolean))).sort().map((item: string) => <option key={item} value={item}>{item}</option>)}
+                    </select>
+                    <div className="flex gap-1 items-end">
+                        <Input label="" placeholder="QR Code" value={filters.qrCode} onChange={e => setFilters({ ...filters, qrCode: e.target.value })} onKeyDown={e => e.key === 'Enter' && setFilters({ ...filters, qrCode: e.currentTarget.value })} className="text-sm flex-1" />
+                        {isAndroid && <Button size="sm" onClick={() => { setShowQRCamera(true); }} className="flex-shrink-0" title="Câmera"><QrCode size={16} /></Button>}
+                    </div>
+                    {showQRCamera && <QRStreamReader onScanSuccess={(text) => { setShowQRCamera(false); setFilters({ ...filters, qrCode: text }); }} onClose={() => setShowQRCamera(false)} />}
                     <div className="flex flex-wrap items-center gap-2 w-full md:w-auto">
                         <select className="bg-white dark:bg-zinc-950 border border-slate-300 dark:border-zinc-800 p-2 rounded text-sm outline-none w-full md:w-auto" onChange={e => setFilters({ ...filters, period: e.target.value })} value={filters.period}>
                             <option value="ALL">Todo Período</option>
@@ -2022,8 +2037,10 @@ const NewAdvancedDashboard = ({ scraps, users }: { scraps: ScrapData[], users: U
         specificDate: '',
         specificWeek: '',
         specificMonth: new Date().toISOString().slice(0, 7),
-        specificYear: ''
+        specificYear: '',
+        qrCode: ''
     });
+    const [showQRCamera, setShowQRCamera] = useState(false);
 
     const availableModels = useMemo(() => {
         let modelsSource = scraps;
@@ -2151,13 +2168,13 @@ const NewAdvancedDashboard = ({ scraps, users }: { scraps: ScrapData[], users: U
             </Card>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <Card className="bg-blue-900 text-white border-blue-800">
-                    <p className="text-blue-200 text-xs font-bold uppercase">Valor Total (Filtrado)</p>
-                    <p className="text-3xl font-bold mt-1">{formatCurrency(stats.totalVal)}</p>
+                <Card className="bg-blue-900 border-blue-800">
+                    <p className="text-blue-100 text-xs font-bold uppercase">Valor Total (Filtrado)</p>
+                    <p className="text-3xl font-bold mt-1 text-white">{formatCurrency(stats.totalVal)}</p>
                 </Card>
-                <Card className="bg-slate-900 text-white border-slate-800">
-                    <p className="text-slate-400 text-xs font-bold uppercase">Quantidade (Filtrado)</p>
-                    <p className="text-3xl font-bold mt-1">{stats.totalQty} <span className="text-base font-normal text-slate-500">itens</span></p>
+                <Card className="bg-slate-900 border-slate-800">
+                    <p className="text-slate-300 text-xs font-bold uppercase">Quantidade (Filtrado)</p>
+                    <p className="text-3xl font-bold mt-1 text-white">{stats.totalQty} <span className="text-base font-normal text-slate-400">itens</span></p>
                 </Card>
             </div>
 
@@ -2167,8 +2184,8 @@ const NewAdvancedDashboard = ({ scraps, users }: { scraps: ScrapData[], users: U
                     <div className="space-y-3">
                         {stats.category.map(([name, val]) => (
                             <div key={name} className="flex justify-between items-center text-sm">
-                                <span className={val > 0 ? 'text-slate-700 dark:text-zinc-300' : 'text-slate-400 dark:text-zinc-600'}>{name}</span>
-                                <span className="font-bold">{formatCurrency(val)}</span>
+                                <span className={val > 0 ? 'text-slate-900 dark:text-zinc-100' : 'text-slate-400 dark:text-zinc-600'}>{name}</span>
+                                <span className="font-bold text-slate-800 dark:text-zinc-200">{formatCurrency(val)}</span>
                             </div>
                         ))}
                     </div>
@@ -2178,7 +2195,7 @@ const NewAdvancedDashboard = ({ scraps, users }: { scraps: ScrapData[], users: U
                     <div className="space-y-3">
                         {stats.model.map(([name, val], i) => (
                             <div key={name} className="flex justify-between items-center text-sm">
-                                <span className="text-slate-700 dark:text-zinc-300 whitespace-normal break-words w-2/3">{i + 1}. {name}</span>
+                                <span className="text-slate-900 dark:text-zinc-100 whitespace-normal break-words w-2/3">{i + 1}. {name}</span>
                                 <span className="font-bold text-blue-600 dark:text-blue-400">{formatCurrency(val)}</span>
                             </div>
                         ))}
@@ -2189,13 +2206,14 @@ const NewAdvancedDashboard = ({ scraps, users }: { scraps: ScrapData[], users: U
                     <div className="space-y-3">
                         {stats.line.map(([name, val]) => (
                             <div key={name} className="flex justify-between items-center text-sm">
-                                <span className="text-slate-700 dark:text-zinc-300">{name}</span>
+                                <span className="text-slate-900 dark:text-zinc-100">{name}</span>
                                 <span className="font-bold text-green-600 dark:text-green-400">{formatCurrency(val)}</span>
                             </div>
                         ))}
                     </div>
                 </Card>
             </div>
+            {showQRCamera && <QRStreamReader onScanSuccess={(text) => { setShowQRCamera(false); setFilters({ ...filters, qrCode: text }); }} onClose={() => setShowQRCamera(false)} />}
         </div>
     );
 };
