@@ -92,21 +92,19 @@ export const saveMaterials = async (materials: import('../types').Material[]) =>
 };
 
 export const SCRAP_ITEMS = [
-    'BATERIA SCRAP', 'BATERIA RMA', 'REAR', 'OCTA', 'FRONT', 'PLACA',
-    'CAMERA RW1', 'CAMERA FW1', 'CAMERA RB1',
+    'BATERIA SCRAP', 'BATERIA RMA', 'REAR', 'FRONT', 'PLACA', 'CAMERA',
     'MIUDEZA(S)', 'BAG', 'SIMTRAY', 'CAIXA MASTER', 'CAIXA GIFT', 'TAPE',
     'CABO COAXIAL', 'CABO FLAT', 'BRACKET', 'BACK COVER', 'PARAFUSO',
-    'SUB PBA', 'SPK', 'RCV', 'BLINDAGEM'
+    'SUB PBA', 'SPK', 'RCV'
 ];
 
 export const SCRAP_STATUS = [
-    'QUEBRADO', 'TRINCADO', 'DANIFICADO', 'BATIDO', 'RISCADO',
-    'ALTERADO', 'TRILHA ROMPIDA', 'EXCESSO DE RETRABALHO',
-    'BATERIA REMOVIDA SCRAP', 'BATERIA REMOVIDA RMA'
+    'QUEBRADO', 'DANIFICADO', 'BATIDO', 'RISCADO',
+    'ALTERADO', 'TRILHA ROMPIDA', 'EXCESSO DE RETRABALHO', 'INUTILIZADO', 'RMA', 'IMPUREZA', 'CONECTOR DANIFICADO'
 ];
 
 export const CAUSA_RAIZ_OPTIONS = [
-    'MÁQUINA', 'OPERACIONAL', 'MATERIAL', 'MATERIAL-FORNECEDOR'
+    'MÁQUINA', 'OPERACIONAL', 'MATERIAL', 'MÉTODO'
 ];
 
 export const batchProcessScraps = async (scrapIds: number[], nfNumber: string, userId: string, sentAt: Date) => {

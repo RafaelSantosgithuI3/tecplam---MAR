@@ -43,12 +43,22 @@ interface ScrapModuleProps {
     currentUser: User;
     onBack: () => void;
     initialTab?: Tab;
+    hasTabAccess?: (moduleName: string, tabKey: string) => boolean;
 }
 
 type Tab = 'FORM' | 'PENDING' | 'HISTORY' | 'OPERATIONAL' | 'MANAGEMENT_ADVANCED' | 'EDIT_DELETE' | 'BOX_MOUNT' | 'BOX_IDENTIFIED' | 'NEW_ADVANCED' | 'CONSULTA';
 
-export const ScrapModule: React.FC<ScrapModuleProps> = ({ currentUser, onBack, initialTab }) => {
-    const [activeTab, setActiveTab] = useState<Tab>(initialTab || 'FORM');
+export const ScrapModule: React.FC<ScrapModuleProps> = ({ currentUser, onBack, initialTab, hasTabAccess }) => {
+    const allTabs: Tab[] = ['FORM', 'PENDING', 'HISTORY', 'OPERATIONAL', 'EDIT_DELETE', 'MANAGEMENT_ADVANCED', 'NEW_ADVANCED', 'CONSULTA'];
+    
+    const determineInitialTab = (): Tab => {
+        if (initialTab && (!hasTabAccess || hasTabAccess('SCRAP', initialTab))) return initialTab;
+        if (!hasTabAccess) return 'FORM';
+        const allowed = allTabs.find(t => hasTabAccess('SCRAP', t));
+        return allowed || 'FORM';
+    };
+
+    const [activeTab, setActiveTab] = useState<Tab>(determineInitialTab());
     const [scraps, setScraps] = useState<ScrapData[]>([]);
 
     // Config Data
@@ -126,43 +136,56 @@ export const ScrapModule: React.FC<ScrapModuleProps> = ({ currentUser, onBack, i
                 </div>
 
                 <div className="flex gap-2 overflow-x-auto w-full md:w-auto pb-2 md:pb-0 custom-scrollbar">
-                    <Button variant={activeTab === 'FORM' ? 'primary' : 'ghost'} onClick={() => setActiveTab('FORM')} size="sm">
-                        <Plus size={16} /> Lançar
-                    </Button>
+                    {(!hasTabAccess || hasTabAccess('SCRAP', 'FORM')) && (
+                        <Button variant={activeTab === 'FORM' ? 'primary' : 'ghost'} onClick={() => setActiveTab('FORM')} size="sm">
+                            <Plus size={16} /> Lançar
+                        </Button>
+                    )}
 
                     {/* Aba Pendências: Restrita */}
-                    {(isAdmin || ['líder', 'coordenador', 'supervisor', 'ti', 'admin'].some(r => currentUser.role.toLowerCase().includes(r))) && (
+                    {(!hasTabAccess || hasTabAccess('SCRAP', 'PENDING')) && (isAdmin || ['líder', 'coordenador', 'supervisor', 'ti', 'admin'].some(r => currentUser.role.toLowerCase().includes(r))) && (
                         <Button variant={activeTab === 'PENDING' ? 'primary' : 'ghost'} onClick={() => setActiveTab('PENDING')} size="sm">
                             <AlertTriangle size={16} /> Pendências
                         </Button>
                     )}
 
-                    <Button variant={activeTab === 'HISTORY' ? 'primary' : 'ghost'} onClick={() => setActiveTab('HISTORY')} size="sm">
-                        <History size={16} /> Histórico (Pessoal)
-                    </Button>
+                    {(!hasTabAccess || hasTabAccess('SCRAP', 'HISTORY')) && (
+                        <Button variant={activeTab === 'HISTORY' ? 'primary' : 'ghost'} onClick={() => setActiveTab('HISTORY')} size="sm">
+                            <History size={16} /> Histórico (Pessoal)
+                        </Button>
+                    )}
 
-                    <Button variant={activeTab === 'OPERATIONAL' ? 'primary' : 'ghost'} onClick={() => setActiveTab('OPERATIONAL')} size="sm">
-                        <BarChart3 size={16} /> Operacional
-                    </Button>
+                    {(!hasTabAccess || hasTabAccess('SCRAP', 'OPERATIONAL')) && (
+                        <Button variant={activeTab === 'OPERATIONAL' ? 'primary' : 'ghost'} onClick={() => setActiveTab('OPERATIONAL')} size="sm">
+                            <BarChart3 size={16} /> Operacional
+                        </Button>
+                    )}
 
-                    {canEditDelete && (
+                    {(!hasTabAccess || hasTabAccess('SCRAP', 'EDIT_DELETE')) && canEditDelete && (
                         <Button variant={activeTab === 'EDIT_DELETE' ? 'primary' : 'ghost'} onClick={() => setActiveTab('EDIT_DELETE')} size="sm">
                             <Settings size={16} /> Edição/Exclusão
                         </Button>
                     )}
 
                     {/* Aba Rank Geral (Antiga Gestão Avançada) */}
-                    <Button variant={activeTab === 'MANAGEMENT_ADVANCED' ? 'primary' : 'ghost'} onClick={() => setActiveTab('MANAGEMENT_ADVANCED')} size="sm">
-                        <Shield size={16} /> Rank Geral
-                    </Button>
+                    {(!hasTabAccess || hasTabAccess('SCRAP', 'MANAGEMENT_ADVANCED')) && (
+                        <Button variant={activeTab === 'MANAGEMENT_ADVANCED' ? 'primary' : 'ghost'} onClick={() => setActiveTab('MANAGEMENT_ADVANCED')} size="sm">
+                            <Shield size={16} /> Rank Geral
+                        </Button>
+                    )}
 
                     {/* Nova Aba Gestão Avançada (Copiada do Controle de Scrap) */}
-                    <Button variant={activeTab === 'NEW_ADVANCED' ? 'primary' : 'ghost'} onClick={() => setActiveTab('NEW_ADVANCED')} size="sm">
-                        <LayoutDashboard size={16} /> Gestão Avançada
-                    </Button>
-                    <Button variant={activeTab === 'CONSULTA' ? 'primary' : 'ghost'} onClick={() => setActiveTab('CONSULTA')} size="sm">
-                        <Search size={16} /> Consulta
-                    </Button>
+                    {(!hasTabAccess || hasTabAccess('SCRAP', 'NEW_ADVANCED')) && (
+                        <Button variant={activeTab === 'NEW_ADVANCED' ? 'primary' : 'ghost'} onClick={() => setActiveTab('NEW_ADVANCED')} size="sm">
+                            <LayoutDashboard size={16} /> Gestão Avançada
+                        </Button>
+                    )}
+                    
+                    {(!hasTabAccess || hasTabAccess('SCRAP', 'CONSULTA')) && (
+                        <Button variant={activeTab === 'CONSULTA' ? 'primary' : 'ghost'} onClick={() => setActiveTab('CONSULTA')} size="sm">
+                            <Search size={16} /> Consulta
+                        </Button>
+                    )}
                 </div>
             </div>
 
@@ -1133,7 +1156,9 @@ export const ScrapOperational = ({ scraps, users, lines, models }: any) => {
                             <th className="p-3 text-left">Líder</th>
                             <th className="p-3 text-left">Modelo</th>
                             <th className="p-3 text-left">Linha</th>
+                            <th className="p-3 text-left">Código</th>
                             <th className="p-3 text-left">Item</th>
+                            <th className="p-3 text-left">Qtd</th>
                             <th className="p-3 text-right">Valor</th>
                         </tr>
                     </thead>
@@ -1144,7 +1169,9 @@ export const ScrapOperational = ({ scraps, users, lines, models }: any) => {
                                 <td className="p-3 text-slate-700 dark:text-zinc-300">{s.leaderName}</td>
                                 <td className="p-3 text-slate-700 dark:text-zinc-300">{s.model}</td>
                                 <td className="p-3 text-slate-700 dark:text-zinc-300">{s.line}</td>
+                                <td className="p-3 text-slate-700 dark:text-zinc-300 font-mono">{s.code || '-'}</td>
                                 <td className="p-3 text-slate-700 dark:text-zinc-300">{s.item}</td>
+                                <td className="p-3 text-slate-700 dark:text-zinc-300">{s.qty}</td>
                                 <td className="p-3 text-right font-mono text-slate-700 dark:text-zinc-300">{formatCurrency(s.totalValue)}</td>
                             </tr>
                         ))}
@@ -1171,6 +1198,11 @@ export const ScrapManagementAdvanced = ({ scraps }: any) => {
         specificMonth: '',
         specificYear: ''
     });
+
+    const [selectedRanking, setSelectedRanking] = useState<{ type: string, name: string, items: ScrapData[] } | null>(null);
+    const [selectedItem, setSelectedItem] = useState<ScrapData | null>(null);
+    const [groupPreviewModal, setGroupPreviewModal] = useState<{ isOpen: boolean; type: 'shift' | 'line' | 'model' | 'leader' | 'pending'; key: string; scraps: ScrapData[] }>({ isOpen: false, type: 'shift', key: '', scraps: [] });
+    const [detailModal, setDetailModal] = useState<{ isOpen: boolean; scrap: ScrapData | null }>({ isOpen: false, scrap: null });
 
     const filtered = useMemo(() => {
         let res = [...scraps];
@@ -1235,6 +1267,26 @@ export const ScrapManagementAdvanced = ({ scraps }: any) => {
         };
     }, [filtered]);
 
+    const openGroupPreview = (type: 'shift' | 'line' | 'model' | 'leader' | 'pending', key: string) => {
+        let groupScraps: ScrapData[] = [];
+        if (type === 'shift') {
+            groupScraps = filtered.filter(s => s.shift == key);
+        } else if (type === 'line') {
+            groupScraps = filtered.filter(s => s.line === key);
+        } else if (type === 'model') {
+            groupScraps = filtered.filter(s => s.model === key);
+        } else if (type === 'leader') {
+            groupScraps = filtered.filter(s => s.leaderName === key);
+        } else if (type === 'pending') {
+            groupScraps = filtered.filter(s => s.leaderName === key && !s.countermeasure);
+        }
+        setGroupPreviewModal({ isOpen: true, type, key, scraps: groupScraps });
+    };
+
+    const openDetailModal = (scrap: ScrapData) => {
+        setDetailModal({ isOpen: true, scrap });
+    };
+
     return (
         <div className="space-y-6">
             <Card>
@@ -1270,34 +1322,34 @@ export const ScrapManagementAdvanced = ({ scraps }: any) => {
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                 {/* Reordered: Shift -> Line -> Model -> Leaders -> Pending */}
                 <Card>
-                    <h3 className="font-bold text-slate-900 dark:text-zinc-100 mb-4 uppercase text-sm">Ranking Turnos (R$)</h3>
+                    <h3 className="font-bold text-slate-900 dark:text-white mb-4 uppercase text-sm">Ranking Turnos (R$)</h3>
                     <div className="space-y-2">
                         {rankings.shift.map(([name, val], i) => (
-                            <div key={name} className="flex justify-between items-center p-2 bg-white dark:bg-zinc-900 rounded border border-slate-200 dark:border-zinc-800">
-                                <span className="text-sm text-slate-500 dark:text-zinc-400">Turno {name}</span>
-                                <span className="font-mono font-bold !text-slate-900 dark:!text-zinc-100">{formatCurrency(val)}</span>
+                            <div key={name} className="flex justify-between items-center text-sm cursor-pointer hover:bg-slate-100 dark:hover:bg-zinc-800 p-2 rounded transition-colors" onClick={() => openGroupPreview('shift', name)}>
+                                <span className="text-slate-900 dark:text-zinc-100">Turno {name}</span>
+                                <span className="font-bold text-slate-800 dark:text-zinc-200">{formatCurrency(val)}</span>
                             </div>
                         ))}
                     </div>
                 </Card>
                 <Card>
-                    <h3 className="font-bold text-slate-900 dark:text-zinc-100 mb-4 uppercase text-sm">Ranking Linhas (R$)</h3>
+                    <h3 className="font-bold text-slate-900 dark:text-white mb-4 uppercase text-sm">Ranking Linhas (R$)</h3>
                     <div className="space-y-2">
                         {rankings.line.map(([name, val], i) => (
-                            <div key={name} className="flex justify-between items-center p-2 bg-white dark:bg-zinc-900 rounded border border-slate-200 dark:border-zinc-800">
-                                <span className="text-sm text-slate-500 dark:text-zinc-400">{name}</span>
-                                <span className="font-mono font-bold !text-slate-900 dark:!text-zinc-100">{formatCurrency(val)}</span>
+                            <div key={name} className="flex justify-between items-center text-sm cursor-pointer hover:bg-slate-100 dark:hover:bg-zinc-800 p-2 rounded transition-colors" onClick={() => openGroupPreview('line', name)}>
+                                <span className="text-slate-900 dark:text-zinc-100">{name}</span>
+                                <span className="font-bold text-slate-800 dark:text-zinc-200">{formatCurrency(val)}</span>
                             </div>
                         ))}
                     </div>
                 </Card>
                 <Card>
-                    <h3 className="font-bold text-slate-900 dark:text-zinc-100 mb-4 uppercase text-sm">Ranking Modelos (R$)</h3>
+                    <h3 className="font-bold text-slate-900 dark:text-white mb-4 uppercase text-sm">Ranking Modelos (R$)</h3>
                     <div className="space-y-2">
                         {rankings.model.slice(0, 10).map(([name, val], i) => (
-                            <div key={name} className="flex justify-between items-center p-2 bg-white dark:bg-zinc-900 rounded border border-slate-200 dark:border-zinc-800">
-                                <span className="text-sm truncate max-w-[150px] text-slate-500 dark:text-zinc-400">{name}</span>
-                                <span className="font-mono font-bold !text-slate-900 dark:!text-zinc-100">{formatCurrency(val)}</span>
+                            <div key={name} className="flex justify-between items-center text-sm cursor-pointer hover:bg-slate-100 dark:hover:bg-zinc-800 p-2 rounded transition-colors" onClick={() => openGroupPreview('model', name)}>
+                                <span className="text-sm truncate max-w-[150px] text-slate-900 dark:text-zinc-100">{name}</span>
+                                <span className="font-mono font-bold text-slate-800 dark:text-zinc-200">{formatCurrency(val)}</span>
                             </div>
                         ))}
                     </div>
@@ -1305,28 +1357,126 @@ export const ScrapManagementAdvanced = ({ scraps }: any) => {
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <Card>
-                    <h3 className="font-bold text-slate-900 dark:text-zinc-100 mb-4 uppercase text-sm">Ranking Líderes (R$)</h3>
+                    <h3 className="font-bold text-slate-900 dark:text-white mb-4 uppercase text-sm">Ranking Líderes (R$)</h3>
                     <div className="space-y-2">
                         {rankings.leader.slice(0, 10).map(([name, val], i) => (
-                            <div key={name} className="flex justify-between items-center p-2 bg-white dark:bg-zinc-900 rounded border border-slate-200 dark:border-zinc-800">
+                            <div key={name} className="flex justify-between items-center text-sm cursor-pointer hover:bg-slate-100 dark:hover:bg-zinc-800 p-2 rounded transition-colors" onClick={() => openGroupPreview('leader', name)}>
                                 <span className="text-sm text-slate-500 dark:text-zinc-400"><span className="font-bold text-slate-400 dark:text-zinc-500 mr-2">#{i + 1}</span> {name}</span>
-                                <span className="font-mono font-bold !text-slate-900 dark:!text-zinc-100">{formatCurrency(val)}</span>
+                                <span className="font-mono font-bold text-slate-800 dark:text-zinc-200">{formatCurrency(val)}</span>
                             </div>
                         ))}
                     </div>
                 </Card>
                 <Card>
-                    <h3 className="font-bold text-slate-900 dark:text-zinc-100 mb-4 uppercase text-sm">Pendências (Qtd)</h3>
+                    <h3 className="font-bold text-slate-900 dark:text-white mb-4 uppercase text-sm">Pendências (Qtd)</h3>
                     <div className="space-y-2">
                         {rankings.pending.slice(0, 10).map(([name, val], i) => (
-                            <div key={name} className="flex justify-between items-center p-2 bg-white dark:bg-zinc-900 rounded border border-slate-200 dark:border-zinc-800">
-                                <span className="text-sm truncate max-w-[150px] text-slate-500 dark:text-zinc-400">{name}</span>
-                                <span className="font-mono font-bold !text-slate-900 dark:!text-zinc-100">{val}</span>
+                            <div key={name} className="flex justify-between items-center text-sm cursor-pointer hover:bg-slate-100 dark:hover:bg-zinc-800 p-2 rounded transition-colors" onClick={() => openGroupPreview('pending', name)}>
+                                <span className="text-sm truncate max-w-[150px] text-slate-900 dark:text-zinc-100">{name}</span>
+                                <span className="font-mono font-bold text-slate-800 dark:text-zinc-200">{val}</span>
                             </div>
                         ))}
                     </div>
                 </Card>
             </div>
+
+            <RankingPreviewModal
+                isOpen={!!selectedRanking}
+                ranking={selectedRanking}
+                onClose={() => setSelectedRanking(null)}
+                onSelectItem={setSelectedItem}
+            />
+
+            <ScrapDetailModal
+                isOpen={!!selectedItem}
+                scrap={selectedItem}
+                users={[]} // Assuming no users needed here
+                onClose={() => setSelectedItem(null)}
+            />
+
+            {/* Group Preview Modal */}
+            {groupPreviewModal.isOpen && (
+                <div className="fixed inset-0 bg-black/80 flex items-center justify-center p-4 z-50 backdrop-blur-sm">
+                    <Card className="max-w-6xl w-full bg-white dark:bg-zinc-900 border-slate-200 dark:border-zinc-700 max-h-[90vh] overflow-y-auto custom-scrollbar shadow-2xl">
+                        <div className="flex justify-between items-start mb-6 border-b border-slate-100 dark:border-zinc-800 pb-4">
+                            <div>
+                                <h3 className="font-bold text-xl text-slate-900 dark:text-white">Preview de Grupo</h3>
+                                <p className="text-sm text-slate-600 dark:text-zinc-400 mt-1">
+                                    {groupPreviewModal.type === 'shift' ? 'Turno' : groupPreviewModal.type === 'line' ? 'Linha' : groupPreviewModal.type === 'model' ? 'Modelo' : groupPreviewModal.type === 'leader' ? 'Líder' : 'Pendências'}: {groupPreviewModal.key}
+                                </p>
+                            </div>
+                            <button onClick={() => setGroupPreviewModal({ ...groupPreviewModal, isOpen: false })} className="p-1 hover:bg-slate-100 dark:hover:bg-zinc-800 rounded-full transition-colors">
+                                <X size={24} className="text-slate-500 dark:text-zinc-400" />
+                            </button>
+                        </div>
+
+                        <div className="space-y-4">
+                            {groupPreviewModal.scraps.map((scrap) => (
+                                <div key={scrap.id} className="border border-slate-200 dark:border-zinc-700 rounded-lg p-4 hover:bg-slate-50 dark:hover:bg-zinc-800 cursor-pointer transition-colors" onClick={() => openDetailModal(scrap)}>
+                                    <div className="grid grid-cols-1 md:grid-cols-4 gap-4 text-sm">
+                                        <div>
+                                            <span className="font-semibold text-slate-600 dark:text-zinc-400">ID:</span> {scrap.id}
+                                        </div>
+                                        <div>
+                                            <span className="font-semibold text-slate-600 dark:text-zinc-400">Data:</span> {formatDateDisplay(scrap.date)}
+                                        </div>
+                                        <div>
+                                            <span className="font-semibold text-slate-600 dark:text-zinc-400">Item:</span> {scrap.item}
+                                        </div>
+                                        <div>
+                                            <span className="font-semibold text-slate-600 dark:text-zinc-400">Valor:</span> {formatCurrency(scrap.totalValue)}
+                                        </div>
+                                        <div className="md:col-span-2">
+                                            <span className="font-semibold text-slate-600 dark:text-zinc-400">Descrição:</span> {scrap.description || '-'}
+                                        </div>
+                                        <div>
+                                            <span className="font-semibold text-slate-600 dark:text-zinc-400">Linha:</span> {scrap.line}
+                                        </div>
+                                        <div>
+                                            <span className="font-semibold text-slate-600 dark:text-zinc-400">Status:</span> {scrap.status}
+                                        </div>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    </Card>
+                </div>
+            )}
+
+            {/* Detail Modal */}
+            <ScrapDetailModal
+                isOpen={detailModal.isOpen}
+                scrap={detailModal.scrap}
+                users={[]}
+                onClose={() => setDetailModal({ isOpen: false, scrap: null })}
+            />
+        </div>
+    );
+};
+
+// --- RANKING PREVIEW MODAL ---
+
+const RankingPreviewModal = ({ isOpen, ranking, onClose, onSelectItem }: { isOpen: boolean, ranking: { type: string, name: string, items: ScrapData[] } | null, onClose: () => void, onSelectItem: (item: ScrapData) => void }) => {
+    if (!isOpen || !ranking) return null;
+
+    return (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={onClose}>
+            <Card className="w-full max-w-4xl max-h-[80vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+                <div className="flex justify-between items-center mb-4">
+                    <h3 className="font-bold text-lg">Itens de {ranking.type}: {ranking.name}</h3>
+                    <button onClick={onClose} className="text-slate-400 hover:text-slate-700 dark:hover:text-zinc-200">✕</button>
+                </div>
+                <div className="space-y-2">
+                    {ranking.items.map(item => (
+                        <div key={item.id} className="flex justify-between items-center p-3 bg-slate-50 dark:bg-zinc-900 rounded border cursor-pointer hover:bg-blue-50 dark:hover:bg-blue-900/10" onClick={() => onSelectItem(item)}>
+                            <div>
+                                <span className="font-bold">{item.item}</span> - {item.model} - Qtd: {item.qty} - Valor: {formatCurrency(item.totalValue)}
+                            </div>
+                            <Eye size={16} />
+                        </div>
+                    ))}
+                </div>
+            </Card>
         </div>
     );
 };
@@ -2041,6 +2191,8 @@ const NewAdvancedDashboard = ({ scraps, users }: { scraps: ScrapData[], users: U
         qrCode: ''
     });
     const [showQRCamera, setShowQRCamera] = useState(false);
+    const [groupPreviewModal, setGroupPreviewModal] = useState<{ isOpen: boolean; type: 'category' | 'model' | 'line'; key: string; scraps: ScrapData[] }>({ isOpen: false, type: 'category', key: '', scraps: [] });
+    const [detailModal, setDetailModal] = useState<{ isOpen: boolean; scrap: ScrapData | null }>({ isOpen: false, scrap: null });
 
     const availableModels = useMemo(() => {
         let modelsSource = scraps;
@@ -2115,6 +2267,30 @@ const NewAdvancedDashboard = ({ scraps, users }: { scraps: ScrapData[], users: U
         };
     }, [filtered]);
 
+    const openGroupPreview = (type: 'category' | 'model' | 'line', key: string) => {
+        let groupScraps: ScrapData[] = [];
+        if (type === 'category') {
+            const specificItems = ['FRONT', 'REAR', 'OCTA', 'CAMERA', 'BATERIA RMA', 'BATERIA SCRAP', 'PLACA'];
+            groupScraps = filtered.filter(s => {
+                const itemUpper = (s.item || '').toUpperCase();
+                if (key === 'MIUDEZAS') {
+                    return !specificItems.some(i => itemUpper.includes(i));
+                } else {
+                    return itemUpper.includes(key);
+                }
+            });
+        } else if (type === 'model') {
+            groupScraps = filtered.filter(s => s.model === key);
+        } else if (type === 'line') {
+            groupScraps = filtered.filter(s => s.line === key);
+        }
+        setGroupPreviewModal({ isOpen: true, type, key, scraps: groupScraps });
+    };
+
+    const openDetailModal = (scrap: ScrapData) => {
+        setDetailModal({ isOpen: true, scrap });
+    };
+
     return (
         <div className="space-y-6">
             <Card>
@@ -2183,7 +2359,7 @@ const NewAdvancedDashboard = ({ scraps, users }: { scraps: ScrapData[], users: U
                     <h3 className="font-bold text-slate-900 dark:text-white mb-4 flex items-center gap-2"><LayoutDashboard size={16} className="text-purple-500" /> Por Categoria</h3>
                     <div className="space-y-3">
                         {stats.category.map(([name, val]) => (
-                            <div key={name} className="flex justify-between items-center text-sm">
+                            <div key={name} className="flex justify-between items-center text-sm cursor-pointer hover:bg-slate-100 dark:hover:bg-zinc-800 p-2 rounded transition-colors" onClick={() => openGroupPreview('category', name)}>
                                 <span className={val > 0 ? 'text-slate-900 dark:text-zinc-100' : 'text-slate-400 dark:text-zinc-600'}>{name}</span>
                                 <span className="font-bold text-slate-800 dark:text-zinc-200">{formatCurrency(val)}</span>
                             </div>
@@ -2194,7 +2370,7 @@ const NewAdvancedDashboard = ({ scraps, users }: { scraps: ScrapData[], users: U
                     <h3 className="font-bold text-slate-900 dark:text-white mb-4 flex items-center gap-2"><Truck size={16} className="text-blue-500" /> Top Modelos</h3>
                     <div className="space-y-3">
                         {stats.model.map(([name, val], i) => (
-                            <div key={name} className="flex justify-between items-center text-sm">
+                            <div key={name} className="flex justify-between items-center text-sm cursor-pointer hover:bg-slate-100 dark:hover:bg-zinc-800 p-2 rounded transition-colors" onClick={() => openGroupPreview('model', name)}>
                                 <span className="text-slate-900 dark:text-zinc-100 whitespace-normal break-words w-2/3">{i + 1}. {name}</span>
                                 <span className="font-bold text-blue-600 dark:text-blue-400">{formatCurrency(val)}</span>
                             </div>
@@ -2205,7 +2381,7 @@ const NewAdvancedDashboard = ({ scraps, users }: { scraps: ScrapData[], users: U
                     <h3 className="font-bold text-slate-900 dark:text-white mb-4 flex items-center gap-2"><Filter size={16} className="text-green-500" /> Por Linha</h3>
                     <div className="space-y-3">
                         {stats.line.map(([name, val]) => (
-                            <div key={name} className="flex justify-between items-center text-sm">
+                            <div key={name} className="flex justify-between items-center text-sm cursor-pointer hover:bg-slate-100 dark:hover:bg-zinc-800 p-2 rounded transition-colors" onClick={() => openGroupPreview('line', name)}>
                                 <span className="text-slate-900 dark:text-zinc-100">{name}</span>
                                 <span className="font-bold text-green-600 dark:text-green-400">{formatCurrency(val)}</span>
                             </div>
@@ -2214,6 +2390,63 @@ const NewAdvancedDashboard = ({ scraps, users }: { scraps: ScrapData[], users: U
                 </Card>
             </div>
             {showQRCamera && <QRStreamReader onScanSuccess={(text) => { setShowQRCamera(false); setFilters({ ...filters, qrCode: text }); }} onClose={() => setShowQRCamera(false)} />}
+
+            {/* Group Preview Modal */}
+            {groupPreviewModal.isOpen && (
+                <div className="fixed inset-0 bg-black/80 flex items-center justify-center p-4 z-50 backdrop-blur-sm">
+                    <Card className="max-w-6xl w-full bg-white dark:bg-zinc-900 border-slate-200 dark:border-zinc-700 max-h-[90vh] overflow-y-auto custom-scrollbar shadow-2xl">
+                        <div className="flex justify-between items-start mb-6 border-b border-slate-100 dark:border-zinc-800 pb-4">
+                            <div>
+                                <h3 className="font-bold text-xl text-slate-900 dark:text-white">Preview de Grupo</h3>
+                                <p className="text-sm text-slate-600 dark:text-zinc-400 mt-1">
+                                    {groupPreviewModal.type === 'category' ? 'Categoria' : groupPreviewModal.type === 'model' ? 'Modelo' : 'Linha'}: {groupPreviewModal.key}
+                                </p>
+                            </div>
+                            <button onClick={() => setGroupPreviewModal({ ...groupPreviewModal, isOpen: false })} className="p-1 hover:bg-slate-100 dark:hover:bg-zinc-800 rounded-full transition-colors">
+                                <X size={24} className="text-slate-500 dark:text-zinc-400" />
+                            </button>
+                        </div>
+
+                        <div className="space-y-4">
+                            {groupPreviewModal.scraps.map((scrap) => (
+                                <div key={scrap.id} className="border border-slate-200 dark:border-zinc-700 rounded-lg p-4 hover:bg-slate-50 dark:hover:bg-zinc-800 cursor-pointer transition-colors" onClick={() => openDetailModal(scrap)}>
+                                    <div className="grid grid-cols-1 md:grid-cols-4 gap-4 text-sm">
+                                        <div>
+                                            <span className="font-semibold text-slate-600 dark:text-zinc-400">ID:</span> {scrap.id}
+                                        </div>
+                                        <div>
+                                            <span className="font-semibold text-slate-600 dark:text-zinc-400">Data:</span> {formatDateDisplay(scrap.date)}
+                                        </div>
+                                        <div>
+                                            <span className="font-semibold text-slate-600 dark:text-zinc-400">Item:</span> {scrap.item}
+                                        </div>
+                                        <div>
+                                            <span className="font-semibold text-slate-600 dark:text-zinc-400">Valor:</span> {formatCurrency(scrap.totalValue)}
+                                        </div>
+                                        <div className="md:col-span-2">
+                                            <span className="font-semibold text-slate-600 dark:text-zinc-400">Descrição:</span> {scrap.description || '-'}
+                                        </div>
+                                        <div>
+                                            <span className="font-semibold text-slate-600 dark:text-zinc-400">Linha:</span> {scrap.line}
+                                        </div>
+                                        <div>
+                                            <span className="font-semibold text-slate-600 dark:text-zinc-400">Status:</span> {scrap.status}
+                                        </div>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    </Card>
+                </div>
+            )}
+
+            {/* Detail Modal */}
+            <ScrapDetailModal
+                isOpen={detailModal.isOpen}
+                scrap={detailModal.scrap}
+                users={users}
+                onClose={() => setDetailModal({ isOpen: false, scrap: null })}
+            />
         </div>
     );
 };

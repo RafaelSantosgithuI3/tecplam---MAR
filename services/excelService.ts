@@ -14,6 +14,31 @@ const getWeekNumber = (d: Date) => {
     return weekNo;
 }
 
+export const exportEmployeeTemplate = async () => {
+    const workbook = new ExcelJS.Workbook();
+    const sheet = workbook.addWorksheet('Cadastro');
+
+    sheet.columns = [
+        { header: 'Matrícula', key: 'matricula', width: 15 },
+        { header: 'Nome', key: 'nome', width: 30 },
+        { header: 'Função', key: 'funcao', width: 25 },
+        { header: 'Turno', key: 'turno', width: 15 },
+        { header: 'Líder', key: 'lider', width: 25 },
+        { header: 'Setor', key: 'setor', width: 20 },
+        { header: 'IDL-ST', key: 'idlst', width: 15 },
+        { header: 'Tipo', key: 'tipo', width: 15 }
+    ];
+
+    const headerRow = sheet.getRow(1);
+    headerRow.font = { bold: true, color: { argb: 'FFFFFFFF' } };
+    headerRow.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF2563EB' } };
+    headerRow.alignment = { horizontal: 'center' };
+
+    const buffer = await workbook.xlsx.writeBuffer();
+    const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+    saveAs(blob, 'Template_Cadastro_Funcionarios.xlsx');
+};
+
 const loadTemplate = async (): Promise<ExcelJS.Workbook> => {
     const workbook = new ExcelJS.Workbook();
     try {

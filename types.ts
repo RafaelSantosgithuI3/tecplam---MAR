@@ -122,8 +122,111 @@ export interface MeetingLog {
 export interface Permission {
   role: string;
   module: 'CHECKLIST' | 'MEETING' | 'MAINTENANCE' | 'AUDIT' | 'ADMIN' | 'LINE_STOP' | 'MANAGEMENT' | 'PEOPLE_MANAGEMENT' | 'PEOPLE_MANAGEMENT_MANAGERS' | 'SCRAP' | 'IQC' | 'PREPARATION';
+  tab?: string | null;
   allowed: boolean;
 }
+
+// Mapeamento Módulo -> Abas
+export const MODULE_TABS: Record<string, { key: string; label: string }[]> = {
+  CHECKLIST: [
+    { key: 'MENU', label: 'Menu' },
+    { key: 'FORM', label: 'Formulário' },
+  ],
+  LINE_STOP: [
+    { key: 'NEW', label: 'Nova Parada' },
+    { key: 'PENDING', label: 'Pendentes' },
+    { key: 'UPLOAD', label: 'Upload' },
+    { key: 'HISTORY', label: 'Histórico' },
+  ],
+  MEETING: [
+    { key: 'FORM', label: 'Nova Reunião' },
+    { key: 'HISTORY', label: 'Histórico' },
+  ],
+  MAINTENANCE: [
+    { key: 'QR', label: 'Leitura QR' },
+    { key: 'FORM', label: 'Formulário' },
+  ],
+  AUDIT: [
+    { key: 'LEADER_HISTORY', label: 'Histórico Líder' },
+    { key: 'MAINTENANCE_HISTORY', label: 'Histórico Manutenção' },
+    { key: 'LEADER_EDITOR', label: 'Editor Líder' },
+    { key: 'MAINTENANCE_EDITOR', label: 'Editor Manutenção' },
+    { key: 'LEADERS', label: 'Líderes' },
+    { key: 'LINES', label: 'Linhas' },
+    { key: 'MAINTENANCE_MATRIX', label: 'Matriz Manutenção' },
+  ],
+  ADMIN: [
+    { key: 'USERS', label: 'Usuários' },
+    { key: 'PERMISSIONS', label: 'Permissões' },
+    { key: 'RECOVERY', label: 'Solicitações' },
+  ],
+  MANAGEMENT: [
+    { key: 'LINES', label: 'Linhas' },
+    { key: 'ROLES', label: 'Cargos' },
+    { key: 'MODELS', label: 'Modelos' },
+    { key: 'STATIONS', label: 'Estações' },
+    { key: 'STATIONS_LAYOUT', label: 'Layout Estações' },
+    { key: 'MATERIALS', label: 'Materiais' },
+    { key: 'DESLIGAMENTO', label: 'Desligamento' },
+  ],
+  PEOPLE_MANAGEMENT: [
+    { key: 'CADASTRO', label: 'Cadastro' },
+    { key: 'CONSULTA', label: 'Consulta' },
+    { key: 'PRESENCA', label: 'Presença' },
+    { key: 'LAYOUT', label: 'Layout' },
+    { key: 'LUVAS', label: 'Luvas' },
+    { key: 'EDICAO', label: 'Edição' },
+  ],
+  PEOPLE_MANAGEMENT_MANAGERS: [
+    { key: 'CADASTRO', label: 'Cadastro' },
+    { key: 'CONSULTA', label: 'Consulta' },
+    { key: 'PRESENCA', label: 'Presença' },
+    { key: 'LAYOUT', label: 'Layout' },
+    { key: 'LUVAS', label: 'Luvas' },
+    { key: 'EDICAO', label: 'Edição' },
+  ],
+  SCRAP: [
+    { key: 'FORM', label: 'Formulário' },
+    { key: 'PENDING', label: 'Pendentes' },
+    { key: 'HISTORY', label: 'Histórico' },
+    { key: 'OPERATIONAL', label: 'Operacional' },
+    { key: 'MANAGEMENT_ADVANCED', label: 'Gestão Avançada' },
+    { key: 'NEW_ADVANCED', label: 'Dashboard Detalhado' },
+    { key: 'CONSULTA', label: 'Consulta' },
+    { key: 'EDIT_DELETE', label: 'Editar/Excluir' },
+    { key: 'BOX_MOUNT', label: 'Montar Caixa' },
+    { key: 'BOX_IDENTIFIED', label: 'Caixas Identificadas' },
+  ],
+  IQC: [
+    { key: 'MONITORING', label: 'Monitoramento' },
+    { key: 'BATCH_PROCESS', label: 'Lote/Processo'  },
+    { key: 'HISTORY_SENT', label: 'Histórico Envio' },
+    { key: 'DASHBOARD', label: 'Dashboard' },
+    { key: 'BOX_MOUNT', label: 'Montar Caixa' },
+    { key: 'BOX_IDENTIFIED', label: 'Caixas Identificadas' },
+    { key: 'CONSULTA', label: 'Consulta' },
+    { key: 'MATERIALS', label: 'Materiais' },
+  ],
+  PREPARATION: [
+    { key: 'LAUNCH', label: 'Lançamento' },
+    { key: 'VIEW', label: 'Consulta' },
+  ],
+};
+
+export const MODULE_NAMES: Record<string, string> = {
+  CHECKLIST: 'Checklist',
+  LINE_STOP: 'Parada de Linha',
+  MEETING: 'Ata de Reunião',
+  MAINTENANCE: 'Manutenção',
+  AUDIT: 'Auditoria Escalonada',
+  ADMIN: 'Administração',
+  MANAGEMENT: 'Gestão Central',
+  PEOPLE_MANAGEMENT: 'Gestão de Pessoas (Líder)',
+  PEOPLE_MANAGEMENT_MANAGERS: 'Gestão de Pessoas (Gestor)',
+  SCRAP: 'Scrap & Refugo',
+  IQC: 'IQC & Logística',
+  PREPARATION: 'Preparação de Linhas'
+};
 
 export interface ScrapData {
   id?: string;

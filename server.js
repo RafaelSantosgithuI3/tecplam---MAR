@@ -641,6 +641,7 @@ app.get('/api/config/permissions', async (req, res) => {
         res.json(perms.map(p => ({
             role: p.role,
             module: p.module,
+            tab: p.tab || null,
             allowed: p.allowed === 1
         })));
     } catch (e) { res.status(500).json({ error: e.message }); }
@@ -656,6 +657,7 @@ app.post('/api/config/permissions', async (req, res) => {
                     data: {
                         role: p.role,
                         module: p.module,
+                        tab: p.tab || null,
                         allowed: p.allowed ? 1 : 0
                     }
                 });
@@ -794,9 +796,9 @@ app.get('/api/boxes', async (req, res) => {
 
 app.post('/api/boxes', async (req, res) => {
     try {
-        const { type } = req.body;
+        const { type, plant } = req.body;
         const newBox = await prisma.scrapBox.create({
-            data: { type, status: 'OPEN' },
+            data: { type, plant, status: 'OPEN' },
             include: { scraps: true }
         });
         res.json(newBox);
@@ -1434,6 +1436,25 @@ app.post('/api/employees', async (req, res) => {
     }
 });
 
+app.post('/api/employees/upload-photo/:matricula', async (req, res) => {
+    try {
+        const matricula = String(req.params.matricula).trim().toUpperCase();
+        const { photo } = req.body;
+        
+        const employee = await prisma.employee.findUnique({ where: { matricula } });
+        if (!employee) return res.status(404).json({ error: "Matrícula não encontrada" });
+
+        await prisma.employee.update({
+            where: { matricula },
+            data: { photo }
+        });
+        
+        res.json({ message: "Foto atualizada com sucesso" });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
 app.get('/api/employees/search/:matricula', async (req, res) => {
     try {
         const queryMatricula = String(req.params.matricula).trim().toUpperCase();
@@ -1858,11 +1879,11 @@ loadScrapCache().then(() => {
 
     app.post('/api/boxes', async (req, res) => {
         try {
-            const { type } = req.body;
+            const { type, plant } = req.body;
             if (!type) return res.status(400).json({ error: "Tipo de caixa é obrigatório." });
 
             const newBox = await prisma.scrapBox.create({
-                data: { type, status: 'OPEN' }
+                data: { type, plant, status: 'OPEN' }
             });
             res.json(newBox);
         } catch (e) {

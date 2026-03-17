@@ -12,12 +12,19 @@ import { exportLeaderLayout, exportModelLayout, exportGloveControl } from '../se
 interface PeopleManagementModuleProps {
     onBack: () => void;
     currentUser: any;
+    hasTabAccess?: (moduleName: string, tabKey: string) => boolean;
 }
 
 type Tab = 'CADASTRO' | 'CONSULTA' | 'PRESENCA' | 'LAYOUT' | 'LUVAS' | 'EDICAO';
 
-export const PeopleManagementModule = ({ onBack, currentUser }: PeopleManagementModuleProps) => {
-    const [tab, setTab] = useState<Tab>('CADASTRO');
+export const PeopleManagementModule = ({ onBack, currentUser, hasTabAccess }: PeopleManagementModuleProps) => {
+    const allTabs: Tab[] = ['CADASTRO', 'CONSULTA', 'EDICAO', 'PRESENCA', 'LAYOUT', 'LUVAS'];
+    const determineInitialTab = (): Tab => {
+        if (!hasTabAccess) return 'CADASTRO';
+        const allowed = allTabs.find(t => hasTabAccess('PEOPLE_MANAGEMENT', t));
+        return allowed || 'CADASTRO';
+    };
+    const [tab, setTab] = useState<Tab>(determineInitialTab());
     const [employees, setEmployees] = useState<any[]>([]);
     const [leaders, setLeaders] = useState<any[]>([]);
     const [models, setModels] = useState<any[]>([]);
@@ -1267,12 +1274,12 @@ export const PeopleManagementModule = ({ onBack, currentUser }: PeopleManagement
                     <Button variant="outline" onClick={onBack}><ArrowLeft size={16} /> Voltar</Button>
                 </div>
                 <div className="flex gap-2 overflow-x-auto pb-2 custom-scrollbar">
-                    <Button variant={tab === 'CADASTRO' ? 'primary' : 'secondary'} onClick={() => setTab('CADASTRO')}><UserIcon size={16} /> Cadastro</Button>
-                    <Button variant={tab === 'CONSULTA' ? 'primary' : 'secondary'} onClick={() => setTab('CONSULTA')}><Search size={16} /> Consulta</Button>
-                    <Button variant={tab === 'EDICAO' ? 'primary' : 'secondary'} onClick={() => { setEditQuery(''); setEditFound(false); setTab('EDICAO'); }}><Save size={16} /> Edição</Button>
-                    <Button variant={tab === 'PRESENCA' ? 'primary' : 'secondary'} onClick={() => setTab('PRESENCA')}><Clock size={16} /> Controle de Presença</Button>
-                    <Button variant={tab === 'LAYOUT' ? 'primary' : 'secondary'} onClick={() => setTab('LAYOUT')}><List size={16} /> Layout de Linha</Button>
-                    <Button variant={tab === 'LUVAS' ? 'primary' : 'secondary'} onClick={() => setTab('LUVAS')}><HandMetal size={16} /> Controle de Luvas</Button>
+                    {(!hasTabAccess || hasTabAccess('PEOPLE_MANAGEMENT', 'CADASTRO')) && <Button variant={tab === 'CADASTRO' ? 'primary' : 'secondary'} onClick={() => setTab('CADASTRO')}><UserIcon size={16} /> Cadastro</Button>}
+                    {(!hasTabAccess || hasTabAccess('PEOPLE_MANAGEMENT', 'CONSULTA')) && <Button variant={tab === 'CONSULTA' ? 'primary' : 'secondary'} onClick={() => setTab('CONSULTA')}><Search size={16} /> Consulta</Button>}
+                    {(!hasTabAccess || hasTabAccess('PEOPLE_MANAGEMENT', 'EDICAO')) && <Button variant={tab === 'EDICAO' ? 'primary' : 'secondary'} onClick={() => { setEditQuery(''); setEditFound(false); setTab('EDICAO'); }}><Save size={16} /> Edição</Button>}
+                    {(!hasTabAccess || hasTabAccess('PEOPLE_MANAGEMENT', 'PRESENCA')) && <Button variant={tab === 'PRESENCA' ? 'primary' : 'secondary'} onClick={() => setTab('PRESENCA')}><Clock size={16} /> Controle de Presença</Button>}
+                    {(!hasTabAccess || hasTabAccess('PEOPLE_MANAGEMENT', 'LAYOUT')) && <Button variant={tab === 'LAYOUT' ? 'primary' : 'secondary'} onClick={() => setTab('LAYOUT')}><List size={16} /> Layout de Linha</Button>}
+                    {(!hasTabAccess || hasTabAccess('PEOPLE_MANAGEMENT', 'LUVAS')) && <Button variant={tab === 'LUVAS' ? 'primary' : 'secondary'} onClick={() => setTab('LUVAS')}><HandMetal size={16} /> Controle de Luvas</Button>}
                 </div>
             </header>
 

@@ -6,7 +6,7 @@ import { getScraps } from './services/scrapService';
 import { Card } from './components/Card';
 import { Button } from './components/Button';
 import { Input } from './components/Input';
-import { User, ChecklistData, ChecklistItem, ChecklistLog, MeetingLog, ChecklistEvidence, Permission, LineStopData, ConfigItem, Material, PERMISSIONS } from './types';
+import { User, ChecklistData, ChecklistItem, ChecklistLog, MeetingLog, ChecklistEvidence, Permission, LineStopData, ConfigItem, Material, PERMISSIONS, MODULE_TABS, MODULE_NAMES } from './types';
 import { getMaterials } from './services/materialService';
 import { ManagementModule } from './components/ManagementModule';
 import { PeopleManagementModule } from './components/PeopleManagementModule';
@@ -33,7 +33,7 @@ import {
     Save, ArrowLeft, History, Edit3, Trash2, Plus,
     Settings, Users, List, Search, Calendar, Eye, Download, Wifi, User as UserIcon, Upload, X, UserCheck, Check,
     Camera, FileText, QrCode, Hammer, AlertTriangle, Shield, LayoutDashboard, Clock, Printer, EyeOff, Briefcase, Box, Lock, CheckCircle2, Sun, Moon,
-    Truck
+    Truck, ChevronDown, ChevronRight
 } from 'lucide-react';
 import jsQR from 'jsqr';
 
@@ -56,21 +56,6 @@ const SECTORS_LIST = [
     'MANUTENÇÃO', 'MATERIAIS', 'PCP',
     'ÁREA TÉCNICA', 'SAMSUNG', 'EXTERNO'
 ];
-
-const MODULE_NAMES: Record<string, string> = {
-    CHECKLIST: 'Checklist (Líder)',
-    LINE_STOP: 'Parada de Linha',
-    MEETING: 'Reuniões',
-    MAINTENANCE: 'Manutenção',
-    AUDIT: 'Auditoria',
-    ADMIN: 'Administração',
-    MANAGEMENT: 'Gestão de Processos',
-    PEOPLE_MANAGEMENT: 'Gestão de Pessoas (Líder)',
-    PEOPLE_MANAGEMENT_MANAGERS: 'Gestão de Pessoas (Gestores)',
-    SCRAP: 'Gestão de SCRAP',
-    IQC: 'Controle de SCRAP',
-    PREPARATION: 'Preparação de Linhas'
-};
 
 const toTitleCase = (str: string) => str.replace(/\b\w/g, l => l.toUpperCase());
 
@@ -169,6 +154,8 @@ const App = () => {
 
     // Permissions State
     const [permissions, setPermissions] = useState<Permission[]>([]);
+    const [selectedPermRole, setSelectedPermRole] = useState('');
+    const [expandedModules, setExpandedModules] = useState<Record<string, boolean>>({});
 
     // Checklist
     const [items, setItems] = useState<ChecklistItem[]>([]);
@@ -268,32 +255,51 @@ const App = () => {
     const isSuperAdmin = currentUser ? (currentUser.matricula === 'admin' || currentUser.role === 'Admin' || currentUser.isAdmin === true) : false;
 
     // --- PERMISSION HELPERS ---
+    const permissionToModule: Record<string, string> = {
+        [PERMISSIONS.VIEW_CHECKLIST]: 'CHECKLIST',
+        [PERMISSIONS.VIEW_PREPARATION]: 'PREPARATION',
+        [PERMISSIONS.VIEW_LINE_STOP]: 'LINE_STOP',
+        [PERMISSIONS.VIEW_MAINTENANCE]: 'MAINTENANCE',
+        [PERMISSIONS.VIEW_MEETING]: 'MEETING',
+        [PERMISSIONS.VIEW_AUDIT]: 'AUDIT',
+        [PERMISSIONS.VIEW_MANAGEMENT]: 'MANAGEMENT',
+        [PERMISSIONS.VIEW_PEOPLE_MANAGEMENT]: 'PEOPLE_MANAGEMENT',
+        [PERMISSIONS.VIEW_PEOPLE_MANAGEMENT_MANAGERS]: 'PEOPLE_MANAGEMENT_MANAGERS',
+        [PERMISSIONS.VIEW_ADMIN]: 'ADMIN',
+        [PERMISSIONS.VIEW_SCRAP]: 'SCRAP',
+        [PERMISSIONS.VIEW_IQC]: 'IQC'
+    };
+
     const hasAccess = (requiredPermission: string) => {
         if (!currentUser) return false;
         if (isSuperAdmin) return true;
 
-        const permissionToModule: Record<string, string> = {
-            [PERMISSIONS.VIEW_CHECKLIST]: 'CHECKLIST',
-            [PERMISSIONS.VIEW_PREPARATION]: 'PREPARATION',
-            [PERMISSIONS.VIEW_LINE_STOP]: 'LINE_STOP',
-            [PERMISSIONS.VIEW_MAINTENANCE]: 'MAINTENANCE',
-            [PERMISSIONS.VIEW_MEETING]: 'MEETING',
-            [PERMISSIONS.VIEW_AUDIT]: 'AUDIT',
-            [PERMISSIONS.VIEW_MANAGEMENT]: 'MANAGEMENT',
-            [PERMISSIONS.VIEW_PEOPLE_MANAGEMENT]: 'PEOPLE_MANAGEMENT',
-            [PERMISSIONS.VIEW_PEOPLE_MANAGEMENT_MANAGERS]: 'PEOPLE_MANAGEMENT_MANAGERS',
-            [PERMISSIONS.VIEW_ADMIN]: 'ADMIN',
-            [PERMISSIONS.VIEW_SCRAP]: 'SCRAP',
-            [PERMISSIONS.VIEW_IQC]: 'IQC'
-        };
-
         const targetModule = permissionToModule[requiredPermission];
         if (targetModule) {
-            const rule = permissions.find(p => p.role === currentUser.role && p.module === targetModule);
-            if (rule) return rule.allowed;
+            // Módulo permitido se existe permissão module-level (tab=null) allowed
+            const moduleRule = permissions.find(p => p.role === currentUser.role && p.module === targetModule && !p.tab);
+            if (moduleRule) return moduleRule.allowed;
         }
 
         return currentUser.permissions?.includes(requiredPermission) || false;
+    };
+
+    // Controle granular: verifica se o tab específico está liberado
+    const hasTabAccess = (moduleName: string, tabKey: string): boolean => {
+        if (!currentUser) return false;
+        if (isSuperAdmin) return true;
+
+        // 1. Checa se módulo está ativo
+        const moduleRule = permissions.find(p => p.role === currentUser.role && p.module === moduleName && !p.tab);
+        if (!moduleRule || !moduleRule.allowed) return false;
+
+        // 2. Sem regras de tab? Assume all tabs allowed
+        const tabRules = permissions.filter(p => p.role === currentUser.role && p.module === moduleName && !!p.tab);
+        if (tabRules.length === 0) return true;
+
+        // 3. Checa a regra específica do tab
+        const tabRule = tabRules.find(p => p.tab === tabKey);
+        return tabRule ? tabRule.allowed : false;
     };
 
     // --- SAFE LOG HELPERS ---
@@ -1154,15 +1160,29 @@ const App = () => {
         }
     }
 
-    const handleTogglePermission = (role: string, module: Permission['module']) => {
-        const existing = permissions.find(p => p.role === role && p.module === module);
+    const handleToggleModulePermission = (role: string, module: Permission['module']) => {
+        const existing = permissions.find(p => p.role === role && p.module === module && !p.tab);
         const newVal = existing ? !existing.allowed : true;
-        const newPerm: Permission = { role, module, allowed: newVal };
-        const otherPerms = permissions.filter(p => !(p.role === role && p.module === module));
+        const newPerm: Permission = { role, module, tab: null, allowed: newVal };
+        // Remove existing module-level perm + all tab-level perms if turning off
+        let otherPerms = permissions.filter(p => !(p.role === role && p.module === module && !p.tab));
+        if (!newVal) {
+            otherPerms = otherPerms.filter(p => !(p.role === role && p.module === module));
+        }
         const updatedList = [...otherPerms, newPerm];
         setPermissions(updatedList);
         savePermissions(updatedList).catch(err => console.error("Falha ao salvar a permissão", err));
-    }
+    };
+
+    const handleToggleTabPermission = (role: string, module: Permission['module'], tab: string) => {
+        const existing = permissions.find(p => p.role === role && p.module === module && p.tab === tab);
+        const newVal = existing ? !existing.allowed : true;
+        const newPerm: Permission = { role, module, tab, allowed: newVal };
+        const otherPerms = permissions.filter(p => !(p.role === role && p.module === module && p.tab === tab));
+        const updatedList = [...otherPerms, newPerm];
+        setPermissions(updatedList);
+        savePermissions(updatedList).catch(err => console.error("Falha ao salvar a permissão", err));
+    };
 
     const handleEditorChange = (list: ChecklistItem[], setList: React.Dispatch<React.SetStateAction<ChecklistItem[]>>, id: string, field: keyof ChecklistItem, value: string) => {
         setList(prev => prev.map(i => i.id === id ? { ...i, [field]: value } : i));
@@ -2144,39 +2164,103 @@ const App = () => {
                         )}
 
                         {adminTab === 'PERMISSIONS' && (
-                            <Card className="overflow-x-auto">
-                                <h3 className="text-lg font-bold mb-4 text-slate-900 dark:text-white">Permissões de Acesso (Matriz Invertida)</h3>
-                                <table className="w-full text-sm text-center border-collapse">
-                                    <thead>
-                                        <tr className="bg-slate-50 dark:bg-zinc-950 text-slate-500 dark:text-zinc-400 border-b border-slate-200 dark:border-zinc-800">
-                                            <th className="p-3 text-left">Cargo</th>
-                                            {['CHECKLIST', 'LINE_STOP', 'MEETING', 'MAINTENANCE', 'AUDIT', 'ADMIN', 'MANAGEMENT', 'PEOPLE_MANAGEMENT', 'PEOPLE_MANAGEMENT_MANAGERS', 'SCRAP', 'IQC', 'PREPARATION'].map(mod => (
-                                                <th key={mod} className="p-3">{mod}</th>
-                                            ))}
-                                        </tr>
-                                    </thead>
-                                    <tbody className="divide-y divide-slate-200 dark:divide-zinc-800">
-                                        {availableRoles.map(role => (
-                                            <tr key={role.id} className="hover:bg-slate-50 dark:hover:bg-zinc-900/50 transition-colors">
-                                                <td className="p-3 text-left font-bold text-slate-900 dark:text-white">{role.name}</td>
-                                                {['CHECKLIST', 'LINE_STOP', 'MEETING', 'MAINTENANCE', 'AUDIT', 'ADMIN', 'MANAGEMENT', 'PEOPLE_MANAGEMENT', 'PEOPLE_MANAGEMENT_MANAGERS', 'SCRAP', 'IQC', 'PREPARATION'].map(mod => {
-                                                    const perm = permissions.find(p => p.role === role.name && p.module === (mod as any));
-                                                    const isAllowed = perm ? perm.allowed : (['CHECKLIST', 'MEETING', 'MAINTENANCE', 'LINE_STOP'].includes(mod));
-                                                    return (
-                                                        <td key={mod} className="p-3">
-                                                            <button
-                                                                onClick={() => handleTogglePermission(role.name, mod as any)}
-                                                                className={`w-6 h-6 rounded flex items-center justify-center mx-auto transition-colors ${isAllowed ? 'bg-green-500 text-white' : 'bg-slate-200 dark:bg-zinc-800 text-slate-400 dark:text-zinc-600'}`}
-                                                            >
-                                                                {isAllowed && <Check size={14} />}
-                                                            </button>
-                                                        </td>
-                                                    );
-                                                })}
-                                            </tr>
+                            <Card>
+                                <h3 className="text-lg font-bold mb-4 text-slate-900 dark:text-white">Árvore de Permissões</h3>
+
+                                {/* Dropdown de Cargos */}
+                                <div className="mb-6">
+                                    <label className="text-xs font-bold text-slate-500 dark:text-zinc-500 uppercase mb-2 block">Selecione o Cargo</label>
+                                    <select
+                                        className="w-full bg-slate-50 dark:bg-zinc-950 border border-slate-300 dark:border-zinc-800 rounded-lg p-3 text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-blue-600/50 transition-colors"
+                                        value={selectedPermRole}
+                                        onChange={e => setSelectedPermRole(e.target.value)}
+                                    >
+                                        <option value="">— Selecione —</option>
+                                        {availableRoles.map(r => (
+                                            <option key={r.id} value={r.name}>{r.name}</option>
                                         ))}
-                                    </tbody>
-                                </table>
+                                    </select>
+                                </div>
+
+                                {/* Árvore de Módulos */}
+                                {selectedPermRole ? (
+                                    <div className="space-y-2">
+                                        {Object.keys(MODULE_TABS).map(mod => {
+                                            const moduleLabel = MODULE_NAMES[mod] || mod;
+                                            const modulePerm = permissions.find(p => p.role === selectedPermRole && p.module === mod && !p.tab);
+                                            const isModuleAllowed = modulePerm ? modulePerm.allowed : false;
+                                            const isExpanded = expandedModules[mod] || false;
+                                            const tabs = MODULE_TABS[mod] || [];
+
+                                            return (
+                                                <div key={mod} className="border border-slate-200 dark:border-zinc-800 rounded-xl overflow-hidden transition-all">
+                                                    {/* Linha do Módulo */}
+                                                    <div className={`flex items-center gap-3 p-4 transition-colors ${isModuleAllowed ? 'bg-green-50 dark:bg-green-900/10' : 'bg-slate-50 dark:bg-zinc-950'}`}>
+                                                        {/* Checkbox do módulo */}
+                                                        <button
+                                                            onClick={() => handleToggleModulePermission(selectedPermRole, mod as Permission['module'])}
+                                                            className={`w-6 h-6 rounded flex items-center justify-center shrink-0 transition-all ${isModuleAllowed ? 'bg-green-500 text-white shadow-sm shadow-green-500/30' : 'bg-slate-200 dark:bg-zinc-800 text-slate-400 dark:text-zinc-600'}`}
+                                                        >
+                                                            {isModuleAllowed && <Check size={14} />}
+                                                        </button>
+
+                                                        {/* Nome do módulo (clicável para expandir se ativo) */}
+                                                        <button
+                                                            onClick={() => {
+                                                                if (isModuleAllowed && tabs.length > 0) {
+                                                                    setExpandedModules(prev => ({ ...prev, [mod]: !prev[mod] }));
+                                                                }
+                                                            }}
+                                                            className={`flex-1 text-left font-semibold text-sm ${isModuleAllowed ? 'text-slate-900 dark:text-white cursor-pointer' : 'text-slate-400 dark:text-zinc-600 cursor-default'}`}
+                                                            disabled={!isModuleAllowed || tabs.length === 0}
+                                                        >
+                                                            {moduleLabel}
+                                                        </button>
+
+                                                        {/* Ícone de expand */}
+                                                        {isModuleAllowed && tabs.length > 0 && (
+                                                            <button
+                                                                onClick={() => setExpandedModules(prev => ({ ...prev, [mod]: !prev[mod] }))}
+                                                                className="text-slate-400 dark:text-zinc-500 hover:text-blue-500 transition-colors"
+                                                            >
+                                                                {isExpanded ? <ChevronDown size={18} /> : <ChevronRight size={18} />}
+                                                            </button>
+                                                        )}
+                                                    </div>
+
+                                                    {/* Sublista de Tabs */}
+                                                    {isModuleAllowed && isExpanded && tabs.length > 0 && (
+                                                        <div className="border-t border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900">
+                                                            {tabs.map(tab => {
+                                                                const tabPerm = permissions.find(p => p.role === selectedPermRole && p.module === mod && p.tab === tab.key);
+                                                                // Se não há regras de tab, assume permitido
+                                                                const hasAnyTabRule = permissions.some(p => p.role === selectedPermRole && p.module === mod && !!p.tab);
+                                                                const isTabAllowed = tabPerm ? tabPerm.allowed : !hasAnyTabRule;
+
+                                                                return (
+                                                                    <div key={tab.key} className="flex items-center gap-3 px-6 py-3 pl-12 border-b border-slate-100 dark:border-zinc-800/50 last:border-0 hover:bg-slate-50 dark:hover:bg-zinc-800/30 transition-colors">
+                                                                        <button
+                                                                            onClick={() => handleToggleTabPermission(selectedPermRole, mod as Permission['module'], tab.key)}
+                                                                            className={`w-5 h-5 rounded flex items-center justify-center shrink-0 transition-all ${isTabAllowed ? 'bg-blue-500 text-white shadow-sm shadow-blue-500/30' : 'bg-slate-200 dark:bg-zinc-800 text-slate-400 dark:text-zinc-600'}`}
+                                                                        >
+                                                                            {isTabAllowed && <Check size={12} />}
+                                                                        </button>
+                                                                        <span className={`text-sm ${isTabAllowed ? 'text-slate-700 dark:text-zinc-300' : 'text-slate-400 dark:text-zinc-600'}`}>
+                                                                            {tab.label}
+                                                                        </span>
+                                                                        <span className="text-[10px] text-slate-400 dark:text-zinc-600 font-mono ml-auto">{tab.key}</span>
+                                                                    </div>
+                                                                );
+                                                            })}
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                ) : (
+                                    <p className="text-center text-slate-400 dark:text-zinc-600 py-8">Selecione um cargo acima para gerenciar as permissões.</p>
+                                )}
                             </Card>
                         )}
 
@@ -2233,7 +2317,7 @@ const App = () => {
     if (view === 'PREPARATION') {
         return (
             <Layout sidebar={<SidebarContent />} onToggleTheme={toggleTheme} isDark={isDark}>
-                <PreparationModule currentUser={currentUser!} onBack={() => setView('MENU')} />
+                <PreparationModule currentUser={currentUser!} onBack={() => setView('MENU')} hasTabAccess={hasTabAccess} />
             </Layout>
         );
     }
@@ -2242,7 +2326,7 @@ const App = () => {
     if (view === 'MANAGEMENT') {
         return (
             <Layout sidebar={<SidebarContent />} onToggleTheme={toggleTheme} isDark={isDark}>
-                <ManagementModule onBack={() => setView('MENU')} />
+                <ManagementModule onBack={() => setView('MENU')} hasTabAccess={hasTabAccess} />
             </Layout>
         );
     }
@@ -2251,7 +2335,7 @@ const App = () => {
     if (view === 'PEOPLE_MANAGEMENT') {
         return (
             <Layout sidebar={<SidebarContent />} onToggleTheme={toggleTheme} isDark={isDark}>
-                <PeopleManagementModule currentUser={currentUser!} onBack={() => setView('MENU')} />
+                <PeopleManagementModule currentUser={currentUser!} onBack={() => setView('MENU')} hasTabAccess={hasTabAccess} />
             </Layout>
         );
     }
@@ -2261,7 +2345,7 @@ const App = () => {
         if (!hasAccess(PERMISSIONS.VIEW_PEOPLE_MANAGEMENT_MANAGERS)) { setView('MENU'); return null; }
         return (
             <Layout sidebar={<SidebarContent />} onToggleTheme={toggleTheme} isDark={isDark}>
-                <PeopleManagementManagersModule currentUser={currentUser!} onBack={() => setView('MENU')} />
+                <PeopleManagementManagersModule currentUser={currentUser!} onBack={() => setView('MENU')} hasTabAccess={hasTabAccess} />
             </Layout>
         );
     }
@@ -2382,9 +2466,9 @@ const App = () => {
     if (view === 'MEETING_HISTORY') return <Layout sidebar={<SidebarContent />} onToggleTheme={toggleTheme}><header className="flex items-center justify-between mb-4 md:mb-8 pb-4 md:pb-6 border-b border-slate-200 dark:border-zinc-800"><h1 className="text-lg md:text-2xl font-bold text-slate-900 dark:text-zinc-100">Histórico de Atas</h1><Button variant="outline" onClick={() => setView('MEETING_MENU')}><ArrowLeft size={16} /> Voltar</Button></header><div className="space-y-4">{meetingHistory.map(m => (<div key={m.id} className="bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 rounded-xl p-5 flex flex-col md:flex-row justify-between items-center gap-4 hover:border-slate-300 dark:hover:border-zinc-700 transition-colors shadow-sm"><div><p className="font-bold text-slate-900 dark:text-white text-lg">{m.title || 'Sem Título'}</p><p className="font-medium text-slate-500 dark:text-zinc-400 text-sm flex items-center gap-2"><Calendar size={14} /> {new Date(m.date).toLocaleDateString()} • {m.startTime} - {m.endTime}</p><div className="flex gap-4 mt-2"><span className="text-xs text-slate-500 dark:text-zinc-500 bg-slate-100 dark:bg-zinc-950 px-2 py-1 rounded">Criado por: {m.createdBy}</span><span className="text-xs text-slate-500 dark:text-zinc-500 bg-slate-100 dark:bg-zinc-950 px-2 py-1 rounded">{m.participants.length} participantes</span></div></div><div className="flex gap-2"><Button variant="secondary" onClick={() => setPreviewMeeting(m)}><Eye size={16} /></Button><Button variant="outline" onClick={() => exportMeetingToExcel(m)}><Download size={16} /> Excel</Button></div></div>))}</div>{renderMeetingPreviewModal()}</Layout>;
     if (view === 'MAINTENANCE_QR') return <Layout sidebar={<SidebarContent />} onToggleTheme={toggleTheme}><header className="flex items-center justify-between mb-4 md:mb-8 pb-4 md:pb-6 border-b border-slate-200 dark:border-zinc-800"><h1 className="text-lg md:text-2xl font-bold text-slate-900 dark:text-zinc-100">Ler QR Code Máquina</h1></header><div className="max-w-md mx-auto"><div className="bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 rounded-xl p-6 text-center"><div id="reader-hidden" className="hidden"></div><label className="cursor-pointer flex flex-col items-center justify-center h-48 w-full border-2 border-dashed border-slate-300 dark:border-zinc-700 hover:border-blue-500 rounded-xl transition-all mb-6 bg-slate-50 dark:bg-zinc-950"><Camera size={48} className={`mb-4 ${isProcessingPhoto ? 'text-blue-500 animate-pulse' : 'text-slate-400 dark:text-zinc-500'}`} /><span className="text-lg font-bold text-slate-700 dark:text-zinc-300">{isProcessingPhoto ? 'Processando Imagem...' : 'Tirar Foto do QR Code'}</span><span className="text-sm text-slate-500 dark:text-zinc-500 mt-2">Clique aqui para abrir a câmera</span><input type="file" accept="image/*" capture="environment" className="hidden" disabled={isProcessingPhoto} onChange={(e) => { if (e.target.files?.[0]) { handleMaintenanceQrPhoto(e.target.files[0]); e.target.value = ''; } }} /></label><div className="border-t border-slate-200 dark:border-zinc-800 pt-6 mt-6"><p className="text-xs font-bold text-slate-500 dark:text-zinc-500 mb-3 uppercase">Inserção Manual</p><div className="flex gap-2"><Input placeholder="Código (Ex: PRENSA_01)" value={qrCodeManual} onChange={e => setQrCodeManual(e.target.value)} /><Button onClick={() => handleMaintenanceCode(qrCodeManual)}>Ir</Button></div></div></div></div></Layout>;
 
-    if (view === 'SCRAP') return <Layout sidebar={<SidebarContent />} onToggleTheme={toggleTheme}><ScrapModule currentUser={currentUser!} onBack={() => { setView('MENU'); setScrapTab(undefined); }} initialTab={scrapTab} /></Layout>;
+    if (view === 'SCRAP') return <Layout sidebar={<SidebarContent />} onToggleTheme={toggleTheme}><ScrapModule currentUser={currentUser!} onBack={() => { setView('MENU'); setScrapTab(undefined); }} initialTab={scrapTab} hasTabAccess={hasTabAccess} /></Layout>;
 
-    if (view === 'IQC') return <Layout sidebar={<SidebarContent />} onToggleTheme={toggleTheme}><IQCModule currentUser={currentUser!} onBack={() => setView('MENU')} /></Layout>;
+    if (view === 'IQC') return <Layout sidebar={<SidebarContent />} onToggleTheme={toggleTheme}><IQCModule currentUser={currentUser!} onBack={() => setView('MENU')} hasTabAccess={hasTabAccess} /></Layout>;
 
     return null;
 };

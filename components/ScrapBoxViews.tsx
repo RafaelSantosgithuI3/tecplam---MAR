@@ -94,6 +94,7 @@ export const QRScannerInput = ({ onScan }: { onScan: (qrCode: string, extractedC
 export const ScrapBoxMount = ({ currentUser, onUpdate }: any) => {
     const [boxes, setBoxes] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
+    const [codeFilters, setCodeFilters] = useState<{ [key: number]: string }>({});
 
     const loadBoxes = async () => {
         try {
@@ -112,6 +113,7 @@ export const ScrapBoxMount = ({ currentUser, onUpdate }: any) => {
 
     const [showCreateModal, setShowCreateModal] = useState(false);
     const [newBoxType, setNewBoxType] = useState('REAR');
+    const [newBoxPlant, setNewBoxPlant] = useState('');
 
     // Modal de Pré-Impressão
     const [showLabelModal, setShowLabelModal] = useState(false);
@@ -124,10 +126,11 @@ export const ScrapBoxMount = ({ currentUser, onUpdate }: any) => {
     };
 
     const handleConfirmCreate = async () => {
-        if (!newBoxType) return;
-        await createBox(newBoxType);
+        if (!newBoxType || !newBoxPlant) return;
+        await createBox(newBoxType, newBoxPlant);
         setShowCreateModal(false);
         setNewBoxType('REAR');
+        setNewBoxPlant('');
         loadBoxes();
     };
 
@@ -223,6 +226,16 @@ export const ScrapBoxMount = ({ currentUser, onUpdate }: any) => {
                             </select>
                             <p className="text-xs text-slate-500 dark:text-zinc-500 mt-1">Somente scraps do mesmo tipo poderão ser bipados nesta caixa.</p>
                         </div>
+                        <div className="flex flex-col gap-2">
+                            <label className="text-sm font-bold text-slate-700 dark:text-zinc-300">Planta</label>
+                            <input
+                                type="text"
+                                className="w-full bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 rounded-xl px-4 py-3 text-slate-900 dark:text-zinc-100 font-medium"
+                                value={newBoxPlant}
+                                onChange={e => setNewBoxPlant(e.target.value)}
+                                placeholder="Ex: Planta 1, Planta 2..."
+                            />
+                        </div>
                         <div className="flex gap-2 pt-2">
                             <Button variant="secondary" className="flex-1" onClick={() => setShowCreateModal(false)}>Cancelar</Button>
                             <Button className="flex-1" onClick={handleConfirmCreate}>Criar Caixa</Button>
@@ -272,8 +285,18 @@ export const ScrapBoxMount = ({ currentUser, onUpdate }: any) => {
                 </Card>
             )}
 
-            <div className="grid gap-6">
-                {boxes.map(box => {
+            {Object.entries(
+                boxes.reduce((acc: Record<string, any[]>, box) => {
+                    const plant = box.plant || 'Sem Planta';
+                    if (!acc[plant]) acc[plant] = [];
+                    acc[plant].push(box);
+                    return acc;
+                }, {})
+            ).map(([plant, plantBoxes]) => (
+                <div key={plant} className="space-y-4">
+                    <h3 className="text-lg font-bold text-slate-900 dark:text-zinc-100">{plant}</h3>
+                    <div className="grid gap-6">
+                        {plantBoxes.map(box => {
                     const totalItens = box.scraps?.reduce((acc: number, s: any) => acc + (Number(s.qty) || 0), 0) || 0;
                     const valorTotal = box.scraps?.reduce((acc: number, s: any) => acc + (Number(s.totalValue) || 0), 0) || 0;
 
@@ -294,6 +317,15 @@ export const ScrapBoxMount = ({ currentUser, onUpdate }: any) => {
                             </div>
 
                             <div className="overflow-x-auto w-full mb-4">
+                                <div className="mb-4">
+                                    <input
+                                        type="text"
+                                        placeholder="Filtrar por código do material..."
+                                        className="w-full bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 rounded-lg px-3 py-2 text-sm"
+                                        value={codeFilters[box.id] || ''}
+                                        onChange={(e) => setCodeFilters({ ...codeFilters, [box.id]: e.target.value })}
+                                    />
+                                </div>
                                 <table className="w-full text-sm text-left">
                                     <thead className="text-xs uppercase bg-zinc-100 dark:bg-zinc-900/50">
                                         <tr>
@@ -307,7 +339,7 @@ export const ScrapBoxMount = ({ currentUser, onUpdate }: any) => {
                                         </tr>
                                     </thead>
                                     <tbody className="divide-y divide-zinc-200 dark:divide-zinc-800">
-                                        {box.scraps && box.scraps.length > 0 ? box.scraps.map((s: any) => (
+                                        {box.scraps && box.scraps.length > 0 ? box.scraps.filter((s: any) => !codeFilters[box.id] || (s.code || '').toLowerCase().includes(codeFilters[box.id].toLowerCase())).map((s: any) => (
                                             <tr key={s.id} className="hover:bg-red-50/30 dark:hover:bg-red-900/10 transition-colors">
                                                 <td className="px-4 py-2 font-mono text-zinc-600 dark:text-zinc-400">{s.code || '-'}</td>
                                                 <td className="px-4 py-2">{new Date(s.date).toLocaleDateString()}</td>
@@ -361,7 +393,9 @@ export const ScrapBoxMount = ({ currentUser, onUpdate }: any) => {
                         </Card>
                     );
                 })}
-            </div>
+                    </div>
+                </div>
+            ))}
         </div>
     );
 };

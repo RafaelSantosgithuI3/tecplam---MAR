@@ -12,10 +12,19 @@ import { getLines, getModelsFull } from '../services/storageService';
 interface PreparationModuleProps {
     currentUser: User;
     onBack: () => void;
+    hasTabAccess?: (moduleName: string, tabKey: string) => boolean;
 }
 
-export const PreparationModule: React.FC<PreparationModuleProps> = ({ currentUser, onBack }) => {
-    const [tab, setTab] = useState<'LAUNCH' | 'VIEW'>('LAUNCH');
+type Tab = 'LAUNCH' | 'VIEW';
+
+export const PreparationModule: React.FC<PreparationModuleProps> = ({ currentUser, onBack, hasTabAccess }) => {
+    const allTabs: Tab[] = ['LAUNCH', 'VIEW'];
+    const determineInitialTab = (): Tab => {
+        if (!hasTabAccess) return 'LAUNCH';
+        const allowed = allTabs.find(t => hasTabAccess('PREPARATION', t));
+        return allowed || 'LAUNCH';
+    };
+    const [tab, setTab] = useState<Tab>(determineInitialTab());
     const [lines, setLines] = useState<ConfigItem[]>([]);
     const [models, setModels] = useState<ConfigModel[]>([]);
     const [logs, setLogs] = useState<PreparationLog[]>([]);
@@ -151,8 +160,8 @@ export const PreparationModule: React.FC<PreparationModuleProps> = ({ currentUse
                     <Button variant="outline" onClick={onBack}><ArrowLeft size={16} /> Voltar</Button>
                 </div>
                 <div className="flex gap-2">
-                    <Button variant={tab === 'LAUNCH' ? 'primary' : 'secondary'} onClick={() => setTab('LAUNCH')}><Plus size={16} /> Lançamento</Button>
-                    <Button variant={tab === 'VIEW' ? 'primary' : 'secondary'} onClick={() => setTab('VIEW')}><Eye size={16} /> Visualização</Button>
+                    {(!hasTabAccess || hasTabAccess('PREPARATION', 'LAUNCH')) && <Button variant={tab === 'LAUNCH' ? 'primary' : 'secondary'} onClick={() => setTab('LAUNCH')}><Plus size={16} /> Lançamento</Button>}
+                    {(!hasTabAccess || hasTabAccess('PREPARATION', 'VIEW')) && <Button variant={tab === 'VIEW' ? 'primary' : 'secondary'} onClick={() => setTab('VIEW')}><Eye size={16} /> Visualização</Button>}
                 </div>
             </header>
 

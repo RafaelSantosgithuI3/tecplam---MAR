@@ -191,11 +191,13 @@ model ConfigStation {
 }
 
 model ConfigPermission {
+  id      String  @id @default(uuid())
   role    String
   module  String
+  tab     String?
   allowed Int?
 
-  @@id([role, module])
+  @@unique([role, module, tab])
   @@map("config_permissions")
 }
 
@@ -239,6 +241,7 @@ model ScrapBox {
   nfNumber  String?    @map("nf_number")
   createdAt DateTime   @default(now()) @map("created_at")
   closedAt  DateTime?  @map("closed_at")
+  plant     String?
   scraps    ScrapLog[]
 
   @@map("scrap_boxes")

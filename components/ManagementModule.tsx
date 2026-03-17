@@ -14,12 +14,19 @@ import * as XLSX from 'xlsx';
 
 interface ManagementModuleProps {
     onBack: () => void;
+    hasTabAccess?: (moduleName: string, tabKey: string) => boolean;
 }
 
 type Tab = 'LINES' | 'ROLES' | 'MODELS' | 'STATIONS' | 'STATIONS_LAYOUT' | 'MATERIALS' | 'DESLIGAMENTO';
 
-export const ManagementModule: React.FC<ManagementModuleProps> = ({ onBack }) => {
-    const [tab, setTab] = useState<Tab>('LINES');
+export const ManagementModule: React.FC<ManagementModuleProps> = ({ onBack, hasTabAccess }) => {
+    const allTabs: Tab[] = ['LINES', 'ROLES', 'MODELS', 'STATIONS', 'STATIONS_LAYOUT', 'MATERIALS', 'DESLIGAMENTO'];
+    const determineInitialTab = (): Tab => {
+        if (!hasTabAccess) return 'LINES';
+        const allowed = allTabs.find(t => hasTabAccess('MANAGEMENT', t));
+        return allowed || 'LINES';
+    };
+    const [tab, setTab] = useState<Tab>(determineInitialTab());
     const [lines, setLines] = useState<ConfigItem[]>([]);
     const [roles, setRoles] = useState<ConfigItem[]>([]);
     const [models, setModels] = useState<ConfigModel[]>([]);
@@ -733,13 +740,13 @@ export const ManagementModule: React.FC<ManagementModuleProps> = ({ onBack }) =>
                     <Button variant="outline" onClick={onBack}><ArrowLeft size={16} /> Voltar</Button>
                 </div>
                 <div className="flex gap-2 overflow-x-auto pb-2 custom-scrollbar">
-                    <Button variant={tab === 'LINES' ? 'primary' : 'secondary'} onClick={() => setTab('LINES')}><List size={16} /> Linhas</Button>
-                    <Button variant={tab === 'ROLES' ? 'primary' : 'secondary'} onClick={() => setTab('ROLES')}><UserIcon size={16} /> Cargos</Button>
-                    <Button variant={tab === 'MODELS' ? 'primary' : 'secondary'} onClick={() => setTab('MODELS')}><Smartphone size={16} /> Modelos & SKU</Button>
-                    <Button variant={tab === 'STATIONS' ? 'primary' : 'secondary'} onClick={() => setTab('STATIONS')}><List size={16} /> Postos (Antigo)</Button>
-                    <Button variant={tab === 'STATIONS_LAYOUT' ? 'primary' : 'secondary'} onClick={() => setTab('STATIONS_LAYOUT')}><List size={16} /> Postos (Layout)</Button>
-                    <Button variant={tab === 'MATERIALS' ? 'primary' : 'secondary'} onClick={() => setTab('MATERIALS')}><Plus size={16} /> Itens de Scrap</Button>
-                    <Button variant={tab === 'DESLIGAMENTO' ? 'primary' : 'secondary'} onClick={() => setTab('DESLIGAMENTO')}><Shield size={16} /> Desligamento</Button>
+                    {(!hasTabAccess || hasTabAccess('MANAGEMENT', 'LINES')) && <Button variant={tab === 'LINES' ? 'primary' : 'secondary'} onClick={() => setTab('LINES')}><List size={16} /> Linhas</Button>}
+                    {(!hasTabAccess || hasTabAccess('MANAGEMENT', 'ROLES')) && <Button variant={tab === 'ROLES' ? 'primary' : 'secondary'} onClick={() => setTab('ROLES')}><UserIcon size={16} /> Cargos</Button>}
+                    {(!hasTabAccess || hasTabAccess('MANAGEMENT', 'MODELS')) && <Button variant={tab === 'MODELS' ? 'primary' : 'secondary'} onClick={() => setTab('MODELS')}><Smartphone size={16} /> Modelos & SKU</Button>}
+                    {(!hasTabAccess || hasTabAccess('MANAGEMENT', 'STATIONS')) && <Button variant={tab === 'STATIONS' ? 'primary' : 'secondary'} onClick={() => setTab('STATIONS')}><List size={16} /> Postos (Antigo)</Button>}
+                    {(!hasTabAccess || hasTabAccess('MANAGEMENT', 'STATIONS_LAYOUT')) && <Button variant={tab === 'STATIONS_LAYOUT' ? 'primary' : 'secondary'} onClick={() => setTab('STATIONS_LAYOUT')}><List size={16} /> Postos (Layout)</Button>}
+                    {(!hasTabAccess || hasTabAccess('MANAGEMENT', 'MATERIALS')) && <Button variant={tab === 'MATERIALS' ? 'primary' : 'secondary'} onClick={() => setTab('MATERIALS')}><Plus size={16} /> Itens de Scrap</Button>}
+                    {(!hasTabAccess || hasTabAccess('MANAGEMENT', 'DESLIGAMENTO')) && <Button variant={tab === 'DESLIGAMENTO' ? 'primary' : 'secondary'} onClick={() => setTab('DESLIGAMENTO')}><Shield size={16} /> Desligamento</Button>}
                 </div>
             </header>
 

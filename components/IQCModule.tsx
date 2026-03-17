@@ -34,8 +34,16 @@ const formatDateDisplay = (dateString: string | undefined) => {
 
 type IQCTab = 'MONITORING' | 'BATCH_PROCESS' | 'HISTORY_SENT' | 'DASHBOARD' | 'BOX_MOUNT' | 'BOX_IDENTIFIED' | 'CONSULTA' | 'MATERIALS';
 
-export const IQCModule = ({ currentUser, onBack }: { currentUser: User, onBack: () => void }) => {
-    const [activeTab, setActiveTab] = useState<IQCTab>('MONITORING');
+export const IQCModule = ({ currentUser, onBack, hasTabAccess }: { currentUser: User, onBack: () => void, hasTabAccess?: (m: string, t: string) => boolean }) => {
+    const allTabs: IQCTab[] = ['MONITORING', 'BATCH_PROCESS', 'HISTORY_SENT', 'DASHBOARD', 'BOX_MOUNT', 'BOX_IDENTIFIED', 'CONSULTA', 'MATERIALS'];
+    
+    const determineInitialTab = (): IQCTab => {
+        if (!hasTabAccess) return 'MONITORING';
+        const allowed = allTabs.find(t => hasTabAccess('IQC', t));
+        return allowed || 'MONITORING';
+    };
+
+    const [activeTab, setActiveTab] = useState<IQCTab>(determineInitialTab());
     const [scraps, setScraps] = useState<ScrapData[]>([]);
     const [users, setUsers] = useState<User[]>([]);
     const [lines, setLines] = useState<string[]>([]);
@@ -88,30 +96,46 @@ export const IQCModule = ({ currentUser, onBack }: { currentUser: User, onBack: 
                 </div>
 
                 <div className="flex gap-2 overflow-x-auto w-full md:w-auto pb-2 md:pb-0 custom-scrollbar">
-                    <Button variant={activeTab === 'MONITORING' ? 'primary' : 'ghost'} onClick={() => setActiveTab('MONITORING')} size="sm">
-                        <LayoutDashboard size={16} /> Monitoramento
-                    </Button>
-                    <Button variant={activeTab === 'BATCH_PROCESS' ? 'primary' : 'ghost'} onClick={() => setActiveTab('BATCH_PROCESS')} size="sm">
-                        <CheckSquare size={16} /> Baixa de Scrap
-                    </Button>
-                    <Button variant={activeTab === 'HISTORY_SENT' ? 'primary' : 'ghost'} onClick={() => setActiveTab('HISTORY_SENT')} size="sm">
-                        <History size={16} /> Histórico de Envios
-                    </Button>
-                    <Button variant={activeTab === 'DASHBOARD' ? 'primary' : 'ghost'} onClick={() => setActiveTab('DASHBOARD')} size="sm">
-                        <BarChart3 size={16} /> Dashboard Detalhado
-                    </Button>
-                    <Button variant={activeTab === 'BOX_MOUNT' ? 'primary' : 'ghost'} onClick={() => setActiveTab('BOX_MOUNT')} size="sm">
-                        <Box size={16} /> Montar Caixa
-                    </Button>
-                    <Button variant={activeTab === 'BOX_IDENTIFIED' ? 'primary' : 'ghost'} onClick={() => setActiveTab('BOX_IDENTIFIED')} size="sm">
-                        <QrCode size={16} /> Associar NF
-                    </Button>
-                    <Button variant={activeTab === 'CONSULTA' ? 'primary' : 'ghost'} onClick={() => setActiveTab('CONSULTA')} size="sm">
-                        <FileText size={16} /> Consulta
-                    </Button>
-                    <Button variant={activeTab === 'MATERIALS' ? 'primary' : 'ghost'} onClick={() => setActiveTab('MATERIALS')} size="sm">
-                        <Box size={16} /> Itens de Scrap
-                    </Button>
+                    {(!hasTabAccess || hasTabAccess('IQC', 'MONITORING')) && (
+                        <Button variant={activeTab === 'MONITORING' ? 'primary' : 'ghost'} onClick={() => setActiveTab('MONITORING')} size="sm">
+                            <LayoutDashboard size={16} /> Monitoramento
+                        </Button>
+                    )}
+                    {(!hasTabAccess || hasTabAccess('IQC', 'BATCH_PROCESS')) && (
+                        <Button variant={activeTab === 'BATCH_PROCESS' ? 'primary' : 'ghost'} onClick={() => setActiveTab('BATCH_PROCESS')} size="sm">
+                            <CheckSquare size={16} /> Baixa de Scrap
+                        </Button>
+                    )}
+                    {(!hasTabAccess || hasTabAccess('IQC', 'HISTORY_SENT')) && (
+                        <Button variant={activeTab === 'HISTORY_SENT' ? 'primary' : 'ghost'} onClick={() => setActiveTab('HISTORY_SENT')} size="sm">
+                            <History size={16} /> Histórico de Envios
+                        </Button>
+                    )}
+                    {(!hasTabAccess || hasTabAccess('IQC', 'DASHBOARD')) && (
+                        <Button variant={activeTab === 'DASHBOARD' ? 'primary' : 'ghost'} onClick={() => setActiveTab('DASHBOARD')} size="sm">
+                            <BarChart3 size={16} /> Dashboard Detalhado
+                        </Button>
+                    )}
+                    {(!hasTabAccess || hasTabAccess('IQC', 'BOX_MOUNT')) && (
+                        <Button variant={activeTab === 'BOX_MOUNT' ? 'primary' : 'ghost'} onClick={() => setActiveTab('BOX_MOUNT')} size="sm">
+                            <Box size={16} /> Montar Caixa
+                        </Button>
+                    )}
+                    {(!hasTabAccess || hasTabAccess('IQC', 'BOX_IDENTIFIED')) && (
+                        <Button variant={activeTab === 'BOX_IDENTIFIED' ? 'primary' : 'ghost'} onClick={() => setActiveTab('BOX_IDENTIFIED')} size="sm">
+                            <QrCode size={16} /> Associar NF
+                        </Button>
+                    )}
+                    {(!hasTabAccess || hasTabAccess('IQC', 'CONSULTA')) && (
+                        <Button variant={activeTab === 'CONSULTA' ? 'primary' : 'ghost'} onClick={() => setActiveTab('CONSULTA')} size="sm">
+                            <FileText size={16} /> Consulta
+                        </Button>
+                    )}
+                    {(!hasTabAccess || hasTabAccess('IQC', 'MATERIALS')) && (
+                        <Button variant={activeTab === 'MATERIALS' ? 'primary' : 'ghost'} onClick={() => setActiveTab('MATERIALS')} size="sm">
+                            <Box size={16} /> Itens de Scrap
+                        </Button>
+                    )}
                 </div>
             </div>
 
@@ -347,7 +371,7 @@ const BatchProcessTab = ({ scraps, onProcess, currentUser, lines, models }: { sc
         line: 'ALL',
         model: 'ALL',
         item: 'ALL',
-        status: 'ALL'
+        code: ''
     });
 
     const [selectedIds, setSelectedIds] = useState<number[]>([]);
@@ -375,7 +399,7 @@ const BatchProcessTab = ({ scraps, onProcess, currentUser, lines, models }: { sc
         if (filters.line !== 'ALL') res = res.filter(s => s.line === filters.line);
         if (filters.model !== 'ALL') res = res.filter(s => s.model === filters.model);
         if (filters.item !== 'ALL') res = res.filter(s => s.item === filters.item);
-        if (filters.status !== 'ALL') res = res.filter(s => s.status === filters.status);
+        if (filters.code) res = res.filter(s => (s.code || '').toLowerCase().includes(filters.code.toLowerCase()));
 
         return res.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
     }, [scraps, filters]);
@@ -451,11 +475,13 @@ const BatchProcessTab = ({ scraps, onProcess, currentUser, lines, models }: { sc
                         {Array.from(new Set(pendingScraps.map(s => s.item).filter(Boolean))).sort().map(item => <option key={item} value={item}>{item}</option>)}
                     </select>
 
-                    <select className="bg-slate-50 dark:bg-zinc-950 border border-slate-300 dark:border-zinc-800 p-2 rounded text-sm outline-none" value={filters.status} onChange={e => setFilters({ ...filters, status: e.target.value })}>
-                        <option value="ALL">Todos Status</option>
-                        <option value="OK">OK</option>
-                        <option value="NG">NG</option>
-                    </select>
+                    <input
+                        type="text"
+                        placeholder="Filtrar por Código do Item"
+                        className="bg-slate-50 dark:bg-zinc-950 border border-slate-300 dark:border-zinc-800 p-2 rounded text-sm outline-none"
+                        value={filters.code || ''}
+                        onChange={e => setFilters({ ...filters, code: e.target.value })}
+                    />
 
                     <div className="ml-auto text-sm text-slate-500">
                         {pendingScraps.length} itens aguardando baixa
@@ -476,6 +502,7 @@ const BatchProcessTab = ({ scraps, onProcess, currentUser, lines, models }: { sc
                             <th className="p-3 text-left">Modelo</th>
                             <th className="p-3 text-left">Linha</th>
                             <th className="p-3 text-left">Item</th>
+                            <th className="p-3 text-left">Código</th>
                             <th className="p-3 text-left">Qtd</th>
                             <th className="p-3 text-right">Valor</th>
                             <th className="p-3 text-center">Status</th>
@@ -491,6 +518,7 @@ const BatchProcessTab = ({ scraps, onProcess, currentUser, lines, models }: { sc
                                 <td className="p-3 text-slate-700 dark:text-zinc-300">{s.model}</td>
                                 <td className="p-3 text-slate-700 dark:text-zinc-300">{s.line}</td>
                                 <td className="p-3 text-slate-700 dark:text-zinc-300">{s.item}</td>
+                                <td className="p-3 font-mono text-slate-700 dark:text-zinc-300">{s.code || '-'}</td>
                                 <td className="p-3 text-slate-700 dark:text-zinc-300">{s.qty}</td>
                                 <td className="p-3 text-right font-mono text-slate-700 dark:text-zinc-300">{formatCurrency(s.totalValue)}</td>
                                 <td className="p-3 text-center">
@@ -616,6 +644,7 @@ const HistoryGroupCard = ({ nf, items, users }: { nf: string, items: ScrapData[]
     const [expanded, setExpanded] = useState(false);
     const [selectedScrap, setSelectedScrap] = useState<ScrapData | null>(null);
     const [previewBox, setPreviewBox] = useState<boolean>(false);
+    const [itemFilter, setItemFilter] = useState('');
 
     const totalValue = items.reduce((acc, s) => acc + (s.totalValue || 0), 0);
     const sentDate = items[0].sentAt ? new Date(items[0].sentAt).toLocaleDateString() : '-';
@@ -672,7 +701,7 @@ const HistoryGroupCard = ({ nf, items, users }: { nf: string, items: ScrapData[]
                         </Button>
                         <div className="text-right">
                             <p className="text-2xl font-bold text-slate-900 dark:text-white">{formatCurrency(totalValue)}</p>
-                            <p className="text-xs text-slate-500">{items.length} itens registrados</p>
+                            <p className="text-xs text-slate-500">{items.reduce((acc, s) => acc + (s.qty || 0), 0)} itens registrados</p>
                         </div>
                     </div>
                     <div>
@@ -703,6 +732,16 @@ const HistoryGroupCard = ({ nf, items, users }: { nf: string, items: ScrapData[]
                             })}
                         </div>
 
+                        <div className="mb-4">
+                            <input
+                                type="text"
+                                placeholder="Filtrar itens na NF..."
+                                className="w-full bg-slate-50 dark:bg-zinc-950 border border-slate-200 dark:border-zinc-800 rounded-lg px-3 py-2 text-sm"
+                                value={itemFilter}
+                                onChange={e => setItemFilter(e.target.value)}
+                            />
+                        </div>
+
                         <div className="w-full overflow-x-auto pb-4 mb-4 touch-pan-x border border-gray-200 dark:border-zinc-800 rounded-xl">
                             <table className="w-full text-xs text-left min-w-[600px]">
                                 <thead className="bg-slate-100 dark:bg-zinc-900 text-slate-600 dark:text-zinc-400">
@@ -712,18 +751,22 @@ const HistoryGroupCard = ({ nf, items, users }: { nf: string, items: ScrapData[]
                                         <th className="p-2">Código</th>
                                         <th className="p-2">Qtd</th>
                                         <th className="p-2 text-right">Valor</th>
-                                        <th className="p-2"></th>
+                                        <th className="p-2">Ações</th>
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    {items.map(i => (
+                                    {items.filter(i => !itemFilter || (i.item || '').toLowerCase().includes(itemFilter.toLowerCase())).map(i => (
                                         <tr key={i.id} className="border-b border-slate-100 dark:border-zinc-800 last:border-0 hover:bg-blue-50/50 dark:hover:bg-blue-900/10 cursor-pointer transition-colors" onClick={(e) => { e.stopPropagation(); setSelectedScrap(i); }}>
                                             <td className="p-2 text-slate-700 dark:text-zinc-300">{i.item}</td>
                                             <td className="p-2 text-slate-700 dark:text-zinc-300">{i.model}</td>
                                             <td className="p-2 font-mono text-slate-700 dark:text-zinc-300">{i.code || '-'}</td>
                                             <td className="p-2 text-slate-700 dark:text-zinc-300">{i.qty}</td>
                                             <td className="p-2 text-right font-mono text-slate-700 dark:text-zinc-300">{formatCurrency(i.totalValue)}</td>
-                                            <td className="p-2"><Eye size={14} className="text-blue-500" /></td>
+                                            <td className="p-2 flex gap-1">
+                                                <button onClick={(e) => { e.stopPropagation(); /* remover */ }} className="text-red-500 hover:text-red-700">Remover</button>
+                                                <button onClick={(e) => { e.stopPropagation(); /* realocar */ }} className="text-blue-500 hover:text-blue-700">Realocar</button>
+                                                <Eye size={14} className="text-blue-500" />
+                                            </td>
                                         </tr>
                                     ))}
                                 </tbody>

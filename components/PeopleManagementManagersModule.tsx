@@ -2,22 +2,30 @@ import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { Button } from './Button';
 import { Card } from './Card';
 import { Input } from './Input';
-import { Shield, Plus, Search, User as UserIcon, List, ArrowLeft, CheckCircle, Clock, Save, Download, HandMetal, Scan, X } from 'lucide-react';
+import { Shield, Plus, Search, User as UserIcon, List, ArrowLeft, CheckCircle, Clock, Save, Download, HandMetal, Scan, X, Upload } from 'lucide-react';
 import { apiFetch } from '../services/networkConfig';
 import { QRStreamReader } from './QRStreamReader';
-import { exportLeaderLayout, exportModelLayout, exportGloveControl } from '../services/excelService';
+import { exportLeaderLayout, exportModelLayout, exportGloveControl, exportEmployeeTemplate } from '../services/excelService';
+import * as XLSX from 'xlsx';
 
 import { EmployeeData, User, ConfigModel, Workstation, ConfigRole } from '../types';
 
 interface Props {
     onBack: () => void;
     currentUser: User;
+    hasTabAccess?: (moduleName: string, tabKey: string) => boolean;
 }
 
 type Tab = 'CADASTRO' | 'CONSULTA' | 'PRESENCA' | 'LAYOUT' | 'LUVAS' | 'EDICAO';
 
-export const PeopleManagementManagersModule: React.FC<Props> = ({ onBack, currentUser }) => {
-    const [tab, setTab] = useState<Tab>('PRESENCA');
+export const PeopleManagementManagersModule: React.FC<Props> = ({ onBack, currentUser, hasTabAccess }) => {
+    const allTabs: Tab[] = ['CADASTRO', 'CONSULTA', 'EDICAO', 'PRESENCA', 'LAYOUT', 'LUVAS'];
+    const determineInitialTab = (): Tab => {
+        if (!hasTabAccess) return 'PRESENCA';
+        const allowed = allTabs.find(t => hasTabAccess('PEOPLE_MANAGEMENT_MANAGERS', t));
+        return allowed || 'PRESENCA';
+    };
+    const [tab, setTab] = useState<Tab>(determineInitialTab());
     const [employees, setEmployees] = useState<any[]>([]);
     const [leaders, setLeaders] = useState<User[]>([]);
     const [models, setModels] = useState<ConfigModel[]>([]);
@@ -115,6 +123,109 @@ export const PeopleManagementManagersModule: React.FC<Props> = ({ onBack, curren
         superiorId: '', idlSt: '', type: '', status: '', address: '', addressNum: '', whatsapp: '', neighborhood: ''
     });
     const [isEdit, setIsEdit] = useState(false);
+    const [conflictModalData, setConflictModalData] = useState<{ matricula: string, resolve: (val: boolean) => void } | null>(null);
+    const [isBatchUploading, setIsBatchUploading] = useState(false);
+
+    const handleExcelUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+
+        const reader = new FileReader();
+        reader.onload = async (evt) => {
+            try {
+                const bstr = evt.target?.result;
+                const wb = XLSX.read(bstr, { type: 'binary' });
+                const wsname = wb.SheetNames[0];
+                const ws = wb.Sheets[wsname];
+                const data = XLSX.utils.sheet_to_json<any>(ws, { defval: '' });
+
+                setIsBatchUploading(true);
+
+                for (let i = 0; i < data.length; i++) {
+                    const row = data[i];
+                    const matricula = String(row['Matrícula'] || '').trim();
+                    if (!matricula) continue;
+
+                    const payload = {
+                        matricula,
+                        fullName: String(row['Nome'] || '').trim(),
+                        role: String(row['Função'] || '').trim(),
+                        shift: String(row['Turno'] || '').trim(),
+                        superiorId: String(row['Líder'] || '').trim(),
+                        sector: String(row['Setor'] || '').trim(),
+                        idlSt: String(row['IDL-ST'] || '').trim(),
+                        type: String(row['Tipo'] || '').trim(),
+                        isEdit: false
+                    };
+
+                    try {
+                        const check = await apiFetch(`/employees/search/${matricula}`);
+                        if (check && check.matricula) {
+                            const replace = await new Promise<boolean>((resolve) => {
+                                setConflictModalData({ matricula, resolve });
+                            });
+                            if (!replace) continue;
+                            payload.isEdit = true;
+                        }
+                    } catch (err) { }
+
+                    try {
+                        await apiFetch('/employees', {
+                            method: payload.isEdit ? 'PUT' : 'POST',
+                            body: JSON.stringify(payload)
+                        });
+                    } catch (e) {
+                        console.error(`Erro ao salvar ${matricula}`, e);
+                    }
+                }
+
+                alert('Importação de planilha concluída!');
+                loadBaseData();
+            } catch (err) {
+                alert('Erro na leitura da planilha.');
+            } finally {
+                setIsBatchUploading(false);
+                if (e.target) e.target.value = '';
+            }
+        };
+        reader.readAsBinaryString(file);
+    };
+
+    const handleBatchPhotosUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const files = e.target.files;
+        if (!files || files.length === 0) return;
+
+        setIsBatchUploading(true);
+        let successCount = 0;
+        let errCount = 0;
+
+        for (let i = 0; i < files.length; i++) {
+            const file = files[i];
+            const fileNameParts = file.name.split('.');
+            fileNameParts.pop();
+            const matriculaStr = fileNameParts.join('.').toUpperCase();
+            
+            const b64 = await new Promise<string>((resolve) => {
+                const reader = new FileReader();
+                reader.onload = (ev) => resolve(ev.target?.result as string);
+                reader.readAsDataURL(file);
+            });
+
+            try {
+                await apiFetch(`/employees/upload-photo/${matriculaStr}`, {
+                    method: 'POST',
+                    body: JSON.stringify({ photo: b64 })
+                });
+                successCount++;
+            } catch (err) {
+                console.error('Falha ao upar foto da matrícula:', matriculaStr, err);
+                errCount++;
+            }
+        }
+        setIsBatchUploading(false);
+        alert(`Upload de fotos concluído!\nSucessos: ${successCount}\nFalhas (Não encontrados): ${errCount}`);
+        if (e.target) e.target.value = '';
+    };
 
     const handlePhotoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         if (e.target.files && e.target.files[0]) {
@@ -161,8 +272,31 @@ export const PeopleManagementManagersModule: React.FC<Props> = ({ onBack, curren
     };
 
     const renderCadastro = () => (
-        <Card className="space-y-4">
-            <h3 className="text-lg font-bold text-slate-800 dark:text-zinc-100">Cadastro de Colaborador</h3>
+        <Card className="space-y-6">
+            <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 pb-4 border-b border-slate-100 dark:border-zinc-800">
+                <h3 className="text-lg font-bold text-slate-800 dark:text-zinc-100">Cadastro de Colaborador</h3>
+                <div className="flex flex-wrap items-center gap-3">
+                    <Button variant="secondary" onClick={exportEmployeeTemplate}>
+                        <Download size={16} /> Baixar Template Excel
+                    </Button>
+                    <label className="flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-medium rounded-xl cursor-pointer transition-colors text-sm">
+                        <Upload size={16} /> Upload de Planilha
+                        <input type="file" accept=".xlsx, .xls" className="hidden" onChange={handleExcelUpload} disabled={isBatchUploading} />
+                    </label>
+                </div>
+            </div>
+
+            <div className="bg-amber-50 dark:bg-amber-900/30 border border-amber-200 dark:border-amber-800 rounded-xl p-4">
+                <div className="flex items-center gap-2 font-bold text-amber-800 dark:text-amber-200 mb-2">
+                    <Upload size={18} /> Upload em Massa de Fotos
+                </div>
+                <p className="text-sm text-amber-700 dark:text-amber-300 mb-3">
+                    Atenção: O nome do arquivo da foto deve ser <strong>exatamente o número da matrícula</strong> (ex: 1234.jpg) para associação automática.
+                </p>
+                <input type="file" multiple accept="image/*" onChange={handleBatchPhotosUpload} disabled={isBatchUploading} className="block w-full text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-sm file:font-semibold file:bg-amber-100 file:text-amber-800 hover:file:bg-amber-200 dark:file:bg-amber-900/50 dark:file:text-amber-400" />
+            </div>
+
+            <h4 className="font-semibold text-slate-700 dark:text-zinc-200 mt-6 pt-4 border-t border-slate-100 dark:border-zinc-800">Cadastro Individual</h4>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                 <div className="flex flex-col gap-2">
                     <label className="text-sm font-medium text-slate-700 dark:text-zinc-300">Foto</label>
@@ -1233,12 +1367,12 @@ export const PeopleManagementManagersModule: React.FC<Props> = ({ onBack, curren
                 {(tab === 'LAYOUT' || tab === 'LUVAS') && <LeaderFilter />}
 
                 <div className="flex gap-2 overflow-x-auto pb-2 custom-scrollbar">
-                    <Button variant={tab === 'CADASTRO' ? 'primary' : 'secondary'} onClick={() => setTab('CADASTRO')}><UserIcon size={16} /> Cadastro</Button>
-                    <Button variant={tab === 'CONSULTA' ? 'primary' : 'secondary'} onClick={() => setTab('CONSULTA')}><Search size={16} /> Consulta</Button>
-                    <Button variant={tab === 'EDICAO' ? 'primary' : 'secondary'} onClick={() => { setEditQuery(''); setEditFound(false); setTab('EDICAO'); }}><Save size={16} /> Edição</Button>
-                    <Button variant={tab === 'PRESENCA' ? 'primary' : 'secondary'} onClick={() => setTab('PRESENCA')}><Clock size={16} /> Controle de Presença</Button>
-                    <Button variant={tab === 'LAYOUT' ? 'primary' : 'secondary'} onClick={() => setTab('LAYOUT')}><List size={16} /> Layout de Linha</Button>
-                    <Button variant={tab === 'LUVAS' ? 'primary' : 'secondary'} onClick={() => setTab('LUVAS')}><HandMetal size={16} /> Controle de Luvas</Button>
+                    {(!hasTabAccess || hasTabAccess('PEOPLE_MANAGEMENT_MANAGERS', 'CADASTRO')) && <Button variant={tab === 'CADASTRO' ? 'primary' : 'secondary'} onClick={() => setTab('CADASTRO')}><UserIcon size={16} /> Cadastro</Button>}
+                    {(!hasTabAccess || hasTabAccess('PEOPLE_MANAGEMENT_MANAGERS', 'CONSULTA')) && <Button variant={tab === 'CONSULTA' ? 'primary' : 'secondary'} onClick={() => setTab('CONSULTA')}><Search size={16} /> Consulta</Button>}
+                    {(!hasTabAccess || hasTabAccess('PEOPLE_MANAGEMENT_MANAGERS', 'EDICAO')) && <Button variant={tab === 'EDICAO' ? 'primary' : 'secondary'} onClick={() => { setEditQuery(''); setEditFound(false); setTab('EDICAO'); }}><Save size={16} /> Edição</Button>}
+                    {(!hasTabAccess || hasTabAccess('PEOPLE_MANAGEMENT_MANAGERS', 'PRESENCA')) && <Button variant={tab === 'PRESENCA' ? 'primary' : 'secondary'} onClick={() => setTab('PRESENCA')}><Clock size={16} /> Controle de Presença</Button>}
+                    {(!hasTabAccess || hasTabAccess('PEOPLE_MANAGEMENT_MANAGERS', 'LAYOUT')) && <Button variant={tab === 'LAYOUT' ? 'primary' : 'secondary'} onClick={() => setTab('LAYOUT')}><List size={16} /> Layout de Linha</Button>}
+                    {(!hasTabAccess || hasTabAccess('PEOPLE_MANAGEMENT_MANAGERS', 'LUVAS')) && <Button variant={tab === 'LUVAS' ? 'primary' : 'secondary'} onClick={() => setTab('LUVAS')}><HandMetal size={16} /> Controle de Luvas</Button>}
                 </div>
             </header>
 
@@ -1273,6 +1407,26 @@ export const PeopleManagementManagersModule: React.FC<Props> = ({ onBack, curren
                                 exportModelLayout(printSelectedModel, workstations, employees);
                                 setShowPrintModal(false);
                             }}>Gerar Excel</Button>
+                        </div>
+                    </Card>
+                </div>
+            )}
+
+            {conflictModalData && (
+                <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[200] flex items-center justify-center p-4">
+                    <Card className="w-full max-w-sm space-y-4 text-center">
+                        <h3 className="text-xl font-bold text-slate-800 dark:text-zinc-100">Conflito de Matrícula</h3>
+                        <p className="text-sm text-slate-600 dark:text-zinc-400">
+                            A matrícula <strong>{conflictModalData.matricula}</strong> já existe no banco de dados.
+                        </p>
+                        <p className="text-sm font-medium text-slate-700 dark:text-zinc-300">Deseja substituir ou pular este registro?</p>
+                        <div className="flex justify-center gap-3 pt-4">
+                            <Button variant="danger" onClick={() => { conflictModalData.resolve(false); setConflictModalData(null); }}>
+                                Pular
+                            </Button>
+                            <Button onClick={() => { conflictModalData.resolve(true); setConflictModalData(null); }}>
+                                Substituir
+                            </Button>
                         </div>
                     </Card>
                 </div>
