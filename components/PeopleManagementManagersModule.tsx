@@ -146,12 +146,27 @@ export const PeopleManagementManagersModule: React.FC<Props> = ({ onBack, curren
                     const matricula = String(row['Matrícula'] || '').trim();
                     if (!matricula) continue;
 
+                    let shiftVal = String(row['Turno'] || '').trim();
+                    if (shiftVal === '1') shiftVal = '1º TURNO';
+                    else if (shiftVal === '2') shiftVal = '2º TURNO';
+
+                    let leaderVal = String(row['Líder'] || '').trim();
+                    let superiorId = '';
+                    if (leaderVal) {
+                        const leaderMatch = leaders.find(l => l.matricula === leaderVal);
+                        if (leaderMatch) {
+                            superiorId = leaderMatch.matricula;
+                        } else {
+                            alert(`Líder com matrícula ${leaderVal} não encontrado para o colaborador ${matricula}. Deixando o campo vazio.`);
+                        }
+                    }
+
                     const payload = {
                         matricula,
                         fullName: String(row['Nome'] || '').trim(),
                         role: String(row['Função'] || '').trim(),
-                        shift: String(row['Turno'] || '').trim(),
-                        superiorId: String(row['Líder'] || '').trim(),
+                        shift: shiftVal,
+                        superiorId: superiorId,
                         sector: String(row['Setor'] || '').trim(),
                         idlSt: String(row['IDL-ST'] || '').trim(),
                         type: String(row['Tipo'] || '').trim(),
@@ -204,7 +219,7 @@ export const PeopleManagementManagersModule: React.FC<Props> = ({ onBack, curren
             const fileNameParts = file.name.split('.');
             fileNameParts.pop();
             const matriculaStr = fileNameParts.join('.').toUpperCase();
-            
+
             const b64 = await new Promise<string>((resolve) => {
                 const reader = new FileReader();
                 reader.onload = (ev) => resolve(ev.target?.result as string);
@@ -276,7 +291,7 @@ export const PeopleManagementManagersModule: React.FC<Props> = ({ onBack, curren
             <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 pb-4 border-b border-slate-100 dark:border-zinc-800">
                 <h3 className="text-lg font-bold text-slate-800 dark:text-zinc-100">Cadastro de Colaborador</h3>
                 <div className="flex flex-wrap items-center gap-3">
-                    <Button variant="secondary" onClick={exportEmployeeTemplate}>
+                    <Button variant="secondary" onClick={() => exportEmployeeTemplate(configRoles)}>
                         <Download size={16} /> Baixar Template Excel
                     </Button>
                     <label className="flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-medium rounded-xl cursor-pointer transition-colors text-sm">
@@ -324,7 +339,7 @@ export const PeopleManagementManagersModule: React.FC<Props> = ({ onBack, curren
                     <label className="text-sm font-medium text-slate-700 dark:text-zinc-300">Setor</label>
                     <select className="w-full bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 rounded-xl px-4 py-3 text-slate-900 dark:text-zinc-100" value={formData.sector} onChange={e => setFormData({ ...formData, sector: e.target.value })}>
                         <option value="">Selecione...</option>
-                        {['PRODUÇÃO', 'LOGISTICA', 'ASG', 'MANUTENÇÃO', 'RETRABALHO', 'QUALIDADE', 'QUALIDADE RMA', 'QUALIDADE IQC', 'REPARO', 'PCP'].map(s => <option key={s} value={s}>{s}</option>)}
+                        {['PRODUÇÃO', 'LOGISTICA', 'ASG', 'MANUTENÇÃO', 'RETRABALHO', 'QUALIDADE', 'QUALIDADE PQC', 'QUALIDADE RMA', 'QUALIDADE IQC', 'QUALIDADE OQC', 'REPARO', 'PCP'].map(s => <option key={s} value={s}>{s}</option>)}
                     </select>
                 </div>
                 <div className="flex flex-col gap-2">
@@ -435,20 +450,22 @@ export const PeopleManagementManagersModule: React.FC<Props> = ({ onBack, curren
                 />
             )}
 
-            {!consultResult && !searchQuery && (
+            {!consultResult && (
                 <div className="mt-4">
                     <p className="text-sm font-bold text-slate-500 uppercase tracking-wide mb-2">{selectedLeaderId ? 'Colaboradores da equipe selecionada' : 'Todos os Colaboradores'}</p>
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                        {(selectedLeaderId ? subordinados : employees).map((emp: any) => (
-                            <div key={emp.matricula} onClick={() => { setSearchQuery(emp.matricula); handleConsult(emp.matricula); }} className="flex items-center gap-3 p-3 rounded-xl border border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 hover:border-cyan-500 cursor-pointer">
-                                {emp.photo ? <img src={emp.photo} className="w-10 h-10 rounded-full object-cover shrink-0" /> : <div className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center shrink-0"><UserIcon size={20} className="text-slate-400" /></div>}
-                                <div className="min-w-0">
-                                    <p className="font-bold text-sm text-slate-800 dark:text-zinc-100 truncate">{emp.fullName}</p>
-                                    <p className="text-xs text-slate-500 font-mono truncate">{emp.matricula}</p>
-                                    <p className="text-xs text-slate-500 truncate">{emp.role} • {emp.shift}</p>
+                        {(selectedLeaderId ? subordinados : employees)
+                            .filter((emp: any) => !searchQuery || emp.matricula.toLowerCase().includes(searchQuery.toLowerCase()) || emp.fullName.toLowerCase().includes(searchQuery.toLowerCase()))
+                            .map((emp: any) => (
+                                <div key={emp.matricula} onClick={() => { setSearchQuery(emp.matricula); handleConsult(emp.matricula); }} className="flex items-center gap-3 p-3 rounded-xl border border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 hover:border-cyan-500 cursor-pointer">
+                                    {emp.photo ? <img src={emp.photo} className="w-10 h-10 rounded-full object-cover shrink-0" /> : <div className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center shrink-0"><UserIcon size={20} className="text-slate-400" /></div>}
+                                    <div className="min-w-0">
+                                        <p className="font-bold text-sm text-slate-800 dark:text-zinc-100 truncate">{emp.fullName}</p>
+                                        <p className="text-xs text-slate-500 font-mono truncate">{emp.matricula}</p>
+                                        <p className="text-xs text-slate-500 truncate">{emp.role} • {emp.shift}</p>
+                                    </div>
                                 </div>
-                            </div>
-                        ))}
+                            ))}
                     </div>
                 </div>
             )}
@@ -1099,10 +1116,10 @@ export const PeopleManagementManagersModule: React.FC<Props> = ({ onBack, curren
                             </div>
                             <div className="flex flex-col gap-2">
                                 <label className="text-sm font-medium text-slate-700 dark:text-zinc-300">Posto</label>
-                            <select className="bg-slate-50 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 p-2 rounded outline-none focus:ring-2 focus:ring-cyan-500" value={alocStation} onChange={e => setAlocStation(e.target.value)}>
-                                <option value="">Selecione Posto</option>
-                                {workstations.filter(w => w.modelName === alocModel || (w.modelName || '').substring(0, 7) === alocModel).map(w => <option key={w.id} value={w.name}>{w.name}</option>)}
-                            </select>
+                                <select className="bg-slate-50 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 p-2 rounded outline-none focus:ring-2 focus:ring-cyan-500" value={alocStation} onChange={e => setAlocStation(e.target.value)}>
+                                    <option value="">Selecione Posto</option>
+                                    {workstations.filter(w => w.modelName === alocModel || (w.modelName || '').substring(0, 7) === alocModel).map(w => <option key={w.id} value={w.name}>{w.name}</option>)}
+                                </select>
                             </div>
                         </div>
                         <Button className="w-full mt-2" onClick={handleBindStation}>Vincular Posto</Button>
@@ -1271,7 +1288,9 @@ export const PeopleManagementManagersModule: React.FC<Props> = ({ onBack, curren
                 <Card>
                     <p className="text-sm font-bold text-slate-500 uppercase tracking-wide mb-3">Selecione um colaborador para editar</p>
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                        {employees.map(emp => (
+                        {employees
+                            .filter(emp => !editQuery || emp.matricula.toLowerCase().includes(editQuery.toLowerCase()) || emp.fullName.toLowerCase().includes(editQuery.toLowerCase()))
+                            .map(emp => (
                             <div
                                 key={emp.matricula}
                                 onClick={() => {
@@ -1327,7 +1346,7 @@ export const PeopleManagementManagersModule: React.FC<Props> = ({ onBack, curren
                             <label className="text-sm font-medium text-slate-700 dark:text-zinc-300">Setor</label>
                             <select className="w-full bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 rounded-xl px-4 py-3 text-slate-900 dark:text-zinc-100" value={formData.sector} onChange={e => setFormData({ ...formData, sector: e.target.value })}>
                                 <option value="">Selecione...</option>
-                                {['PRODUÇÃO', 'LOGISTICA', 'ASG', 'MANUTENÇÃO', 'RETRABALHO', 'QUALIDADE', 'QUALIDADE RMA', 'QUALIDADE IQC', 'REPARO', 'PCP'].map(s => <option key={s} value={s}>{s}</option>)}
+                                {['PRODUÇÃO', 'LOGISTICA', 'ASG', 'MANUTENÇÃO', 'RETRABALHO', 'QUALIDADE', 'QUALIDADE PQC', 'QUALIDADE RMA', 'QUALIDADE IQC', 'QUALIDADE OQC', 'REPARO', 'PCP'].map(s => <option key={s} value={s}>{s}</option>)}
                             </select>
                         </div>
                         <div className="flex flex-col gap-2">

@@ -251,6 +251,7 @@ const App = () => {
     const categoryRefs = useRef<{ [key: string]: HTMLDivElement | null }>({});
     const passwordInputRef = useRef<HTMLInputElement>(null);
     const inactivityTimerRef = useRef<NodeJS.Timeout | null>(null);
+    const lastActivityRef = useRef<number>(Date.now());
 
     const isSuperAdmin = currentUser ? (currentUser.matricula === 'admin' || currentUser.role === 'Admin' || currentUser.isAdmin === true) : false;
 
@@ -362,9 +363,10 @@ const App = () => {
             return;
         }
 
-        const INACTIVITY_TIMEOUT = 3600000; // 1 hour
+        const INACTIVITY_TIMEOUT = 600000; // 10 minutos
 
         const resetInactivityTimer = () => {
+            lastActivityRef.current = Date.now();
             if (inactivityTimerRef.current) clearTimeout(inactivityTimerRef.current);
             inactivityTimerRef.current = setTimeout(() => {
                 console.warn('Inatividade detectada. Realizando logout automático.');
@@ -372,18 +374,35 @@ const App = () => {
             }, INACTIVITY_TIMEOUT);
         };
 
+        const handleVisibilityChange = () => {
+            if (document.visibilityState === 'visible') {
+                const elapsed = Date.now() - lastActivityRef.current;
+                if (elapsed >= INACTIVITY_TIMEOUT) {
+                    console.warn('App retornou após inatividade prolongada. Logout automático.');
+                    handleLogout();
+                    return;
+                }
+                // Restarta o timer pelo tempo restante
+                if (inactivityTimerRef.current) clearTimeout(inactivityTimerRef.current);
+                inactivityTimerRef.current = setTimeout(() => {
+                    handleLogout();
+                }, INACTIVITY_TIMEOUT - elapsed);
+            } else {
+                // Saindo do foco: cancela o timer, confia no timestamp absoluto
+                if (inactivityTimerRef.current) clearTimeout(inactivityTimerRef.current);
+            }
+        };
+
         const events = ['mousemove', 'keydown', 'mousedown', 'touchstart'];
-        events.forEach(event => {
-            window.addEventListener(event, resetInactivityTimer);
-        });
+        events.forEach(event => window.addEventListener(event, resetInactivityTimer));
+        document.addEventListener('visibilitychange', handleVisibilityChange);
 
         resetInactivityTimer();
 
         return () => {
             if (inactivityTimerRef.current) clearTimeout(inactivityTimerRef.current);
-            events.forEach(event => {
-                window.removeEventListener(event, resetInactivityTimer);
-            });
+            events.forEach(event => window.removeEventListener(event, resetInactivityTimer));
+            document.removeEventListener('visibilitychange', handleVisibilityChange);
         };
     }, [currentUser]);
 
@@ -1161,11 +1180,11 @@ const App = () => {
     }
 
     const handleToggleModulePermission = (role: string, module: Permission['module']) => {
-        const existing = permissions.find(p => p.role === role && p.module === module && !p.tab);
+        const existing = permissions.find(p => p.role === role && p.module === module && p.tab === '');
         const newVal = existing ? !existing.allowed : true;
-        const newPerm: Permission = { role, module, tab: null, allowed: newVal };
+        const newPerm: Permission = { role, module, tab: '', allowed: newVal };
         // Remove existing module-level perm + all tab-level perms if turning off
-        let otherPerms = permissions.filter(p => !(p.role === role && p.module === module && !p.tab));
+        let otherPerms = permissions.filter(p => !(p.role === role && p.module === module && p.tab === ''));
         if (!newVal) {
             otherPerms = otherPerms.filter(p => !(p.role === role && p.module === module));
         }

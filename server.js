@@ -641,7 +641,7 @@ app.get('/api/config/permissions', async (req, res) => {
         res.json(perms.map(p => ({
             role: p.role,
             module: p.module,
-            tab: p.tab || null,
+            tab: p.tab || '',
             allowed: p.allowed === 1
         })));
     } catch (e) { res.status(500).json({ error: e.message }); }
@@ -657,7 +657,7 @@ app.post('/api/config/permissions', async (req, res) => {
                     data: {
                         role: p.role,
                         module: p.module,
-                        tab: p.tab || null,
+                        tab: p.tab || '',
                         allowed: p.allowed ? 1 : 0
                     }
                 });
@@ -875,6 +875,12 @@ app.post('/api/boxes/:id/scraps', async (req, res) => {
         if (!categoryMatch) {
             return res.status(400).json({
                 error: `Item '${scrap.item}' não pertence à categoria '${box.type}'. Verifique a caixa correta.`
+            });
+        }
+        
+        if (box.plant && scrap.plant !== box.plant) {
+            return res.status(400).json({
+                error: `A planta do item (${scrap.plant || 'Não definida'}) não corresponde à planta da caixa (${box.plant}).`
             });
         }
         // ---- FIM VALIDAÇÃO ----

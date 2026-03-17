@@ -14,7 +14,7 @@ const getWeekNumber = (d: Date) => {
     return weekNo;
 }
 
-export const exportEmployeeTemplate = async () => {
+export const exportEmployeeTemplate = async (rolesList: any[] = []) => {
     const workbook = new ExcelJS.Workbook();
     const sheet = workbook.addWorksheet('Cadastro');
 
@@ -33,6 +33,34 @@ export const exportEmployeeTemplate = async () => {
     headerRow.font = { bold: true, color: { argb: 'FFFFFFFF' } };
     headerRow.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF2563EB' } };
     headerRow.alignment = { horizontal: 'center' };
+
+    const gabarito = workbook.addWorksheet('Gabarito');
+    gabarito.columns = [
+        { header: 'Funções (CARGOS)', key: 'roles', width: 30 },
+        { header: 'Setores', key: 'sectors', width: 20 },
+        { header: 'Turnos', key: 'shifts', width: 15 },
+        { header: 'IDL-ST', key: 'idlst', width: 15 },
+        { header: 'Tipo', key: 'type', width: 15 },
+    ];
+    gabarito.getRow(1).font = { bold: true };
+
+    const sectors = ['PRODUÇÃO', 'LOGISTICA', 'ASG', 'AGP', 'MANUTENÇÃO', 'RETRABALHO', 'QUALIDADE', 'QUALIDADE PQC', 'QUALIDADE RMA', 'QUALIDADE IQC', 'QUALIDADE OQC', 'REPARO', 'PCP'];
+    const shifts = ['1º TURNO', '2º TURNO'];
+    const idlsts = ['DIRETO', 'INDIRETO'];
+    const types = ['EFETIVO', 'TEMPORARIO', 'APRENDIZ', 'ESTAGIARIO', 'GRAVIDA', 'LICENÇA INSS', 'PCD'];
+    const roles = rolesList.map(r => r.name || r.id);
+
+    const maxRows = Math.max(roles.length, sectors.length, shifts.length, idlsts.length, types.length);
+
+    for (let i = 0; i < maxRows; i++) {
+        gabarito.addRow({
+            roles: roles[i] || '',
+            sectors: sectors[i] || '',
+            shifts: shifts[i] || '',
+            idlst: idlsts[i] || '',
+            type: types[i] || ''
+        });
+    }
 
     const buffer = await workbook.xlsx.writeBuffer();
     const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
@@ -1368,17 +1396,21 @@ export const generateBoxLabels = async (boxId: number | string, scraps: any[], e
         }
     };
 
-    // Preservar imagens do template no outputSheet
+    // Extrair e armazenar imagens do template uma única vez no outputWorkbook
+    const cachedImages: { outputImgId: number, originalRange: any }[] = [];
     templateSheet.getImages().forEach((img: any) => {
-        const imageId = outputWorkbook.addImage({
-            buffer: workbook.getImage(img.imageId).buffer,
-            extension: workbook.getImage(img.imageId).extension as any,
+        const sourceImg = workbook.getImage(img.imageId);
+        if (!sourceImg || !sourceImg.buffer) return;
+
+        const outputImgId = outputWorkbook.addImage({
+            buffer: sourceImg.buffer,
+            extension: sourceImg.extension as any,
         });
-        outputSheet.addImage(imageId, img.range);
+        cachedImages.push({ outputImgId, originalRange: img.range });
     });
 
     const copyBlock = (startRowOutput: number, data: any) => {
-        const BLOCK_SIZE = 15;
+        const BLOCK_SIZE = 14; // Tamanho exato da parte visível da placa
         for (let r = 1; r <= BLOCK_SIZE; r++) {
             const srcRow = templateSheet.getRow(r);
             const destRow = outputSheet.getRow(startRowOutput + r - 1);
@@ -1388,6 +1420,15 @@ export const generateBoxLabels = async (boxId: number | string, scraps: any[], e
                 copyCell(cell, destRow.getCell(colNumber));
             });
         }
+
+        // Replicar imagens via cache com novo range literal para evitar mutação cumulativa
+        cachedImages.forEach(({ outputImgId, originalRange }) => {
+            const newRange: any = {
+                tl: { ...originalRange.tl, nativeRow: originalRange.tl.nativeRow + (startRowOutput - 1) },
+                br: { ...originalRange.br, nativeRow: originalRange.br.nativeRow + (startRowOutput - 1) }
+            };
+            outputSheet.addImage(outputImgId, newRange);
+        });
 
         const dateStr = new Date().toLocaleDateString('pt-BR');
 
@@ -1434,9 +1475,8 @@ export const generateBoxLabels = async (boxId: number | string, scraps: any[], e
         try { outputSheet.mergeCells(`B${row14Abs}:F${row14Abs}`); } catch (e) { }
         outputSheet.getCell(`B${row14Abs}`).value = templateSheet.getCell('B14').value;
 
-        // Apply borders iteratively (skip row 15 to avoid format conflicts)
+        // Apply borders iteratively
         for (let r = 1; r <= BLOCK_SIZE; r++) {
-            if (r === 15) continue; // Skip last row to prevent border bleeding
             const destRow = outputSheet.getRow(startRowOutput + r - 1);
             destRow.eachCell({ includeEmpty: true }, (cell, colNumber) => {
                 if (!cell.border) {
@@ -1465,7 +1505,7 @@ export const generateBoxLabels = async (boxId: number | string, scraps: any[], e
     let currentOutputRow = 1;
     for (let i = 0; i < uniqueCodes.length; i++) {
         copyBlock(currentOutputRow, uniqueCodes[i]);
-        currentOutputRow += 16;
+        currentOutputRow += 15;
     }
 
     const buffer = await outputWorkbook.xlsx.writeBuffer();

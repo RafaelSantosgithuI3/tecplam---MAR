@@ -190,7 +190,7 @@ export const PeopleManagementModule = ({ onBack, currentUser, hasTabAccess }: Pe
                     <label className="text-sm font-medium text-slate-700 dark:text-zinc-300">Setor</label>
                     <select className="w-full bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 rounded-xl px-4 py-3 text-slate-900 dark:text-zinc-100" value={formData.sector} onChange={e => setFormData({ ...formData, sector: e.target.value })}>
                         <option value="">Selecione...</option>
-                        {['PRODUÇÃO', 'LOGISTICA', 'ASG', 'MANUTENÇÃO', 'RETRABALHO', 'QUALIDADE', 'QUALIDADE RMA', 'QUALIDADE IQC', 'REPARO', 'PCP'].map(s => <option key={s} value={s}>{s}</option>)}
+                        {['PRODUÇÃO', 'LOGISTICA', 'ASG', 'MANUTENÇÃO', 'RETRABALHO', 'QUALIDADE', 'QUALIDADE PQC', 'QUALIDADE RMA', 'QUALIDADE IQC', 'QUALIDADE OQC', 'REPARO', 'PCP'].map(s => <option key={s} value={s}>{s}</option>)}
                     </select>
                 </div>
 
@@ -307,20 +307,23 @@ export const PeopleManagementModule = ({ onBack, currentUser, hasTabAccess }: Pe
                 />
             )}
 
-            {!consultResult && !searchQuery && (
+            {!consultResult && (
                 <div className="mt-4">
                     <p className="text-sm font-bold text-slate-500 uppercase tracking-wide mb-2">Colaboradores da sua equipe</p>
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                        {employees.filter(e => e.superiorId === currentUser.matricula).map(emp => (
-                            <div key={emp.matricula} onClick={() => { setSearchQuery(emp.matricula); handleConsult(emp.matricula); }} className="flex items-center gap-3 p-3 rounded-xl border border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 hover:border-cyan-500 cursor-pointer">
-                                {emp.photo ? <img src={emp.photo} className="w-10 h-10 rounded-full object-cover shrink-0" /> : <div className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center shrink-0"><UserIcon size={20} className="text-slate-400" /></div>}
-                                <div className="min-w-0">
-                                    <p className="font-bold text-sm text-slate-800 dark:text-zinc-100 truncate">{emp.fullName}</p>
-                                    <p className="text-xs text-slate-500 font-mono truncate">{emp.matricula}</p>
-                                    <p className="text-xs text-slate-500 truncate">{emp.role} • {emp.shift}</p>
+                        {employees
+                            .filter(e => e.superiorId === currentUser.matricula)
+                            .filter(e => !searchQuery || e.matricula.toLowerCase().includes(searchQuery.toLowerCase()) || e.fullName.toLowerCase().includes(searchQuery.toLowerCase()))
+                            .map(emp => (
+                                <div key={emp.matricula} onClick={() => { setSearchQuery(emp.matricula); handleConsult(emp.matricula); }} className="flex items-center gap-3 p-3 rounded-xl border border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 hover:border-cyan-500 cursor-pointer">
+                                    {emp.photo ? <img src={emp.photo} className="w-10 h-10 rounded-full object-cover shrink-0" /> : <div className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center shrink-0"><UserIcon size={20} className="text-slate-400" /></div>}
+                                    <div className="min-w-0">
+                                        <p className="font-bold text-sm text-slate-800 dark:text-zinc-100 truncate">{emp.fullName}</p>
+                                        <p className="text-xs text-slate-500 font-mono truncate">{emp.matricula}</p>
+                                        <p className="text-xs text-slate-500 truncate">{emp.role} • {emp.shift}</p>
+                                    </div>
                                 </div>
-                            </div>
-                        ))}
+                            ))}
                     </div>
                 </div>
             )}
@@ -1181,23 +1184,26 @@ export const PeopleManagementModule = ({ onBack, currentUser, hasTabAccess }: Pe
                 <Card>
                     <p className="text-sm font-bold text-slate-500 uppercase tracking-wide mb-3">Selecione um colaborador para editar</p>
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                        {employees.filter(e => e.superiorId === currentUser.matricula).map(emp => (
-                            <div
-                                key={emp.matricula}
-                                onClick={() => {
-                                    setFormData({ ...emp, photo: emp.photo || '' });
-                                    setEditFound(true);
-                                }}
-                                className="flex items-center gap-3 p-3 rounded-xl border border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 hover:border-cyan-500 cursor-pointer transition-all"
-                            >
-                                {emp.photo ? <img src={emp.photo} className="w-10 h-10 rounded-full object-cover shrink-0" /> : <div className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center shrink-0"><UserIcon size={20} className="text-slate-400" /></div>}
-                                <div className="min-w-0 flex-1">
-                                    <p className="font-bold text-sm text-slate-800 dark:text-zinc-100 truncate">{emp.fullName}</p>
-                                    <p className="text-xs text-slate-500 font-mono truncate">{emp.matricula}</p>
-                                    <p className="text-xs text-slate-500 truncate">{emp.role} • {emp.shift}</p>
+                        {employees
+                            .filter(e => e.superiorId === currentUser.matricula)
+                            .filter(e => !editQuery || e.matricula.toLowerCase().includes(editQuery.toLowerCase()) || e.fullName.toLowerCase().includes(editQuery.toLowerCase()))
+                            .map(emp => (
+                                <div
+                                    key={emp.matricula}
+                                    onClick={() => {
+                                        setFormData({ ...emp, photo: emp.photo || '' });
+                                        setEditFound(true);
+                                    }}
+                                    className="flex items-center gap-3 p-3 rounded-xl border border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 hover:border-cyan-500 cursor-pointer transition-all"
+                                >
+                                    {emp.photo ? <img src={emp.photo} className="w-10 h-10 rounded-full object-cover shrink-0" /> : <div className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center shrink-0"><UserIcon size={20} className="text-slate-400" /></div>}
+                                    <div className="min-w-0 flex-1">
+                                        <p className="font-bold text-sm text-slate-800 dark:text-zinc-100 truncate">{emp.fullName}</p>
+                                        <p className="text-xs text-slate-500 font-mono truncate">{emp.matricula}</p>
+                                        <p className="text-xs text-slate-500 truncate">{emp.role} • {emp.shift}</p>
+                                    </div>
                                 </div>
-                            </div>
-                        ))}
+                            ))}
                     </div>
                 </Card>
             )}
@@ -1237,7 +1243,7 @@ export const PeopleManagementModule = ({ onBack, currentUser, hasTabAccess }: Pe
                             <label className="text-sm font-medium text-slate-700 dark:text-zinc-300">Setor</label>
                             <select className="w-full bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 rounded-xl px-4 py-3 text-slate-900 dark:text-zinc-100" value={formData.sector} onChange={e => setFormData({ ...formData, sector: e.target.value })}>
                                 <option value="">Selecione...</option>
-                                {['PRODUÇÃO', 'LOGISTICA', 'ASG', 'MANUTENÇÃO', 'RETRABALHO', 'QUALIDADE', 'QUALIDADE RMA', 'QUALIDADE IQC', 'REPARO', 'PCP'].map(s => <option key={s} value={s}>{s}</option>)}
+                                {['PRODUÇÃO', 'LOGISTICA', 'ASG', 'MANUTENÇÃO', 'RETRABALHO', 'QUALIDADE', 'QUALIDADE PQC', 'QUALIDADE RMA', 'QUALIDADE IQC', 'QUALIDADE OQC', 'REPARO', 'PCP'].map(s => <option key={s} value={s}>{s}</option>)}
                             </select>
                         </div>
                         <div className="flex flex-col gap-2">

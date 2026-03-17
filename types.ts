@@ -122,7 +122,7 @@ export interface MeetingLog {
 export interface Permission {
   role: string;
   module: 'CHECKLIST' | 'MEETING' | 'MAINTENANCE' | 'AUDIT' | 'ADMIN' | 'LINE_STOP' | 'MANAGEMENT' | 'PEOPLE_MANAGEMENT' | 'PEOPLE_MANAGEMENT_MANAGERS' | 'SCRAP' | 'IQC' | 'PREPARATION';
-  tab?: string | null;
+  tab: string;
   allowed: boolean;
 }
 

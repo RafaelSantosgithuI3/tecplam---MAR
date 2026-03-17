@@ -228,13 +228,16 @@ export const ScrapBoxMount = ({ currentUser, onUpdate }: any) => {
                         </div>
                         <div className="flex flex-col gap-2">
                             <label className="text-sm font-bold text-slate-700 dark:text-zinc-300">Planta</label>
-                            <input
-                                type="text"
+                            <select
                                 className="w-full bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 rounded-xl px-4 py-3 text-slate-900 dark:text-zinc-100 font-medium"
                                 value={newBoxPlant}
                                 onChange={e => setNewBoxPlant(e.target.value)}
-                                placeholder="Ex: Planta 1, Planta 2..."
-                            />
+                            >
+                                <option value="">Selecione a Planta</option>
+                                <option value="P81L">P81L</option>
+                                <option value="P81M">P81M</option>
+                                <option value="P81N">P81N</option>
+                            </select>
                         </div>
                         <div className="flex gap-2 pt-2">
                             <Button variant="secondary" className="flex-1" onClick={() => setShowCreateModal(false)}>Cancelar</Button>
@@ -286,17 +289,17 @@ export const ScrapBoxMount = ({ currentUser, onUpdate }: any) => {
             )}
 
             {Object.entries(
-                boxes.reduce((acc: Record<string, any[]>, box) => {
+                boxes.reduce((acc: Record<string, any[]>, box: any) => {
                     const plant = box.plant || 'Sem Planta';
                     if (!acc[plant]) acc[plant] = [];
                     acc[plant].push(box);
                     return acc;
-                }, {})
-            ).map(([plant, plantBoxes]) => (
+                }, {} as Record<string, any[]>)
+            ).map(([plant, plantBoxes]: [string, any]) => (
                 <div key={plant} className="space-y-4">
                     <h3 className="text-lg font-bold text-slate-900 dark:text-zinc-100">{plant}</h3>
                     <div className="grid gap-6">
-                        {plantBoxes.map(box => {
+                        {(plantBoxes as any[]).map((box: any) => {
                     const totalItens = box.scraps?.reduce((acc: number, s: any) => acc + (Number(s.qty) || 0), 0) || 0;
                     const valorTotal = box.scraps?.reduce((acc: number, s: any) => acc + (Number(s.totalValue) || 0), 0) || 0;
 
@@ -463,7 +466,7 @@ export const ScrapBoxIdentified = ({ currentUser, onUpdate, users = [] }: { curr
                 </Card>
             ) : (
                 <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-                    {boxes.map(box => {
+                    {boxes.map((box: any) => {
                         const totalItens = box.scraps?.length || 0;
                         const valorTotal = box.scraps?.reduce((acc: number, s: any) => acc + (Number(s.totalValue) || 0), 0) || 0;
 

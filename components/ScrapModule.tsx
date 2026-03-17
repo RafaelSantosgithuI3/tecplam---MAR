@@ -50,7 +50,7 @@ type Tab = 'FORM' | 'PENDING' | 'HISTORY' | 'OPERATIONAL' | 'MANAGEMENT_ADVANCED
 
 export const ScrapModule: React.FC<ScrapModuleProps> = ({ currentUser, onBack, initialTab, hasTabAccess }) => {
     const allTabs: Tab[] = ['FORM', 'PENDING', 'HISTORY', 'OPERATIONAL', 'EDIT_DELETE', 'MANAGEMENT_ADVANCED', 'NEW_ADVANCED', 'CONSULTA'];
-    
+
     const determineInitialTab = (): Tab => {
         if (initialTab && (!hasTabAccess || hasTabAccess('SCRAP', initialTab))) return initialTab;
         if (!hasTabAccess) return 'FORM';
@@ -155,9 +155,9 @@ export const ScrapModule: React.FC<ScrapModuleProps> = ({ currentUser, onBack, i
                         </Button>
                     )}
 
-                    {(!hasTabAccess || hasTabAccess('SCRAP', 'OPERATIONAL')) && (
+                    {(!hasTabAccess || hasTabAccess('SCRAP', 'MONITORAMENTO')) && (
                         <Button variant={activeTab === 'OPERATIONAL' ? 'primary' : 'ghost'} onClick={() => setActiveTab('OPERATIONAL')} size="sm">
-                            <BarChart3 size={16} /> Operacional
+                            <BarChart3 size={16} /> Monitoramento
                         </Button>
                     )}
 
@@ -180,7 +180,7 @@ export const ScrapModule: React.FC<ScrapModuleProps> = ({ currentUser, onBack, i
                             <LayoutDashboard size={16} /> Gestão Avançada
                         </Button>
                     )}
-                    
+
                     {(!hasTabAccess || hasTabAccess('SCRAP', 'CONSULTA')) && (
                         <Button variant={activeTab === 'CONSULTA' ? 'primary' : 'ghost'} onClick={() => setActiveTab('CONSULTA')} size="sm">
                             <Search size={16} /> Consulta
@@ -1400,7 +1400,7 @@ export const ScrapManagementAdvanced = ({ scraps }: any) => {
                     <Card className="max-w-6xl w-full bg-white dark:bg-zinc-900 border-slate-200 dark:border-zinc-700 max-h-[90vh] overflow-y-auto custom-scrollbar shadow-2xl">
                         <div className="flex justify-between items-start mb-6 border-b border-slate-100 dark:border-zinc-800 pb-4">
                             <div>
-                                <h3 className="font-bold text-xl text-slate-900 dark:text-white">Preview de Grupo</h3>
+                                <h3 className="font-bold text-xl text-slate-900 dark:text-white">Preview do SCRAP</h3>
                                 <p className="text-sm text-slate-600 dark:text-zinc-400 mt-1">
                                     {groupPreviewModal.type === 'shift' ? 'Turno' : groupPreviewModal.type === 'line' ? 'Linha' : groupPreviewModal.type === 'model' ? 'Modelo' : groupPreviewModal.type === 'leader' ? 'Líder' : 'Pendências'}: {groupPreviewModal.key}
                                 </p>
@@ -2397,7 +2397,7 @@ const NewAdvancedDashboard = ({ scraps, users }: { scraps: ScrapData[], users: U
                     <Card className="max-w-6xl w-full bg-white dark:bg-zinc-900 border-slate-200 dark:border-zinc-700 max-h-[90vh] overflow-y-auto custom-scrollbar shadow-2xl">
                         <div className="flex justify-between items-start mb-6 border-b border-slate-100 dark:border-zinc-800 pb-4">
                             <div>
-                                <h3 className="font-bold text-xl text-slate-900 dark:text-white">Preview de Grupo</h3>
+                                <h3 className="font-bold text-xl text-slate-900 dark:text-white">Preview do SCRAP</h3>
                                 <p className="text-sm text-slate-600 dark:text-zinc-400 mt-1">
                                     {groupPreviewModal.type === 'category' ? 'Categoria' : groupPreviewModal.type === 'model' ? 'Modelo' : 'Linha'}: {groupPreviewModal.key}
                                 </p>

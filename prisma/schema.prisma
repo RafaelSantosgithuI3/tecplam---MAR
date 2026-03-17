@@ -191,13 +191,12 @@ model ConfigStation {
 }
 
 model ConfigPermission {
-  id      String  @id @default(uuid())
   role    String
   module  String
-  tab     String?
+  tab     String @default("")
   allowed Int?
 
-  @@unique([role, module, tab])
+  @@id([role, module, tab])
   @@map("config_permissions")
 }
 
