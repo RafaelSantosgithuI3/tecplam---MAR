@@ -26,11 +26,25 @@ const formatCurrency = (val: number | undefined) => {
     return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(val || 0);
 };
 
-const formatDateDisplay = (dateString: string | undefined) => {
+const formatDateDisplay = (dateString: string | Date | undefined): string => {
     if (!dateString) return '-';
-    // Divide a string "YYYY-MM-DD" e remonta manualmente para evitar conversão UTC do navegador
-    const [year, month, day] = dateString.split('-');
-    return `${day}/${month}/${year}`;
+    let ds = typeof dateString === 'string' ? dateString : dateString.toISOString();
+    const datePart = ds.split('T')[0];
+    const parts = datePart.split('-');
+    if (parts.length === 3) {
+        const [year, month, day] = parts;
+        return `${day}/${month}/${year}`;
+    }
+    return ds;
+};
+
+export const getSafeDateFallback = (dateStr?: string | null): string => {
+    if (!dateStr) return getManausDate().toISOString().split('T')[0];
+    const parsed = new Date(dateStr);
+    if (isNaN(parsed.getTime()) || parsed.getFullYear() < 2000) {
+        return getManausDate().toISOString().split('T')[0];
+    }
+    return dateStr;
 };
 
 const CRITICAL_ITEMS = ['REAR', 'FRONT', 'OCTA', 'BATERIA SCRAP', 'BATERIA RMA', 'PLACA'];
@@ -409,6 +423,7 @@ const ScrapForm = ({ users, models, stations, lines, materials, onSuccess, curre
 
         if (parsed.data) {
             extractedDate = convertQRDateToInputFormat(parsed.data);
+            extractedDate = getSafeDateFallback(extractedDate);
         }
 
         setFormData((prev: any) => ({
@@ -503,6 +518,8 @@ const ScrapForm = ({ users, models, stations, lines, materials, onSuccess, curre
             return;
         }
 
+        const safeDate = getSafeDateFallback(formData.date);
+        
         const now = getManausDate();
         const time = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
 
@@ -510,6 +527,7 @@ const ScrapForm = ({ users, models, stations, lines, materials, onSuccess, curre
             // Batch create: one record per QR
             const batchPayloads: ScrapData[] = multiQRs.map(qr => ({
                 ...formData as ScrapData,
+                date: safeDate,
                 userId: currentUser.matricula,
                 time: time,
                 status: formData.status!,
@@ -535,6 +553,7 @@ const ScrapForm = ({ users, models, stations, lines, materials, onSuccess, curre
             // Single create
             const payload: ScrapData = {
                 ...formData as ScrapData,
+                date: safeDate,
                 userId: currentUser.matricula,
                 time: time,
                 status: formData.status!,
@@ -569,7 +588,7 @@ const ScrapForm = ({ users, models, stations, lines, materials, onSuccess, curre
         <Card className="max-w-6xl mx-auto bg-white/50 dark:bg-zinc-900/50 border-slate-200 dark:border-zinc-800 shadow-sm">
             <div className="space-y-6">
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                    <Input type="date" label="Data" value={formData.date} onChange={e => setFormData({ ...formData, date: e.target.value })} />
+                    <Input type="date" label="Data" value={formData.date} onChange={e => setFormData({ ...formData, date: e.target.value })} onBlur={e => setFormData({ ...formData, date: getSafeDateFallback(e.target.value) })} />
                     <Input label="Semana" value={formData.week} readOnly className="opacity-50" />
                     <div className="md:col-span-2">
                         <label className="block text-xs font-medium text-gray-500 dark:text-zinc-400 mb-1.5 uppercase">Líder</label>
@@ -1516,6 +1535,20 @@ export const ScrapDetailModal: React.FC<ScrapDetailModalProps> = ({ isOpen, scra
                 </div>
 
                 <div className="space-y-6">
+                    {(scrap.situation === 'SENT' || scrap.nfNumber) && (
+                        <div className="bg-green-50 dark:bg-green-900/10 p-4 rounded-xl border border-green-200 dark:border-green-800/50 mb-6">
+                            <h4 className="text-xs font-bold text-green-600 dark:text-green-400 uppercase mb-3 flex items-center gap-2">
+                                <CheckCircle2 size={14} /> Dados de Expedição
+                            </h4>
+                            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                                <DetailItem label="Data de Envio" value={formatDateDisplay(scrap.sentAt)} />
+                                <DetailItem label="Número da NF" value={scrap.nfNumber || '-'} />
+                                <DetailItem label="Caixa" value={scrap.boxId ? `#${scrap.boxId}` : '-'} />
+                                <DetailItem label="Enviado Por" value={users.find(u => u.matricula === scrap.sentBy)?.name || scrap.sentBy || '-'} />
+                            </div>
+                        </div>
+                    )}
+
                     {/* Bloco 1: Contexto Operacional */}
                     <div className="bg-slate-50/50 dark:bg-zinc-950/50 p-4 rounded-xl border border-slate-200/50 dark:border-zinc-800/50">
                         <h4 className="text-xs font-bold text-blue-500 uppercase mb-3 flex items-center gap-2">
@@ -2531,6 +2564,20 @@ export const ScrapConsulta = ({ scraps, users }: { scraps: ScrapData[], users: U
                     </div>
 
                     <div className="space-y-6">
+                        {(result.situation === 'SENT' || result.nfNumber) && (
+                            <div className="bg-green-50 dark:bg-green-900/10 p-4 rounded-xl border border-green-200 dark:border-green-800/50 mb-6">
+                                <h4 className="text-xs font-bold text-green-600 dark:text-green-400 uppercase mb-3 flex items-center gap-2">
+                                    <CheckCircle2 size={14} /> Dados de Expedição
+                                </h4>
+                                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                                    <DetailItem label="Data de Envio" value={formatDateDisplay(result.sentAt)} />
+                                    <DetailItem label="Número da NF" value={result.nfNumber || '-'} />
+                                    <DetailItem label="Caixa" value={result.boxId ? `#${result.boxId}` : '-'} />
+                                    <DetailItem label="Enviado Por" value={users.find(u => u.matricula === result.sentBy)?.name || result.sentBy || '-'} />
+                                </div>
+                            </div>
+                        )}
+
                         {/* Bloco 1 */}
                         <div className="bg-slate-50/50 dark:bg-zinc-950/50 p-4 rounded-xl border border-slate-200/50 dark:border-zinc-800/50">
                             <h4 className="text-xs font-bold text-blue-500 uppercase mb-3 flex items-center gap-2"><LayoutDashboard size={14} /> Contexto Operacional</h4>

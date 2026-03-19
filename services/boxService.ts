@@ -7,8 +7,8 @@ export const createBox = async (type: string, plant?: string) => {
 export const closeBox = async (id: number) => {
     return await apiFetch(`/boxes/${id}`, { method: 'PUT', body: JSON.stringify({ status: 'IDENTIFIED' }) });
 };
-export const associateBoxNF = async (id: number, nfNumber: string) => {
-    return await apiFetch(`/boxes/${id}`, { method: 'PUT', body: JSON.stringify({ status: 'INVOICED', nfNumber }) });
+export const associateBoxNF = async (id: number, nfNumber: string, userId?: string) => {
+    return await apiFetch(`/boxes/${id}`, { method: 'PUT', body: JSON.stringify({ status: 'INVOICED', nfNumber, userId }) });
 };
 export const linkScrapToBox = async (id: number, qrCode: string) => {
     return await apiFetch(`/boxes/${id}/scraps`, { method: 'POST', body: JSON.stringify({ qrCode }) });

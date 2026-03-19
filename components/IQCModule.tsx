@@ -9,7 +9,7 @@ import {
     ArrowLeft, Download, Filter, Truck, FileText, ChevronDown, ChevronUp, FileSpreadsheet, Box, QrCode, X, Eye
 } from 'lucide-react';
 import {
-    getScraps, batchProcessScraps
+    getScraps, batchProcessScraps, updateScrap
 } from '../services/scrapService';
 import { getAllUsers } from '../services/authService';
 import { getLines, getModels, getWeekNumber } from '../services/storageService';
@@ -146,15 +146,15 @@ export const IQCModule = ({ currentUser, onBack, hasTabAccess }: { currentUser: 
                 )}
 
                 {activeTab === 'BATCH_PROCESS' && (
-                    <BatchProcessTab scraps={scraps} onProcess={refreshData} currentUser={currentUser} lines={lines} models={models} />
+                    <BatchProcessTab scraps={scraps} onProcess={refreshData} currentUser={currentUser} lines={lines} models={models} users={users} />
                 )}
 
                 {activeTab === 'HISTORY_SENT' && (
-                    <HistorySentTab scraps={scraps} users={users} />
+                    <HistorySentTab scraps={scraps} users={users} onRefresh={refreshData} />
                 )}
 
                 {activeTab === 'DASHBOARD' && (
-                    <ExecutiveDashboard scraps={scraps} />
+                    <ExecutiveDashboard scraps={scraps} users={users} />
                 )}
 
                 {activeTab === 'BOX_MOUNT' && (
@@ -179,7 +179,11 @@ export const IQCModule = ({ currentUser, onBack, hasTabAccess }: { currentUser: 
 
 // --- SUB COMPONENTS ---
 
-const ExecutiveDashboard = ({ scraps }: { scraps: ScrapData[] }) => {
+const ExecutiveDashboard = ({ scraps, users }: { scraps: ScrapData[], users: User[] }) => {
+    const [groupPreviewModal, setGroupPreviewModal] = useState({ isOpen: false, type: '', key: '', scraps: [] as ScrapData[] });
+    const [detailModal, setDetailModal] = useState({ isOpen: false, scrap: null as ScrapData | null });
+    const openDetailModal = (scrap: ScrapData) => setDetailModal({ isOpen: true, scrap });
+
     const [filters, setFilters] = useState({
         period: 'MONTH',
         plant: 'ALL',
@@ -311,13 +315,13 @@ const ExecutiveDashboard = ({ scraps }: { scraps: ScrapData[] }) => {
             </Card>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <Card className="bg-blue-50 dark:bg-blue-900/30 border-blue-200 dark:border-blue-800">
-                    <p className="text-blue-600 dark:text-blue-300 text-xs font-bold uppercase">Valor Total (Filtrado)</p>
-                    <p className="text-3xl font-bold mt-1 text-gray-900 dark:text-white">{formatCurrency(stats.totalVal)}</p>
+                <Card className="bg-blue-900 border-blue-800">
+                    <p className="text-blue-100 text-xs font-bold uppercase">Valor Total (Filtrado)</p>
+                    <p className="text-3xl font-bold mt-1 text-white">{formatCurrency(stats.totalVal)}</p>
                 </Card>
-                <Card className="bg-slate-50 dark:bg-slate-900/30 border-slate-200 dark:border-slate-700">
-                    <p className="text-slate-500 dark:text-slate-400 text-xs font-bold uppercase">Quantidade (Filtrado)</p>
-                    <p className="text-3xl font-bold mt-1 text-gray-900 dark:text-white">{stats.totalQty} <span className="text-base font-normal text-slate-400 dark:text-slate-500">itens</span></p>
+                <Card className="bg-slate-900 border-slate-800">
+                    <p className="text-slate-300 text-xs font-bold uppercase">Quantidade (Filtrado)</p>
+                    <p className="text-3xl font-bold mt-1 text-white">{stats.totalQty} <span className="text-base font-normal text-slate-400">itens</span></p>
                 </Card>
             </div>
 
@@ -326,9 +330,25 @@ const ExecutiveDashboard = ({ scraps }: { scraps: ScrapData[] }) => {
                     <h3 className="font-bold text-slate-900 dark:text-white mb-4 flex items-center gap-2"><LayoutDashboard size={16} className="text-purple-500" /> Por Categoria</h3>
                     <div className="space-y-3">
                         {stats.category.map(([name, val]) => (
-                            <div key={name} className="flex justify-between items-center text-sm">
-                                <span className={val > 0 ? 'text-slate-700 dark:text-zinc-300' : 'text-slate-400 dark:text-zinc-600'}>{name}</span>
-                                <span className="font-bold">{formatCurrency(val)}</span>
+                            <div key={name}>
+                                <div className="flex justify-between items-center text-sm cursor-pointer hover:bg-slate-100 hover:text-blue-500 dark:hover:bg-zinc-800 p-2 rounded transition-colors" onClick={() => {
+                                    const scrapsFiltrados = filtered.filter(s => {
+                                        const itemUpper = (s.item || '').toUpperCase();
+                                        const specificItems = ['FRONT', 'REAR', 'OCTA', 'CAMERA', 'BATERIA RMA', 'BATERIA SCRAP', 'PLACA'];
+                                        let catKey = 'MIUDEZAS';
+                                        if (itemUpper.includes('PLACA')) catKey = 'PLACA';
+                                        else if (itemUpper.includes('CAMERA')) catKey = 'CAMERA';
+                                        else {
+                                            const found = specificItems.find(i => itemUpper.includes(i) && i !== 'CAMERA' && i !== 'PLACA');
+                                            if (found) catKey = found;
+                                        }
+                                        return catKey === name;
+                                    });
+                                    setGroupPreviewModal({ isOpen: true, type: 'category', key: name, scraps: scrapsFiltrados });
+                                }}>
+                                    <span className={val > 0 ? 'text-slate-900 dark:text-zinc-100' : 'text-slate-400 dark:text-zinc-600'}>{name}</span>
+                                    <span className="font-bold text-slate-800 dark:text-zinc-200">{formatCurrency(val)}</span>
+                                </div>
                             </div>
                         ))}
                     </div>
@@ -337,8 +357,11 @@ const ExecutiveDashboard = ({ scraps }: { scraps: ScrapData[] }) => {
                     <h3 className="font-bold text-slate-900 dark:text-white mb-4 flex items-center gap-2"><Truck size={16} className="text-blue-500" /> Top Modelos</h3>
                     <div className="space-y-3">
                         {stats.model.map(([name, val], i) => (
-                            <div key={name} className="flex justify-between items-center text-sm">
-                                <span className="text-slate-700 dark:text-zinc-300 whitespace-normal break-words w-2/3">{i + 1}. {name}</span>
+                            <div key={name} className="flex justify-between items-center text-sm p-2 cursor-pointer hover:bg-slate-100 hover:text-blue-500 dark:hover:bg-zinc-800 rounded transition-colors" onClick={() => {
+                                const scrapsFiltrados = filtered.filter(s => s.model === name);
+                                setGroupPreviewModal({ isOpen: true, type: 'model', key: name, scraps: scrapsFiltrados });
+                            }}>
+                                <span className="text-slate-900 dark:text-zinc-100 whitespace-normal break-words w-2/3">{i + 1}. {name}</span>
                                 <span className="font-bold text-blue-600 dark:text-blue-400">{formatCurrency(val)}</span>
                             </div>
                         ))}
@@ -348,19 +371,57 @@ const ExecutiveDashboard = ({ scraps }: { scraps: ScrapData[] }) => {
                     <h3 className="font-bold text-slate-900 dark:text-white mb-4 flex items-center gap-2"><Filter size={16} className="text-green-500" /> Por Linha</h3>
                     <div className="space-y-3">
                         {stats.line.map(([name, val]) => (
-                            <div key={name} className="flex justify-between items-center text-sm">
-                                <span className="text-slate-700 dark:text-zinc-300">{name}</span>
+                            <div key={name} className="flex justify-between items-center text-sm p-2 cursor-pointer hover:bg-slate-100 hover:text-blue-500 dark:hover:bg-zinc-800 rounded transition-colors" onClick={() => {
+                                const scrapsFiltrados = filtered.filter(s => s.line === name);
+                                setGroupPreviewModal({ isOpen: true, type: 'line', key: name, scraps: scrapsFiltrados });
+                            }}>
+                                <span className="text-slate-900 dark:text-zinc-100">{name}</span>
                                 <span className="font-bold text-green-600 dark:text-green-400">{formatCurrency(val)}</span>
                             </div>
                         ))}
                     </div>
                 </Card>
             </div>
+
+            {/* Group Preview Modal */}
+            {groupPreviewModal.isOpen && (
+                <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+                    <Card className="max-w-2xl w-full max-h-[80vh] overflow-y-auto bg-white dark:bg-zinc-900 border-slate-200 dark:border-zinc-700">
+                        <div className="flex justify-between items-center mb-4">
+                            <h3 className="font-bold text-lg">
+                                {groupPreviewModal.type === 'category' && 'Categoria: '}
+                                {groupPreviewModal.type === 'model' && 'Modelo: '}
+                                {groupPreviewModal.type === 'line' && 'Linha: '}
+                                {groupPreviewModal.key}
+                            </h3>
+                            <button onClick={() => setGroupPreviewModal({ ...groupPreviewModal, isOpen: false })} className="text-slate-400 hover:text-slate-700 bg-slate-100 dark:bg-zinc-800 rounded-full w-8 h-8 flex items-center justify-center">
+                                <X size={16} />
+                            </button>
+                        </div>
+                        <div className="space-y-2">
+                            {groupPreviewModal.scraps.map(s => (
+                                <div key={s.id} className="flex justify-between items-center p-2 hover:bg-slate-50 dark:hover:bg-zinc-800 cursor-pointer rounded border border-slate-100 dark:border-zinc-800" onClick={() => openDetailModal(s)}>
+                                    <div className="text-sm cursor-pointer hover:text-blue-500">
+                                        <p className="font-bold">{s.model}</p>
+                                        <p className="text-xs text-slate-500">{formatDateDisplay(s.date as string)} • {s.code || '-'}</p>
+                                    </div>
+                                    <div className="text-right">
+                                        <p className="font-bold">{formatCurrency(s.totalValue)}</p>
+                                        <p className="text-xs text-slate-500">{s.qty} itens</p>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    </Card>
+                </div>
+            )}
+
+            <ScrapDetailModal isOpen={detailModal.isOpen} scrap={detailModal.scrap} users={users} onClose={() => setDetailModal({ isOpen: false, scrap: null })} />
         </div>
     );
 };
 
-const BatchProcessTab = ({ scraps, onProcess, currentUser, lines, models }: { scraps: ScrapData[], onProcess: () => void, currentUser: User, lines: string[], models: string[] }) => {
+const BatchProcessTab = ({ scraps, onProcess, currentUser, lines, models, users }: { scraps: ScrapData[], onProcess: () => void, currentUser: User, lines: string[], models: string[], users: User[] }) => {
     const [filters, setFilters] = useState({
         period: 'ALL',
         specificDate: '',
@@ -368,11 +429,13 @@ const BatchProcessTab = ({ scraps, onProcess, currentUser, lines, models }: { sc
         specificMonth: '',
         specificYear: '',
         shift: 'ALL',
-        line: 'ALL',
+        qrCode: '',
         model: 'ALL',
         item: 'ALL',
         code: ''
     });
+
+    const [selectedScrap, setSelectedScrap] = useState<ScrapData | null>(null);
 
     const [selectedIds, setSelectedIds] = useState<number[]>([]);
     const [showModal, setShowModal] = useState(false);
@@ -396,7 +459,7 @@ const BatchProcessTab = ({ scraps, onProcess, currentUser, lines, models }: { sc
         if (filters.period === 'YEAR' && filters.specificYear) res = res.filter(s => s.date.startsWith(filters.specificYear));
 
         if (filters.shift !== 'ALL') res = res.filter(s => String(s.shift) === filters.shift);
-        if (filters.line !== 'ALL') res = res.filter(s => s.line === filters.line);
+        if (filters.qrCode) res = res.filter(s => (s.qrCode || '').toUpperCase().includes(filters.qrCode.toUpperCase()));
         if (filters.model !== 'ALL') res = res.filter(s => s.model === filters.model);
         if (filters.item !== 'ALL') res = res.filter(s => s.item === filters.item);
         if (filters.code) res = res.filter(s => (s.code || '').toLowerCase().includes(filters.code.toLowerCase()));
@@ -438,50 +501,48 @@ const BatchProcessTab = ({ scraps, onProcess, currentUser, lines, models }: { sc
     return (
         <div className="space-y-4">
             <Card>
-                <div className="flex gap-4 items-center flex-wrap">
-                    <Filter size={18} className="text-slate-400" />
-                    <div className="flex flex-wrap items-center gap-2 w-full md:w-auto">
-                        <select className="bg-slate-50 dark:bg-zinc-950 border border-slate-300 dark:border-zinc-800 p-2 rounded text-sm outline-none w-full md:w-auto" onChange={e => setFilters({ ...filters, period: e.target.value })} value={filters.period}>
-                            <option value="ALL">Todos os Períodos</option>
-                            <option value="DAY">Dia</option>
-                            <option value="WEEK">Semana</option>
-                            <option value="MONTH">Mês</option>
-                            <option value="YEAR">Ano</option>
-                        </select>
-                        {filters.period === 'DAY' && <Input type="date" value={filters.specificDate} onChange={e => setFilters({ ...filters, specificDate: e.target.value })} className="w-full md:w-auto" />}
-                        {filters.period === 'WEEK' && <Input type="week" value={filters.specificWeek} onChange={e => setFilters({ ...filters, specificWeek: e.target.value })} className="w-full md:w-auto" />}
-                        {filters.period === 'MONTH' && <Input type="month" value={filters.specificMonth} onChange={e => setFilters({ ...filters, specificMonth: e.target.value })} className="w-full md:w-auto" />}
-                        {filters.period === 'YEAR' && <Input type="number" placeholder="2026" value={filters.specificYear} onChange={e => setFilters({ ...filters, specificYear: e.target.value })} className="w-full md:w-24" />}
-                    </div>
+                <div className="flex flex-wrap items-end gap-3 w-full">
+                    <select className="bg-slate-50 dark:bg-zinc-950 border border-slate-300 dark:border-zinc-800 p-2 rounded text-sm outline-none w-auto flex-none" onChange={e => setFilters({ ...filters, period: e.target.value })} value={filters.period}>
+                        <option value="ALL">Todos os Períodos</option>
+                        <option value="DAY">Dia</option>
+                        <option value="WEEK">Semana</option>
+                        <option value="MONTH">Mês</option>
+                        <option value="YEAR">Ano</option>
+                    </select>
+                    {filters.period === 'DAY' && <Input type="date" value={filters.specificDate} onChange={e => setFilters({ ...filters, specificDate: e.target.value })} className="w-auto flex-none" />}
+                    {filters.period === 'WEEK' && <Input type="week" value={filters.specificWeek} onChange={e => setFilters({ ...filters, specificWeek: e.target.value })} className="w-auto flex-none" />}
+                    {filters.period === 'MONTH' && <Input type="month" value={filters.specificMonth} onChange={e => setFilters({ ...filters, specificMonth: e.target.value })} className="w-auto flex-none" />}
+                    {filters.period === 'YEAR' && <Input type="number" placeholder="2026" value={filters.specificYear} onChange={e => setFilters({ ...filters, specificYear: e.target.value })} className="w-auto flex-none" />}
 
-                    <select className="bg-slate-50 dark:bg-zinc-950 border border-slate-300 dark:border-zinc-800 p-2 rounded text-sm outline-none" value={filters.shift} onChange={e => setFilters({ ...filters, shift: e.target.value })}>
+                    <select className="bg-slate-50 dark:bg-zinc-950 border border-slate-300 dark:border-zinc-800 p-2 rounded text-sm outline-none w-auto flex-none" value={filters.shift} onChange={e => setFilters({ ...filters, shift: e.target.value })}>
                         <option value="ALL">Todos Turnos</option>
                         <option value="1">1º Turno</option>
                         <option value="2">2º Turno</option>
                     </select>
 
-                    <select className="bg-slate-50 dark:bg-zinc-950 border border-slate-300 dark:border-zinc-800 p-2 rounded text-sm outline-none" value={filters.line} onChange={e => setFilters({ ...filters, line: e.target.value })}>
-                        <option value="ALL">Todas Linhas</option>
-                        {lines.map(l => <option key={l} value={l}>{l}</option>)}
-                    </select>
+                    <div className="flex-1 min-w-[200px] max-w-sm">
+                        <Input placeholder="Buscar por QR Code..." value={filters.qrCode} onChange={e => setFilters({ ...filters, qrCode: e.target.value })} className="w-full" />
+                    </div>
 
-                    <select className="bg-slate-50 dark:bg-zinc-950 border border-slate-300 dark:border-zinc-800 p-2 rounded text-sm outline-none" value={filters.model} onChange={e => setFilters({ ...filters, model: e.target.value })}>
+                    <select className="bg-slate-50 dark:bg-zinc-950 border border-slate-300 dark:border-zinc-800 p-2 rounded text-sm outline-none w-auto flex-none" value={filters.model} onChange={e => setFilters({ ...filters, model: e.target.value })}>
                         <option value="ALL">Todos Modelos</option>
                         {models.map(m => <option key={m} value={m}>{m}</option>)}
                     </select>
 
-                    <select className="bg-slate-50 dark:bg-zinc-950 border border-slate-300 dark:border-zinc-800 p-2 rounded text-sm outline-none" value={filters.item} onChange={e => setFilters({ ...filters, item: e.target.value })}>
+                    <select className="bg-slate-50 dark:bg-zinc-950 border border-slate-300 dark:border-zinc-800 p-2 rounded text-sm outline-none w-auto flex-none" value={filters.item} onChange={e => setFilters({ ...filters, item: e.target.value })}>
                         <option value="ALL">Todos Itens</option>
                         {Array.from(new Set(pendingScraps.map(s => s.item).filter(Boolean))).sort().map(item => <option key={item} value={item}>{item}</option>)}
                     </select>
 
-                    <input
-                        type="text"
-                        placeholder="Filtrar por Código do Item"
-                        className="bg-slate-50 dark:bg-zinc-950 border border-slate-300 dark:border-zinc-800 p-2 rounded text-sm outline-none"
-                        value={filters.code || ''}
-                        onChange={e => setFilters({ ...filters, code: e.target.value })}
-                    />
+                    <div className="flex-1 min-w-[200px] max-w-sm">
+                        <input
+                            type="text"
+                            placeholder="Filtrar por Código do Item"
+                            className="bg-slate-50 dark:bg-zinc-950 border border-slate-300 dark:border-zinc-800 p-2 rounded text-sm outline-none w-full"
+                            value={filters.code || ''}
+                            onChange={e => setFilters({ ...filters, code: e.target.value })}
+                        />
+                    </div>
 
                     <div className="ml-auto text-sm text-slate-500">
                         {pendingScraps.length} itens aguardando baixa
@@ -506,6 +567,7 @@ const BatchProcessTab = ({ scraps, onProcess, currentUser, lines, models }: { sc
                             <th className="p-3 text-left">Qtd</th>
                             <th className="p-3 text-right">Valor</th>
                             <th className="p-3 text-center">Status</th>
+                            <th className="p-3 text-center">Ações</th>
                         </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100 dark:divide-zinc-800">
@@ -523,6 +585,11 @@ const BatchProcessTab = ({ scraps, onProcess, currentUser, lines, models }: { sc
                                 <td className="p-3 text-right font-mono text-slate-700 dark:text-zinc-300">{formatCurrency(s.totalValue)}</td>
                                 <td className="p-3 text-center">
                                     <span className={`text-[10px] uppercase px-2 py-0.5 rounded ${s.status === 'OK' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>{s.status || 'NG'}</span>
+                                </td>
+                                <td className="p-3 text-center">
+                                    <button onClick={(e) => { e.stopPropagation(); setSelectedScrap(s); }} className="text-blue-500 hover:text-blue-700 p-1 bg-blue-50 dark:bg-blue-900/30 rounded-full transition-colors">
+                                        <Eye size={16} />
+                                    </button>
                                 </td>
                             </tr>
                         ))}
@@ -580,12 +647,19 @@ const BatchProcessTab = ({ scraps, onProcess, currentUser, lines, models }: { sc
                     </Card>
                 </div>
             )}
+
+            <ScrapDetailModal isOpen={!!selectedScrap} scrap={selectedScrap} users={users} onClose={() => setSelectedScrap(null)} />
         </div>
     );
 };
 
-const HistorySentTab = ({ scraps, users }: { scraps: ScrapData[], users: User[] }) => {
-    const [filters, setFilters] = useState({ item: 'ALL', model: 'ALL', status: 'ALL' });
+const HistorySentTab = ({ scraps, users, onRefresh }: { scraps: ScrapData[], users: User[], onRefresh?: () => void }) => {
+    const [filters, setFilters] = useState({ item: 'ALL', model: 'ALL', qrCode: '' });
+    const [groupBy, setGroupBy] = useState<'NF' | 'BOX'>('NF');
+    const [searchQuery, setSearchQuery] = useState('');
+    const [expandedGroups, setExpandedGroups] = useState<string[]>([]);
+    const [previewBoxNf, setPreviewBoxNf] = useState<string | null>(null);
+    const [selectedScrap, setSelectedScrap] = useState<ScrapData | null>(null);
     
     const sentScraps = useMemo(() => scraps.filter(s => s.situation === 'SENT'), [scraps]);
     
@@ -596,23 +670,28 @@ const HistorySentTab = ({ scraps, users }: { scraps: ScrapData[], users: User[] 
         let res = [...sentScraps];
         if (filters.item !== 'ALL') res = res.filter(s => s.item === filters.item);
         if (filters.model !== 'ALL') res = res.filter(s => s.model === filters.model);
+        if (filters.qrCode) {
+            const lowerQr = filters.qrCode.toLowerCase();
+            res = res.filter(s => (s.qrCode?.toLowerCase() || '').includes(lowerQr) || String(s.id).includes(lowerQr));
+        }
         return res;
     }, [sentScraps, filters]);
 
     const groups = useMemo(() => {
         const g: Record<string, ScrapData[]> = {};
         filteredScraps.forEach(s => {
-            const nf = s.nfNumber || 'SEM_NF';
-            if (!g[nf]) g[nf] = [];
-            g[nf].push(s);
+            const key = groupBy === 'NF' ? (s.nfNumber || 'SEM_NF') : String(s.boxId || 'SEM_CAIXA');
+            if (!g[key]) g[key] = [];
+            g[key].push(s);
         });
         return g;
-    }, [filteredScraps]);
+    }, [filteredScraps, groupBy]);
 
     return (
         <div className="space-y-4">
             <Card>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
+                    <input type="text" placeholder="Buscar NF ou Caixa..." className="bg-slate-50 dark:bg-zinc-950 border border-slate-300 dark:border-zinc-800 p-2 rounded text-sm outline-none w-full" value={searchQuery} onChange={e => setSearchQuery(e.target.value)} />
                     <select className="bg-slate-50 dark:bg-zinc-950 border border-slate-300 dark:border-zinc-800 p-2 rounded text-sm outline-none" value={filters.item} onChange={e => setFilters({ ...filters, item: e.target.value })}>
                         <option value="ALL">Todos Itens</option>
                         {uniqueItems.map(item => <option key={item} value={item}>{item}</option>)}
@@ -621,10 +700,10 @@ const HistorySentTab = ({ scraps, users }: { scraps: ScrapData[], users: User[] 
                         <option value="ALL">Todos Modelos</option>
                         {uniqueModels.map(model => <option key={model} value={model}>{model}</option>)}
                     </select>
-                    <select className="bg-slate-50 dark:bg-zinc-950 border border-slate-300 dark:border-zinc-800 p-2 rounded text-sm outline-none h-fit" value={filters.status} onChange={e => setFilters({ ...filters, status: e.target.value })}>
-                        <option value="ALL">Status: Todos</option>
-                        <option value="ENVIADO">Enviado</option>
-                        <option value="PENDENTE">Pendente</option>
+                    <Input placeholder="Buscar por QR Code / ID..." value={filters.qrCode} onChange={e => setFilters({ ...filters, qrCode: e.target.value })} className="h-fit" />
+                    <select className="bg-slate-50 dark:bg-zinc-950 border border-slate-300 dark:border-zinc-800 p-2 rounded text-sm outline-none h-fit" value={groupBy} onChange={e => setGroupBy(e.target.value as 'NF' | 'BOX')}>
+                        <option value="NF">Agrupar por NF</option>
+                        <option value="BOX">Agrupar por Caixa</option>
                     </select>
                 </div>
             </Card>
@@ -632,18 +711,107 @@ const HistorySentTab = ({ scraps, users }: { scraps: ScrapData[], users: User[] 
             {Object.keys(groups).length === 0 && <p className="text-center text-slate-500 py-10">Nenhum envio registrado.</p>}
 
             {Object.entries(groups)
+                .filter(([key]) => key !== 'SEM_CAIXA' && key !== 'SEM_NF')
+                .filter(([key, items]) => {
+                    if (!searchQuery) return true;
+                    const query = searchQuery.toLowerCase();
+                    if (key.toLowerCase().includes(query)) return true;
+                    if (groupBy === 'BOX' && items[0]?.nfNumber?.toLowerCase().includes(query)) return true;
+                    return false;
+                })
                 .sort((a, b) => new Date(b[1][0].sentAt || '').getTime() - new Date(a[1][0].sentAt || '').getTime())
-                .map(([nf, items]) => (
-                    <HistoryGroupCard key={nf} nf={nf} items={items} users={users} />
+                .map(([keyVal, items]) => (
+                    <HistoryGroupCard 
+                        key={`group-${groupBy}-${keyVal}`} 
+                        nf={keyVal} 
+                        items={items} 
+                        users={users} 
+                        groupBy={groupBy} 
+                        isExpanded={expandedGroups.includes(keyVal)}
+                        onToggle={() => setExpandedGroups(prev => prev.includes(keyVal) ? prev.filter(k => k !== keyVal) : [...prev, keyVal])}
+                        onRefresh={onRefresh}
+                        onClickPreview={() => setPreviewBoxNf(keyVal)}
+                        onClickScrap={(scrap: ScrapData) => setSelectedScrap(scrap)}
+                    />
                 ))}
+
+            {/* Preview Modal for box items */}
+            {previewBoxNf && groups[previewBoxNf] && (
+                <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={() => setPreviewBoxNf(null)}>
+                    <Card className="max-w-2xl w-full max-h-[80vh] overflow-y-auto bg-white dark:bg-zinc-900 border-slate-200 dark:border-zinc-700" onClick={(e: React.MouseEvent) => e.stopPropagation()}>
+                        <div className="flex justify-between items-center mb-4">
+                            <h3 className="font-bold text-lg text-slate-900 dark:text-white">Detalhes da NF: {previewBoxNf}</h3>
+                            <button onClick={() => setPreviewBoxNf(null)} className="text-slate-400 hover:text-slate-700 dark:hover:text-zinc-200 bg-slate-100 dark:bg-zinc-800 rounded-full w-8 h-8 flex items-center justify-center">
+                                <X size={16} />
+                            </button>
+                        </div>
+                        <div className="space-y-3">
+                            {(() => {
+                                const specificItems = ['FRONT', 'REAR', 'OCTA', 'CAMERA', 'BATERIA RMA', 'BATERIA SCRAP', 'PLACA'];
+                                const summary: Record<string, { qty: number, val: number }> = {};
+                                specificItems.forEach(k => summary[k] = { qty: 0, val: 0 });
+                                summary['MIUDEZAS'] = { qty: 0, val: 0 };
+                                const items = groups[previewBoxNf];
+                                items.forEach(s => {
+                                    let key = 'MIUDEZAS';
+                                    const itemUpper = (s.item || '').toUpperCase();
+                                    if (itemUpper.includes('PLACA')) {
+                                        key = 'PLACA';
+                                    } else {
+                                        const found = specificItems.find(spec => itemUpper.includes(spec));
+                                        if (found) key = found;
+                                    }
+                                    summary[key].qty += (s.qty || 0);
+                                    summary[key].val += (s.totalValue || 0);
+                                });
+
+                                return Object.entries(summary).filter(([, d]) => d.qty > 0).map(([key, data]) => (
+                                    <div key={key} className="bg-slate-50 dark:bg-zinc-950 border border-slate-200 dark:border-zinc-800 rounded-lg p-3">
+                                        <div className="flex justify-between items-center text-sm">
+                                            <span className="font-bold text-slate-800 dark:text-zinc-200">{key}</span>
+                                            <span className="font-mono text-blue-600 dark:text-blue-400">{formatCurrency(data.val)}</span>
+                                        </div>
+                                        <p className="text-xs text-slate-500 dark:text-zinc-500 mt-1">{data.qty} unidade(s)</p>
+                                        <div className="mt-2 space-y-1">
+                                            {items.filter(i => {
+                                                const iu = (i.item || '').toUpperCase();
+                                                if (key === 'PLACA') return iu.includes('PLACA');
+                                                if (key === 'CAMERA') return iu.includes('CAMERA');
+                                                if (key === 'MIUDEZAS') {
+                                                    return !specificItems.some(sp => iu.includes(sp));
+                                                }
+                                                return iu.includes(key);
+                                            }).map(si => (
+                                                <div
+                                                    key={si.id}
+                                                    className="flex justify-between items-center text-xs cursor-pointer hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded px-2 py-1 transition-colors"
+                                                    onClick={() => { setPreviewBoxNf(null); setSelectedScrap(si); }}
+                                                >
+                                                    <span className="text-slate-600 dark:text-zinc-400">{si.model} • {si.code || '-'}</span>
+                                                    <span className="font-mono text-slate-700 dark:text-zinc-300">{formatCurrency(si.totalValue)}</span>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                ));
+                            })()}
+                        </div>
+                    </Card>
+                </div>
+            )}
+
+            {/* Scrap Detail Modal */}
+            <ScrapDetailModal
+                isOpen={!!selectedScrap}
+                scrap={selectedScrap}
+                users={users}
+                onClose={() => setSelectedScrap(null)}
+            />
         </div>
     );
 };
 
-const HistoryGroupCard = ({ nf, items, users }: { nf: string, items: ScrapData[], users: User[] }) => {
-    const [expanded, setExpanded] = useState(false);
-    const [selectedScrap, setSelectedScrap] = useState<ScrapData | null>(null);
-    const [previewBox, setPreviewBox] = useState<boolean>(false);
+const HistoryGroupCard = ({ nf, items, users, groupBy = 'NF', isExpanded, onToggle, onRefresh, onClickPreview, onClickScrap }: { nf: string, items: ScrapData[], users: User[], groupBy?: 'NF' | 'BOX', isExpanded?: boolean, onToggle?: () => void, onRefresh?: () => void, onClickPreview?: () => void, onClickScrap?: (s: ScrapData) => void }) => {
     const [itemFilter, setItemFilter] = useState('');
 
     const totalValue = items.reduce((acc, s) => acc + (s.totalValue || 0), 0);
@@ -672,15 +840,17 @@ const HistoryGroupCard = ({ nf, items, users }: { nf: string, items: ScrapData[]
     });
 
     return (
-        <Card className={`border-l-4 border-l-blue-500 transition-all ${expanded ? 'ring-2 ring-blue-500/20' : ''}`}>
-            <div className="cursor-pointer" onClick={() => setExpanded(!expanded)}>
+        <Card className={`border-l-4 border-l-blue-500 transition-all ${isExpanded ? 'ring-2 ring-blue-500/20' : ''}`}>
+            <div className="cursor-pointer" onClick={onToggle}>
                 <div className="flex justify-between items-start md:items-center flex-col md:flex-row gap-4">
                     <div className="flex items-center gap-4">
                         <div className="bg-blue-100 dark:bg-blue-900/30 p-2.5 rounded-lg text-blue-600 dark:text-blue-400 font-bold">
                             <FileText size={20} />
                         </div>
                         <div>
-                            <h3 className="font-bold text-lg text-slate-900 dark:text-white">NF: {nf}</h3>
+                            <h3 className="font-bold text-lg text-slate-900 dark:text-white">
+                                {groupBy === 'BOX' ? `Caixa #${nf} (NF: ${items[0]?.nfNumber || 'SEM_NF'})` : `NF: ${nf}`}
+                            </h3>
                             <p className="text-xs text-slate-500 dark:text-zinc-400">
                                 Enviado em {sentDate} por <b>{sentByName}</b>
                             </p>
@@ -705,11 +875,11 @@ const HistoryGroupCard = ({ nf, items, users }: { nf: string, items: ScrapData[]
                         </div>
                     </div>
                     <div>
-                        {expanded ? <ChevronUp size={20} className="text-slate-400" /> : <ChevronDown size={20} className="text-slate-400" />}
+                        {isExpanded ? <ChevronUp size={20} className="text-slate-400" /> : <ChevronDown size={20} className="text-slate-400" />}
                     </div>
                 </div>
 
-                {expanded && (
+                {isExpanded && (
                     <div className="mt-6 pt-4 border-t border-slate-100 dark:border-zinc-800 animate-fadeIn">
                         <h4 className="text-xs font-bold uppercase text-slate-400 mb-2">Resumo do Envio</h4>
                         <div className="flex flex-wrap gap-2 mb-4">
@@ -721,7 +891,7 @@ const HistoryGroupCard = ({ nf, items, users }: { nf: string, items: ScrapData[]
                                         className="bg-slate-50 dark:bg-zinc-950 border border-slate-200 dark:border-zinc-800 rounded px-3 py-1.5 text-xs cursor-pointer hover:bg-blue-50 dark:hover:bg-blue-900/20 hover:border-blue-300 dark:hover:border-blue-700 transition-colors"
                                         onClick={(e) => {
                                             e.stopPropagation();
-                                            setPreviewBox(true);
+                                            if (onClickPreview) onClickPreview();
                                         }}
                                     >
                                         <span className="font-bold text-slate-700 dark:text-zinc-300">{key}:</span>
@@ -756,15 +926,36 @@ const HistoryGroupCard = ({ nf, items, users }: { nf: string, items: ScrapData[]
                                 </thead>
                                 <tbody>
                                     {items.filter(i => !itemFilter || (i.item || '').toLowerCase().includes(itemFilter.toLowerCase())).map(i => (
-                                        <tr key={i.id} className="border-b border-slate-100 dark:border-zinc-800 last:border-0 hover:bg-blue-50/50 dark:hover:bg-blue-900/10 cursor-pointer transition-colors" onClick={(e) => { e.stopPropagation(); setSelectedScrap(i); }}>
+                                        <tr key={i.id} className="border-b border-slate-100 dark:border-zinc-800 last:border-0 hover:bg-blue-50/50 dark:hover:bg-blue-900/10 cursor-pointer transition-colors" onClick={(e) => { e.stopPropagation(); if (onClickScrap) onClickScrap(i); }}>
                                             <td className="p-2 text-slate-700 dark:text-zinc-300">{i.item}</td>
                                             <td className="p-2 text-slate-700 dark:text-zinc-300">{i.model}</td>
                                             <td className="p-2 font-mono text-slate-700 dark:text-zinc-300">{i.code || '-'}</td>
                                             <td className="p-2 text-slate-700 dark:text-zinc-300">{i.qty}</td>
                                             <td className="p-2 text-right font-mono text-slate-700 dark:text-zinc-300">{formatCurrency(i.totalValue)}</td>
                                             <td className="p-2 flex gap-1">
-                                                <button onClick={(e) => { e.stopPropagation(); /* remover */ }} className="text-red-500 hover:text-red-700">Remover</button>
-                                                <button onClick={(e) => { e.stopPropagation(); /* realocar */ }} className="text-blue-500 hover:text-blue-700">Realocar</button>
+                                                <button onClick={async (e) => { 
+                                                    e.stopPropagation(); 
+                                                    if(window.confirm('Tem certeza que deseja remover este item desta NF/Caixa?')) {
+                                                        try {
+                                                            await updateScrap(i.id!.toString(), { situation: 'PENDING', nfNumber: null as any, sentAt: null as any });
+                                                            if (onRefresh) onRefresh();
+                                                        } catch(err) {
+                                                            alert('Erro ao remover scrap.');
+                                                        }
+                                                    }
+                                                }} className="text-red-500 hover:text-red-700">Remover</button>
+                                                <button onClick={async (e) => { 
+                                                    e.stopPropagation(); 
+                                                    const novaNf = window.prompt('Digite o número da nova NF:');
+                                                    if (novaNf && novaNf.trim() !== '') {
+                                                        try {
+                                                            await updateScrap(i.id!.toString(), { nfNumber: novaNf, situation: 'SENT', sentAt: new Date() });
+                                                            if (onRefresh) onRefresh();
+                                                        } catch(err) {
+                                                            alert('Erro ao realocar scrap.');
+                                                        }
+                                                    }
+                                                }} className="text-blue-500 hover:text-blue-700">Realocar</button>
                                                 <Eye size={14} className="text-blue-500" />
                                             </td>
                                         </tr>
@@ -776,58 +967,6 @@ const HistoryGroupCard = ({ nf, items, users }: { nf: string, items: ScrapData[]
                 )}
             </div>
 
-            {/* Preview Modal for box items */}
-            {previewBox && (
-                <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={() => setPreviewBox(false)}>
-                    <Card className="max-w-2xl w-full max-h-[80vh] overflow-y-auto bg-white dark:bg-zinc-900 border-slate-200 dark:border-zinc-700" onClick={(e: React.MouseEvent) => e.stopPropagation()}>
-                        <div className="flex justify-between items-center mb-4">
-                            <h3 className="font-bold text-lg text-slate-900 dark:text-white">Detalhes da NF: {nf}</h3>
-                            <button onClick={() => setPreviewBox(false)} className="text-slate-400 hover:text-slate-700 dark:hover:text-zinc-200 bg-slate-100 dark:bg-zinc-800 rounded-full w-8 h-8 flex items-center justify-center">
-                                <X size={16} />
-                            </button>
-                        </div>
-                        <div className="space-y-3">
-                            {Object.entries(summary).filter(([, d]) => d.qty > 0).map(([key, data]) => (
-                                <div key={key} className="bg-slate-50 dark:bg-zinc-950 border border-slate-200 dark:border-zinc-800 rounded-lg p-3">
-                                    <div className="flex justify-between items-center text-sm">
-                                        <span className="font-bold text-slate-800 dark:text-zinc-200">{key}</span>
-                                        <span className="font-mono text-blue-600 dark:text-blue-400">{formatCurrency(data.val)}</span>
-                                    </div>
-                                    <p className="text-xs text-slate-500 dark:text-zinc-500 mt-1">{data.qty} unidade(s)</p>
-                                    <div className="mt-2 space-y-1">
-                                        {items.filter(i => {
-                                            const iu = (i.item || '').toUpperCase();
-                                            if (key === 'PLACA') return iu.includes('PLACA');
-                                            if (key === 'CAMERA') return iu.includes('CAMERA');
-                                            if (key === 'MIUDEZAS') {
-                                                return !specificItems.some(sp => iu.includes(sp));
-                                            }
-                                            return iu.includes(key);
-                                        }).map(si => (
-                                            <div
-                                                key={si.id}
-                                                className="flex justify-between items-center text-xs cursor-pointer hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded px-2 py-1 transition-colors"
-                                                onClick={() => { setPreviewBox(false); setSelectedScrap(si); }}
-                                            >
-                                                <span className="text-slate-600 dark:text-zinc-400">{si.model} • {si.code || '-'}</span>
-                                                <span className="font-mono text-slate-700 dark:text-zinc-300">{formatCurrency(si.totalValue)}</span>
-                                            </div>
-                                        ))}
-                                    </div>
-                                </div>
-                            ))}
-                        </div>
-                    </Card>
-                </div>
-            )}
-
-            {/* Scrap Detail Modal */}
-            <ScrapDetailModal
-                isOpen={!!selectedScrap}
-                scrap={selectedScrap}
-                users={users}
-                onClose={() => setSelectedScrap(null)}
-            />
         </Card>
     );
 };

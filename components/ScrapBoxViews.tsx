@@ -443,7 +443,7 @@ export const ScrapBoxIdentified = ({ currentUser, onUpdate, users = [] }: { curr
         const nf = prompt("Digite o Número da Nota Fiscal (NF):");
         if (nf && nf.trim() !== '') {
             try {
-                await associateBoxNF(boxId, nf);
+                await associateBoxNF(boxId, nf, currentUser.matricula);
                 loadBoxes();
                 if (onUpdate) onUpdate();
                 alert(`NF ${nf} associada com sucesso à caixa #${boxId}`);
@@ -467,7 +467,7 @@ export const ScrapBoxIdentified = ({ currentUser, onUpdate, users = [] }: { curr
             ) : (
                 <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
                     {boxes.map((box: any) => {
-                        const totalItens = box.scraps?.length || 0;
+                        const totalItens = box.scraps?.reduce((acc: number, s: any) => acc + (Number(s.qty) || 0), 0) || 0;
                         const valorTotal = box.scraps?.reduce((acc: number, s: any) => acc + (Number(s.totalValue) || 0), 0) || 0;
 
                         return (

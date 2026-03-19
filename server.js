@@ -810,7 +810,7 @@ app.post('/api/boxes', async (req, res) => {
 app.put('/api/boxes/:id', async (req, res) => {
     try {
         const { id } = req.params;
-        const { status, nfNumber } = req.body;
+        const { status, nfNumber, userId } = req.body;
         const dataToUpdate = {};
         if (status !== undefined) {
             dataToUpdate.status = status;
@@ -827,6 +827,23 @@ app.put('/api/boxes/:id', async (req, res) => {
             data: dataToUpdate,
             include: { scraps: true }
         });
+
+        if (nfNumber !== undefined) {
+            const sentAt = new Date();
+            await prisma.scrapLog.updateMany({
+                where: { boxId: parseInt(id) },
+                data: { nfNumber, situation: 'SENT', sentAt, sentBy: userId }
+            });
+            if (SCRAP_CACHE) {
+                SCRAP_CACHE = SCRAP_CACHE.map(s => {
+                    if (s.boxId === parseInt(id)) {
+                        return { ...s, nfNumber, situation: 'SENT', sentAt, sentBy: userId };
+                    }
+                    return s;
+                });
+            }
+        }
+
         res.json(updatedBox);
     } catch (e) {
         res.status(500).json({ error: e.message });

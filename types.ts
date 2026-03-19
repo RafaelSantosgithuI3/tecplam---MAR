@@ -260,6 +260,7 @@ export interface ScrapData {
   nfNumber?: string;
   sentBy?: string;
   sentAt?: Date | string;
+  boxId?: number;
   plant?: string;
   situation?: string; // PENDING | SENT
 }
