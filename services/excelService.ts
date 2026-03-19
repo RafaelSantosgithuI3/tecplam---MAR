@@ -1387,7 +1387,6 @@ export const generateBoxLabels = async (boxId: number | string, scraps: any[], e
     const templateSheet = workbook.worksheets[0];
 
     const outputWorkbook = new ExcelJS.Workbook();
-    const outputSheet = outputWorkbook.addWorksheet('Placas de Identificacao');
 
     const copyCell = (srcCell: ExcelJS.Cell, destCell: ExcelJS.Cell) => {
         destCell.value = srcCell.value;
@@ -1409,11 +1408,11 @@ export const generateBoxLabels = async (boxId: number | string, scraps: any[], e
         cachedImages.push({ outputImgId, originalRange: img.range });
     });
 
-    const copyBlock = (startRowOutput: number, data: any) => {
+    const copyBlock = (sheet: ExcelJS.Worksheet, startRowOutput: number, data: any) => {
         const BLOCK_SIZE = 14; // Tamanho exato da parte visível da placa
         for (let r = 1; r <= BLOCK_SIZE; r++) {
             const srcRow = templateSheet.getRow(r);
-            const destRow = outputSheet.getRow(startRowOutput + r - 1);
+            const destRow = sheet.getRow(startRowOutput + r - 1);
             destRow.height = srcRow.height;
 
             srcRow.eachCell({ includeEmpty: true }, (cell, colNumber) => {
@@ -1427,24 +1426,24 @@ export const generateBoxLabels = async (boxId: number | string, scraps: any[], e
                 tl: { ...originalRange.tl, nativeRow: originalRange.tl.nativeRow + (startRowOutput - 1) },
                 br: { ...originalRange.br, nativeRow: originalRange.br.nativeRow + (startRowOutput - 1) }
             };
-            outputSheet.addImage(outputImgId, newRange);
+            sheet.addImage(outputImgId, newRange);
         });
 
         const dateStr = new Date().toLocaleDateString('pt-BR');
 
         const mergeSafe = (r: number) => {
             const rowOutput = startRowOutput + r - 1;
-            try { outputSheet.mergeCells(`B${rowOutput}:F${rowOutput}`); } catch (e) { }
+            try { sheet.mergeCells(`B${rowOutput}:F${rowOutput}`); } catch (e) { }
         };
 
         // Linha 2: merge A2:F2 com texto em A2 (preserva imagem no template)
         const row2Abs = startRowOutput + 1;
-        try { outputSheet.mergeCells(`A${row2Abs}:F${row2Abs}`); } catch (e) { }
-        outputSheet.getCell(`A${row2Abs}`).value = 'PLACA DE IDENTIFICAÇÃO';
+        try { sheet.mergeCells(`A${row2Abs}:F${row2Abs}`); } catch (e) { }
+        sheet.getCell(`A${row2Abs}`).value = 'PLACA DE IDENTIFICAÇÃO';
 
         // Correção da Planta (Linha 3 -> Célula B3) e Mesclagem B3:F3
         mergeSafe(3);
-        outputSheet.getCell(`B${startRowOutput + 2}`).value = data.plant;
+        sheet.getCell(`B${startRowOutput + 2}`).value = data.plant;
 
         // Linha 4: Mesclar estritamente de B4 até F4 (B4:F4)
         mergeSafe(4);
@@ -1452,32 +1451,32 @@ export const generateBoxLabels = async (boxId: number | string, scraps: any[], e
         // Deslocamento de Dados (Linhas 4 a 9 para 5 a 10) e Mesclagens correspondentes
         [5, 6, 7, 8, 9, 10, 13].forEach(rowOffset => mergeSafe(rowOffset));
 
-        outputSheet.getCell(`B${startRowOutput + 4}`).value = extraParams.type === 'BATERIA' ? (extraParams.volumes || '1') : '1'; // Era na linha 4, agora 5
-        outputSheet.getCell(`B${startRowOutput + 5}`).value = data.model; // Era na linha 5, agora 6
-        outputSheet.getCell(`B${startRowOutput + 6}`).value = data.code; // Era na linha 6, agora 7
-        outputSheet.getCell(`B${startRowOutput + 7}`).value = data.desc; // Era na linha 7, agora 8
-        outputSheet.getCell(`B${startRowOutput + 8}`).value = data.qty; // Era na linha 8, agora 9
+        sheet.getCell(`B${startRowOutput + 4}`).value = extraParams.type === 'BATERIA' ? (extraParams.volumes || '1') : '1'; // Era na linha 4, agora 5
+        sheet.getCell(`B${startRowOutput + 5}`).value = data.model; // Era na linha 5, agora 6
+        sheet.getCell(`B${startRowOutput + 6}`).value = data.code; // Era na linha 6, agora 7
+        sheet.getCell(`B${startRowOutput + 7}`).value = data.desc; // Era na linha 7, agora 8
+        sheet.getCell(`B${startRowOutput + 8}`).value = data.qty; // Era na linha 8, agora 9
 
         // Linha 10: Injetar usuário acionando
-        outputSheet.getCell(`B${startRowOutput + 9}`).value = extraParams.userName || 'Sistema';
+        sheet.getCell(`B${startRowOutput + 9}`).value = extraParams.userName || 'Sistema';
 
         // Manutenção do Rodapé (Linhas 11, 12, 13, 14) 
         mergeSafe(11);
-        outputSheet.getCell(`B${startRowOutput + 10}`).value = extraParams.para || '';
+        sheet.getCell(`B${startRowOutput + 10}`).value = extraParams.para || '';
 
         mergeSafe(12);
-        outputSheet.getCell(`B${startRowOutput + 11}`).value = extraParams.statusMaterial || 'SCRAP';
+        sheet.getCell(`B${startRowOutput + 11}`).value = extraParams.statusMaterial || 'SCRAP';
 
-        outputSheet.getCell(`B${startRowOutput + 12}`).value = dateStr;
+        sheet.getCell(`B${startRowOutput + 12}`).value = dateStr;
 
         // Linha 14: merge B14:F14 e injeta data (ou conteúdo do template)
         const row14Abs = startRowOutput + 13;
-        try { outputSheet.mergeCells(`B${row14Abs}:F${row14Abs}`); } catch (e) { }
-        outputSheet.getCell(`B${row14Abs}`).value = templateSheet.getCell('B14').value;
+        try { sheet.mergeCells(`B${row14Abs}:F${row14Abs}`); } catch (e) { }
+        sheet.getCell(`B${row14Abs}`).value = templateSheet.getCell('B14').value;
 
         // Apply borders iteratively
         for (let r = 1; r <= BLOCK_SIZE; r++) {
-            const destRow = outputSheet.getRow(startRowOutput + r - 1);
+            const destRow = sheet.getRow(startRowOutput + r - 1);
             destRow.eachCell({ includeEmpty: true }, (cell, colNumber) => {
                 if (!cell.border) {
                     cell.border = {
@@ -1496,16 +1495,33 @@ export const generateBoxLabels = async (boxId: number | string, scraps: any[], e
         }
     };
 
-    templateSheet.columns.forEach((col, i) => {
-        if (col && col.width) {
-            outputSheet.getColumn(i + 1).width = col.width;
-        }
-    });
+    let currentPage = 1;
+    let currentSheet = outputWorkbook.addWorksheet(`Pagina ${currentPage}`);
+
+    const applyColumnWidths = (target: ExcelJS.Worksheet) => {
+        templateSheet.columns.forEach((col, i) => {
+            if (col && col.width) target.getColumn(i + 1).width = col.width;
+        });
+    };
+    applyColumnWidths(currentSheet);
 
     let currentOutputRow = 1;
+    let itemsOnPage = 0;
+
     for (let i = 0; i < uniqueCodes.length; i++) {
-        copyBlock(currentOutputRow, uniqueCodes[i]);
+        // Se já tem 3 itens na aba atual, cria uma nova
+        if (itemsOnPage >= 3) {
+            currentPage++;
+            currentSheet = outputWorkbook.addWorksheet(`Pagina ${currentPage}`);
+            applyColumnWidths(currentSheet);
+            currentOutputRow = 1; // Reseta a linha para o topo da nova aba
+            itemsOnPage = 0;
+        }
+
+        // Passa a aba (currentSheet) explicitamente para a função
+        copyBlock(currentSheet, currentOutputRow, uniqueCodes[i]);
         currentOutputRow += 15;
+        itemsOnPage++;
     }
 
     const buffer = await outputWorkbook.xlsx.writeBuffer();
