@@ -258,7 +258,7 @@ export const ScrapModule: React.FC<ScrapModuleProps> = ({ currentUser, onBack, i
                     />
                 )}
                 {activeTab === 'MANAGEMENT_ADVANCED' && (
-                    <ScrapManagementAdvanced scraps={scraps} />
+                    <ScrapManagementAdvanced scraps={scraps} users={users} />
                 )}
                 {activeTab === 'NEW_ADVANCED' && (
                     <NewAdvancedDashboard scraps={scraps} users={users} />
@@ -1209,7 +1209,7 @@ export const ScrapOperational = ({ scraps, users, lines, models }: any) => {
     )
 }
 
-export const ScrapManagementAdvanced = ({ scraps }: any) => {
+export const ScrapManagementAdvanced = ({ scraps, users }: any) => {
     const [filters, setFilters] = useState({
         period: 'MONTH', // DAY, WEEK, MONTH, YEAR, ALL
         specificDate: '',
@@ -1217,7 +1217,8 @@ export const ScrapManagementAdvanced = ({ scraps }: any) => {
         specificMonth: '',
         specificYear: '',
         shift: 'ALL',
-        leaderName: 'ALL'
+        leaderName: 'ALL',
+        model: 'ALL'
     });
     const [showChartsModal, setShowChartsModal] = useState(false);
 
@@ -1225,6 +1226,20 @@ export const ScrapManagementAdvanced = ({ scraps }: any) => {
     const [selectedItem, setSelectedItem] = useState<ScrapData | null>(null);
     const [groupPreviewModal, setGroupPreviewModal] = useState<{ isOpen: boolean; type: 'shift' | 'line' | 'model' | 'leader' | 'pending'; key: string; scraps: ScrapData[] }>({ isOpen: false, type: 'shift', key: '', scraps: [] });
     const [detailModal, setDetailModal] = useState<{ isOpen: boolean; scrap: ScrapData | null }>({ isOpen: false, scrap: null });
+
+    const availableModels = useMemo(() => {
+        let modelSource = [...scraps];
+
+        if (filters.shift !== 'ALL') {
+            modelSource = modelSource.filter(s => s.shift === filters.shift);
+        }
+
+        if (filters.leaderName !== 'ALL') {
+            modelSource = modelSource.filter(s => s.leaderName === filters.leaderName);
+        }
+
+        return Array.from(new Set(modelSource.map(s => s.model).filter(Boolean))).sort();
+    }, [scraps, filters.shift, filters.leaderName]);
 
     const filtered = useMemo(() => {
         let res = [...scraps];
@@ -1268,8 +1283,30 @@ export const ScrapManagementAdvanced = ({ scraps }: any) => {
             res = res.filter(s => s.leaderName === filters.leaderName);
         }
 
+        if (filters.model !== 'ALL') {
+            res = res.filter(s => s.model === filters.model);
+        }
+
         return res;
     }, [scraps, filters]);
+
+    const baseFiltered = useMemo(() => {
+        let res = [...scraps];
+
+        if (filters.shift !== 'ALL') {
+            res = res.filter(s => s.shift === filters.shift);
+        }
+
+        if (filters.leaderName !== 'ALL') {
+            res = res.filter(s => s.leaderName === filters.leaderName);
+        }
+
+        if (filters.model !== 'ALL') {
+            res = res.filter(s => s.model === filters.model);
+        }
+
+        return res;
+    }, [scraps, filters.shift, filters.leaderName, filters.model]);
 
     // Generate rankings
     const rankings = useMemo(() => {
@@ -1333,21 +1370,10 @@ export const ScrapManagementAdvanced = ({ scraps }: any) => {
                             <option value="MONTH">Mês Específico</option>
                             <option value="YEAR">Ano Específico</option>
                         </select>
-                        {filters.period === 'DAY' && <Input type="date" value={filters.specificDate} onChange={e => setFilters({ ...filters, specificDate: e.target.value })} />}
-                        {filters.period === 'WEEK' && <Input type="week" value={filters.specificWeek} onChange={e => setFilters({ ...filters, specificWeek: e.target.value })} />}
-                        {filters.period === 'MONTH' && <Input type="month" value={filters.specificMonth} onChange={e => setFilters({ ...filters, specificMonth: e.target.value })} />}
-                        {filters.period === 'YEAR' && <Input type="number" placeholder="Ano (Ex: 2024)" value={filters.specificYear} onChange={e => setFilters({ ...filters, specificYear: e.target.value })} />}
-                        <select className="bg-white dark:bg-zinc-900 border border-slate-300 dark:border-zinc-800 p-2 rounded text-sm text-slate-900 dark:text-zinc-100 outline-none focus:ring-2 focus:ring-blue-600" onChange={e => setFilters({ ...filters, shift: e.target.value })} value={filters.shift}>
-                            <option value="ALL">Turno: Todos</option>
-                            <option value="1">Turno 1</option>
-                            <option value="2">Turno 2</option>
-                        </select>
-                        <select className="bg-white dark:bg-zinc-900 border border-slate-300 dark:border-zinc-800 p-2 rounded text-sm text-slate-900 dark:text-zinc-100 outline-none focus:ring-2 focus:ring-blue-600" onChange={e => setFilters({ ...filters, leaderName: e.target.value })} value={filters.leaderName}>
-                            <option value="ALL">Líder: Todos</option>
-                            {Array.from(new Set(scraps.map(s => s.leaderName).filter(Boolean))).sort().map((leader: any) => (
-                                <option key={leader} value={leader}>{leader}</option>
-                            ))}
-                        </select>
+                        {filters.period === 'DAY' && <Input type="date" value={filters.specificDate} onChange={e => setFilters({ ...filters, specificDate: e.target.value })} className="w-auto max-w-[160px]" />}
+                        {filters.period === 'WEEK' && <Input type="week" value={filters.specificWeek} onChange={e => setFilters({ ...filters, specificWeek: e.target.value })} className="w-auto max-w-[160px]" />}
+                        {filters.period === 'MONTH' && <Input type="month" value={filters.specificMonth} onChange={e => setFilters({ ...filters, specificMonth: e.target.value })} className="w-auto max-w-[160px]" />}
+                        {filters.period === 'YEAR' && <Input type="number" placeholder="Ano (Ex: 2024)" value={filters.specificYear} onChange={e => setFilters({ ...filters, specificYear: e.target.value })} className="w-auto max-w-[160px]" />}
                         <Button variant="primary" onClick={() => setShowChartsModal(true)} size="sm" className="flex items-center gap-2 whitespace-nowrap">
                             <BarChart3 size={16} />
                             Visualizar Gráficos
@@ -1503,11 +1529,45 @@ export const ScrapManagementAdvanced = ({ scraps }: any) => {
             {showChartsModal && (
                 <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
                     <Card className="w-full h-full max-w-7xl max-h-[95vh] bg-white dark:bg-zinc-900 border-slate-200 dark:border-zinc-700 overflow-y-auto custom-scrollbar shadow-2xl">
-                        <div className="flex justify-between items-center mb-6 border-b border-slate-100 dark:border-zinc-800 pb-4 sticky top-0 bg-white dark:bg-zinc-900 z-10 p-6">
-                            <h3 className="font-bold text-2xl text-slate-900 dark:text-white">Análise Gráfica Avançada</h3>
-                            <button onClick={() => setShowChartsModal(false)} className="p-1 hover:bg-slate-100 dark:hover:bg-zinc-800 rounded-full transition-colors">
-                                <X size={28} className="text-slate-500 dark:text-zinc-400" />
-                            </button>
+                        <div className="mb-6 border-b border-slate-100 dark:border-zinc-800 sticky top-0 bg-white dark:bg-zinc-900 z-10 p-6">
+                            <div className="flex justify-between items-start gap-4">
+                                <div className="space-y-4 flex-1">
+                                    <h3 className="font-bold text-2xl text-slate-900 dark:text-white">Análise Gráfica Avançada</h3>
+                                    <div className="flex gap-3 items-center overflow-x-auto whitespace-nowrap pb-2 w-full custom-scrollbar flex-nowrap">
+                                        <select className="bg-white dark:bg-zinc-900 border border-slate-300 dark:border-zinc-800 p-2 rounded text-sm text-slate-900 dark:text-zinc-100 outline-none focus:ring-2 focus:ring-blue-600" onChange={e => setFilters({ ...filters, period: e.target.value })} value={filters.period}>
+                                            <option value="ALL">Todo Período</option>
+                                            <option value="DAY">Dia Específico</option>
+                                            <option value="WEEK">Semana Específica</option>
+                                            <option value="MONTH">Mês Específico</option>
+                                            <option value="YEAR">Ano Específico</option>
+                                        </select>
+                                        {filters.period === 'DAY' && <Input type="date" value={filters.specificDate} onChange={e => setFilters({ ...filters, specificDate: e.target.value })} className="w-auto max-w-[160px]" />}
+                                        {filters.period === 'WEEK' && <Input type="week" value={filters.specificWeek} onChange={e => setFilters({ ...filters, specificWeek: e.target.value })} className="w-auto max-w-[160px]" />}
+                                        {filters.period === 'MONTH' && <Input type="month" value={filters.specificMonth} onChange={e => setFilters({ ...filters, specificMonth: e.target.value })} className="w-auto max-w-[160px]" />}
+                                        {filters.period === 'YEAR' && <Input type="number" placeholder="Ano (Ex: 2024)" value={filters.specificYear} onChange={e => setFilters({ ...filters, specificYear: e.target.value })} className="w-auto max-w-[160px]" />}
+                                        <select className="bg-white dark:bg-zinc-900 border border-slate-300 dark:border-zinc-800 p-2 rounded text-sm text-slate-900 dark:text-zinc-100 outline-none focus:ring-2 focus:ring-blue-600" onChange={e => setFilters({ ...filters, shift: e.target.value, model: 'ALL' })} value={filters.shift}>
+                                            <option value="ALL">Turno: Todos</option>
+                                            <option value="1">Turno 1</option>
+                                            <option value="2">Turno 2</option>
+                                        </select>
+                                        <select className="bg-white dark:bg-zinc-900 border border-slate-300 dark:border-zinc-800 p-2 rounded text-sm text-slate-900 dark:text-zinc-100 outline-none focus:ring-2 focus:ring-blue-600" onChange={e => setFilters({ ...filters, leaderName: e.target.value, model: 'ALL' })} value={filters.leaderName}>
+                                            <option value="ALL">Líder: Todos</option>
+                                            {users.filter((u: User) => u.role.toLowerCase().includes('líder') || u.role.toLowerCase().includes('supervisor') || u.role.toLowerCase().includes('coordenador')).map((u: User) => (
+                                                <option key={u.matricula} value={u.name}>{u.name}</option>
+                                            ))}
+                                        </select>
+                                        <select className="bg-white dark:bg-zinc-900 border border-slate-300 dark:border-zinc-800 p-2 rounded text-sm text-slate-900 dark:text-zinc-100 outline-none focus:ring-2 focus:ring-blue-600" onChange={e => setFilters({ ...filters, model: e.target.value })} value={filters.model}>
+                                            <option value="ALL">Modelo: Todos</option>
+                                            {availableModels.map((model: string) => (
+                                                <option key={model} value={model}>{model}</option>
+                                            ))}
+                                        </select>
+                                    </div>
+                                </div>
+                                <button onClick={() => setShowChartsModal(false)} className="p-1 hover:bg-slate-100 dark:hover:bg-zinc-800 rounded-full transition-colors shrink-0">
+                                    <X size={28} className="text-slate-500 dark:text-zinc-400" />
+                                </button>
+                            </div>
                         </div>
 
                         <div className="space-y-8 p-6 min-h-screen">
@@ -1528,32 +1588,32 @@ export const ScrapManagementAdvanced = ({ scraps }: any) => {
                                         const shift1Height = (Number(shift1Total) || 0) / safeMaxShift * 100;
                                         const shift2Height = (Number(shift2Total) || 0) / safeMaxShift * 100;
                                         return (
-                                            <div className="space-y-4">
-                                                <div className="flex items-end justify-center gap-12 h-56 bg-gradient-to-br from-slate-50 to-slate-100 dark:from-zinc-800 dark:to-zinc-900 p-6 rounded-lg border border-slate-200 dark:border-zinc-700">
-                                                    <div className="flex flex-col items-center justify-end gap-2">
+                                            <div className="flex flex-col lg:flex-row gap-4 items-stretch">
+                                                <div className="flex-1 flex items-end justify-center gap-12 h-80 bg-gradient-to-br from-slate-50 to-slate-100 dark:from-zinc-800 dark:to-zinc-900 p-6 pt-10 rounded-lg border border-slate-200 dark:border-zinc-700">
+                                                    <div className="flex flex-col items-center justify-end gap-2 h-full">
                                                         <div className="text-center text-xs mb-2">
-                                                            <p className="font-bold text-slate-900 dark:text-white text-sm">{formatCurrency(shift1Total)}</p>
-                                                            <p className="text-green-600 dark:text-green-400 font-bold">{shift1Pct.toFixed(1)}%</p>
+                                                            <p className="text-white font-bold text-sm">{formatCurrency(shift1Total)}</p>
+                                                            <p className="text-green-500 font-bold">{shift1Pct.toFixed(1)}%</p>
                                                         </div>
                                                         <div className="w-20 bg-slate-300 dark:bg-zinc-700 rounded-t-md overflow-hidden shadow-md transition-all hover:shadow-lg" style={{ height: `${Math.max(2, shift1Height)}%` }}>
-                                                            <div className="w-full h-full bg-gradient-to-t from-blue-600 to-blue-500 dark:from-blue-700 dark:to-blue-600"></div>
+                                                            <div className="w-full h-full bg-gradient-to-t from-cyan-600 to-cyan-500"></div>
                                                         </div>
                                                         <span className="text-xs font-semibold text-slate-600 dark:text-zinc-400 mt-1">Turno 1</span>
                                                     </div>
-                                                    <div className="flex flex-col items-center justify-end gap-2">
+                                                    <div className="flex flex-col items-center justify-end gap-2 h-full">
                                                         <div className="text-center text-xs mb-2">
-                                                            <p className="font-bold text-slate-900 dark:text-white text-sm">{formatCurrency(shift2Total)}</p>
-                                                            <p className="text-green-600 dark:text-green-400 font-bold">{shift2Pct.toFixed(1)}%</p>
+                                                            <p className="text-white font-bold text-sm">{formatCurrency(shift2Total)}</p>
+                                                            <p className="text-green-500 font-bold">{shift2Pct.toFixed(1)}%</p>
                                                         </div>
                                                         <div className="w-20 bg-slate-300 dark:bg-zinc-700 rounded-t-md overflow-hidden shadow-md transition-all hover:shadow-lg" style={{ height: `${Math.max(2, shift2Height)}%` }}>
-                                                            <div className="w-full h-full bg-gradient-to-t from-orange-600 to-orange-500 dark:from-orange-700 dark:to-orange-600"></div>
+                                                            <div className="w-full h-full bg-gradient-to-t from-cyan-600 to-cyan-500"></div>
                                                         </div>
                                                         <span className="text-xs font-semibold text-slate-600 dark:text-zinc-400 mt-1">Turno 2</span>
                                                     </div>
                                                 </div>
-                                                <div className="text-center p-3 bg-slate-50 dark:bg-zinc-800/50 rounded border border-slate-200 dark:border-zinc-700">
+                                                <div className="w-full lg:w-72 flex flex-col justify-center text-center p-4 bg-slate-50 dark:bg-zinc-800/50 rounded border border-slate-200 dark:border-zinc-700">
                                                     <span className="text-sm text-slate-600 dark:text-zinc-400">Total Filtrado:</span>
-                                                    <p className="text-2xl font-bold text-slate-900 dark:text-white">{formatCurrency(totalValue)}</p>
+                                                    <p className="text-3xl font-bold text-slate-900 dark:text-white">{formatCurrency(totalValue)}</p>
                                                 </div>
                                             </div>
                                         );
@@ -1564,7 +1624,7 @@ export const ScrapManagementAdvanced = ({ scraps }: any) => {
                             {/* Row 2: Top 10 Items - Full Width */}
                             <div>
                                 <h4 className="font-bold text-lg text-slate-900 dark:text-white mb-4">Top 10 Itens (Torres Verticais)</h4>
-                                <div className="flex items-end gap-1 overflow-x-auto h-80 w-full bg-gradient-to-br from-slate-50 to-slate-100 dark:from-zinc-800 dark:to-zinc-900 p-6 rounded-lg border border-slate-200 dark:border-zinc-700 custom-scrollbar">
+                                <div className="flex items-end justify-between w-full gap-1 h-[400px] bg-gradient-to-br from-slate-50 to-slate-100 dark:from-zinc-800 dark:to-zinc-900 p-6 pt-10 pb-20 rounded-lg border border-slate-200 dark:border-zinc-700">
                                     {(() => {
                                         const byItem: Record<string, { value: number; qty: number; codes: Set<string>; models: Set<string> }> = {};
                                         filtered.forEach(s => {
@@ -1587,7 +1647,7 @@ export const ScrapManagementAdvanced = ({ scraps }: any) => {
                                                 if (upper.includes('PLACA')) return 'PLACA';
                                                 if (upper.includes('BATERIA')) return 'BATERIA';
                                                 if (upper.includes('OCTA')) return 'OCTA';
-                                                if (upper.includes('REAR')) return 'REAR';
+                                                if (upper.includes('REAR')) return 'REAR';                                            
                                                 return upper.substring(0, 8);
                                             };
                                             
@@ -1599,27 +1659,29 @@ export const ScrapManagementAdvanced = ({ scraps }: any) => {
                                                     const share = totalValue > 0 ? ((entry.value / totalValue) * 100).toFixed(1) : '0.0';
                                                     const category = getCategoryFromItem(entry.item);
                                                     const firstCode = Array.from(entry.codes)[0] || '-';
-                                                    const firstModel = Array.from(entry.models)[0] || '-';
+                                                    const firstModel = (Array.from(entry.models)[0] || '-').substring(0, 7);
                                                     const barHeight = (Number(entry.value) || 0) / safeMaxItems * 100;
                                                     return (
                                                         <div 
                                                             key={entry.item} 
-                                                            className="flex flex-col items-center justify-end gap-1 group"
+                                                            className="flex flex-col items-center justify-end gap-1 group relative h-full flex-1"
                                                             title={`${entry.item}: ${formatCurrency(entry.value)} | Qtd: ${entry.qty} | Cat: ${category} | Modelo: ${firstModel} | Código: ${firstCode}`}
                                                         >
-                                                            <div className="text-center text-xs">
-                                                                <p className="font-bold text-slate-900 dark:text-white text-xs leading-tight">{share}%</p>
+                                                            <div className="text-[10px] text-center leading-tight mb-1 w-full">
+                                                                <p className="text-white font-bold">{formatCurrency(entry.value)}</p>
+                                                                <p className="text-green-500 font-bold">{share}%</p>
                                                             </div>
                                                             <div 
-                                                                className="w-12 bg-slate-300 dark:bg-zinc-700 rounded-t-sm overflow-hidden shadow-md transition-all group-hover:shadow-lg"
-                                                                style={{ height: `${Math.max(2, barHeight)}%` }}
+                                                                className="w-16 bg-slate-300 dark:bg-zinc-700 rounded-t-sm overflow-hidden shadow-md transition-all group-hover:shadow-lg"
+                                                                style={{ height: `${Math.max(5, barHeight)}%` }}
                                                             >
                                                                 <div className="w-full h-full bg-gradient-to-t from-cyan-600 to-cyan-500 dark:from-cyan-700 dark:to-cyan-600"></div>
                                                             </div>
-                                                            <div className="text-center text-xs text-slate-600 dark:text-zinc-400 truncate w-12">
-                                                                <span className="font-semibold text-xs">#{idx + 1}</span>
+                                                            <div className="text-center px-1 w-[70px] mt-2 text-slate-600 dark:text-zinc-400">
+                                                                <p className="text-[9px] leading-tight truncate">{category}</p>
+                                                                <p className="text-[9px] leading-tight truncate">{firstModel}</p>
+                                                                <span className="block text-[9px] leading-tight font-mono whitespace-nowrap truncate w-full">{firstCode}</span>
                                                             </div>
-                                                            <code className="text-xs bg-slate-200 dark:bg-zinc-900 px-0.5 py-0.5 rounded text-slate-900 dark:text-zinc-100 truncate w-11">{firstCode.substring(0, 4)}</code>
                                                         </div>
                                                     );
                                                 });
@@ -1628,10 +1690,10 @@ export const ScrapManagementAdvanced = ({ scraps }: any) => {
                                 </div>
 
                             {/* Row 3: Temporal Analysis */}
-                            {filters.period === 'DAY' && <DayAnalysisChart filtered={filtered} />}
-                            {filters.period === 'WEEK' && <WeekAnalysisChart filtered={filtered} specificWeek={filters.specificWeek} />}
-                            {filters.period === 'MONTH' && <MonthAnalysisChart filtered={filtered} specificMonth={filters.specificMonth} />}
-                            {filters.period === 'YEAR' && <YearAnalysisChart filtered={filtered} specificYear={filters.specificYear} />}
+                            {filters.period === 'DAY' && <DayAnalysisChart filtered={filtered} baseScraps={baseFiltered} specificDate={filters.specificDate} />}
+                            {filters.period === 'WEEK' && <WeekAnalysisChart filtered={filtered} baseScraps={baseFiltered} specificWeek={filters.specificWeek} />}
+                            {filters.period === 'MONTH' && <MonthAnalysisChart filtered={filtered} baseScraps={baseFiltered} specificMonth={filters.specificMonth} />}
+                            {filters.period === 'YEAR' && <YearAnalysisChart filtered={filtered} baseScraps={baseFiltered} specificYear={filters.specificYear} />}
                             {filters.period === 'ALL' && (
                                 <div className="text-center p-8 bg-slate-50 dark:bg-zinc-800 rounded-lg">
                                     <p className="text-slate-600 dark:text-zinc-400">Selecione um período específico para visualizar análise temporal</p>
@@ -1646,140 +1708,207 @@ export const ScrapManagementAdvanced = ({ scraps }: any) => {
 };
 
 // --- DAY ANALYSIS CHART ---
-const DayAnalysisChart = ({ filtered }: { filtered: ScrapData[] }) => {
+const DayAnalysisChart = ({ filtered, baseScraps, specificDate }: { filtered: ScrapData[]; baseScraps: ScrapData[]; specificDate: string }) => {
+    const now = new Date();
+    const [yearRaw, monthRaw] = specificDate ? specificDate.split('-') : [];
+    const targetYear = Number(yearRaw) || now.getFullYear();
+    const targetMonth = Number(monthRaw) || now.getMonth() + 1;
+    const daysInMonth = new Date(targetYear, targetMonth, 0).getDate();
+    const targetMonthPrefix = `${targetYear}-${String(targetMonth).padStart(2, '0')}`;
+
+    const monthSource = (baseScraps.length ? baseScraps : filtered).filter(s => s.date.startsWith(targetMonthPrefix));
     const dayData: Record<number, number> = {};
-    filtered.forEach(s => {
+    monthSource.forEach(s => {
         const date = new Date(s.date);
         const day = date.getDate();
         dayData[day] = (dayData[day] || 0) + (s.totalValue || 0);
     });
-    const maxValue = Math.max(...Object.values(dayData), 1);
-    const avgValue = Object.values(dayData).reduce((a, b) => a + b, 0) / Object.keys(dayData).length || 0;
+    const dayValues = Array.from({ length: daysInMonth }).map((_, idx) => dayData[idx + 1] || 0);
+    const maxValue = Math.max(...dayValues, 1);
+    const nonZeroDayValues = dayValues.filter(v => v > 0);
+    const minValue = nonZeroDayValues.length > 0 ? Math.min(...nonZeroDayValues) : 0;
+    const avgValue = dayValues.reduce((a, b) => a + b, 0) / (dayValues.length || 1);
+    const totalPeriodValue = dayValues.reduce((a, b) => a + b, 0) || 1;
+    const selectedDay = specificDate ? Number((specificDate.split('-')[2] || '0')) : 0;
+    const dayMaxAbs = Math.max(...dayValues, 0);
+
+    const getDayBarColor = (day: number, value: number) => {
+        if (value === 0) return 'from-cyan-600 to-cyan-500';
+        if (day === selectedDay) return 'from-yellow-500 to-yellow-400';
+        if (value === dayMaxAbs) return 'from-red-600 to-red-500';
+        if (minValue > 0 && value === minValue) return 'from-emerald-600 to-emerald-500';
+        return 'from-cyan-600 to-cyan-500';
+    };
     
     return (
         <div>
-            <h4 className="font-bold text-lg text-slate-900 dark:text-white mb-4 flex justify-between items-center">
-                <span>Valores por Dia do Mês</span>
-                <span className="text-xs font-normal text-slate-600 dark:text-zinc-400">Máx: {formatCurrency(maxValue)} | Média: {formatCurrency(avgValue)}</span>
-            </h4>
-            <div className="flex items-end justify-center gap-1 h-72 bg-gradient-to-br from-slate-50 to-slate-100 dark:from-zinc-800 dark:to-zinc-900 p-6 rounded-lg overflow-x-auto border border-slate-200 dark:border-zinc-700 custom-scrollbar">
-                {Array.from({ length: 31 }).map((_, idx) => {
+            <h4 className="font-bold text-lg text-slate-900 dark:text-white mb-3">Valores por Dia do Mês</h4>
+            <div className="text-[10px] font-bold text-slate-500 flex gap-4 uppercase mb-2"><span>MAX: {formatCurrency(maxValue)}</span><span>MIN: {formatCurrency(minValue)}</span><span>MÉDIA: {formatCurrency(avgValue)}</span></div>
+            <div className="h-[300px] bg-gradient-to-br from-slate-50 to-slate-100 dark:from-zinc-800 dark:to-zinc-900 p-4 pt-10 pb-6 rounded-lg border border-slate-200 dark:border-zinc-700 overflow-x-auto overflow-y-hidden">
+                <div className="flex items-end justify-start gap-2 custom-scrollbar w-full h-full">
+                {Array.from({ length: daysInMonth }).map((_, idx) => {
                     const day = idx + 1;
                     const val = dayData[day] || 0;
-                    const pct = (val / maxValue) * 100;
-                    const isAboveAvg = val > avgValue;
+                    const safeDayMax = maxValue > 0 ? maxValue : 1;
+                    const share = ((val / totalPeriodValue) * 100).toFixed(1);
+                    const dayBarColor = getDayBarColor(day, val);
                     
                     return (
-                        <div key={day} className="flex flex-col items-center justify-end flex-1 min-w-[2.5rem] gap-1 group" title={`Dia ${day}: ${formatCurrency(val)}`}>
-                            <div className="w-full bg-slate-300 dark:bg-zinc-700 rounded-t-sm overflow-hidden shadow-sm transition-all duration-300 group-hover:shadow-md relative" style={{ height: `${Math.max(pct, 3)}%`, minHeight: '1px' }}>
+                        <div key={day} className="flex flex-col items-center justify-end gap-0.5 group relative h-full min-w-[36px] w-10" title={`Dia ${day}: ${formatCurrency(val)}`}>
+                            <div className="text-[7px] tracking-tighter whitespace-nowrap px-1 mb-0.5 text-center leading-tight w-full">
+                                <p className="text-white font-bold">{formatCurrency(val)}</p>
+                                <p className="text-green-500 font-bold">{share}%</p>
+                            </div>
+                            <div className="w-full bg-slate-300 dark:bg-zinc-700 rounded-t-sm overflow-hidden shadow-sm transition-all duration-300 group-hover:shadow-md relative" style={{ height: `${Math.max(5, (val / safeDayMax) * 85)}%`, minHeight: '1px' }}>
                                 <div 
-                                    className={`w-full h-full rounded-t-sm transition-all duration-300 ${isAboveAvg ? 'bg-gradient-to-t from-emerald-500 to-emerald-400 dark:from-emerald-600 dark:to-emerald-500' : 'bg-gradient-to-t from-blue-500 to-blue-400 dark:from-blue-600 dark:to-blue-500'}`}
+                                    className={`w-full h-full rounded-t-sm transition-all duration-300 bg-gradient-to-t ${dayBarColor}`}
                                     style={{ height: '100%' }}
                                 ></div>
-                                {pct > 15 && (
-                                    <div className="absolute inset-0 flex items-center justify-center text-white text-xs font-bold" style={{ fontSize: '0.6rem' }}>
-                                        {(val / 1000).toFixed(0)}k
-                                    </div>
-                                )}
                             </div>
-                            <span className="text-xs text-slate-600 dark:text-zinc-400 font-semibold">{day}</span>
+                            <span className="text-xs text-slate-600 dark:text-zinc-400 font-semibold absolute -bottom-8">{day}</span>
                         </div>
                     );
                 })}
+                </div>
             </div>
-            <p className="text-xs text-slate-500 dark:text-zinc-400 mt-3 text-center">Verde indica dias com valor acima da média</p>
         </div>
     );
 };
 
 // --- WEEK ANALYSIS CHART ---
-const WeekAnalysisChart = ({ filtered, specificWeek }: { filtered: ScrapData[]; specificWeek: string }) => {
-    const weekDayNames = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sab'];
-    const weekData: Record<number, number> = {};
-    filtered.forEach(s => {
-        const date = new Date(s.date);
-        const dayOfWeek = date.getDay();
-        weekData[dayOfWeek] = (weekData[dayOfWeek] || 0) + (s.totalValue || 0);
-    });
-    const maxValue = Math.max(...Object.values(weekData), 1);
-    const avgValue = Object.values(weekData).reduce((a, b) => a + b, 0) / Object.keys(weekData).length || 0;
+const WeekAnalysisChart = ({ filtered, baseScraps, specificWeek }: { filtered: ScrapData[]; baseScraps: ScrapData[]; specificWeek: string }) => {
+    const isoDayNames = ['Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sab', 'Dom'];
+    const [selectedYearRaw, selectedWeekRaw] = specificWeek ? specificWeek.split('-W') : [];
+    const selectedYear = Number(selectedYearRaw) || new Date().getFullYear();
+    const selectedWeek = Number(selectedWeekRaw) || getWeekNumber(new Date());
 
-    // Calculate weeks for month comparison
-    const monthData: Record<number, number> = {};
-    const currentMonthWeeks: Record<number, number> = {};
-    const previousMonthWeeks: Record<number, number> = {};
-    
-    filtered.forEach(s => {
-        const date = new Date(s.date);
-        const week = getWeekNumber(date);
-        const month = date.getMonth();
-        const currentMonth = new Date().getMonth();
-        monthData[week] = (monthData[week] || 0) + (s.totalValue || 0);
-        if (month === currentMonth) currentMonthWeeks[week] = (currentMonthWeeks[week] || 0) + (s.totalValue || 0);
-        if (month === (currentMonth - 1 + 12) % 12) previousMonthWeeks[week] = (previousMonthWeeks[week] || 0) + (s.totalValue || 0);
+    const getIsoWeekStart = (year: number, week: number) => {
+        const jan4 = new Date(year, 0, 4);
+        const jan4IsoDay = (jan4.getDay() + 6) % 7;
+        const week1Monday = new Date(jan4);
+        week1Monday.setDate(jan4.getDate() - jan4IsoDay);
+        const targetMonday = new Date(week1Monday);
+        targetMonday.setDate(week1Monday.getDate() + (week - 1) * 7);
+        return targetMonday;
+    };
+
+    const formatShortDate = (date: Date) => {
+        const dd = String(date.getDate()).padStart(2, '0');
+        const mm = String(date.getMonth() + 1).padStart(2, '0');
+        const yy = String(date.getFullYear()).slice(-2);
+        return `${dd}/${mm}/${yy}`;
+    };
+
+    const monday = getIsoWeekStart(selectedYear, selectedWeek);
+    const weekDays = Array.from({ length: 7 }).map((_, idx) => {
+        const date = new Date(monday);
+        date.setDate(monday.getDate() + idx);
+        const key = date.toISOString().split('T')[0];
+        return {
+            idx,
+            dayName: isoDayNames[idx],
+            date,
+            key,
+            value: filtered
+                .filter(s => s.date === key)
+                .reduce((acc, s) => acc + (s.totalValue || 0), 0)
+        };
     });
+
+    const weekDayValues = weekDays.map(d => d.value);
+    const maxValue = Math.max(...weekDayValues, 1);
+    const nonZeroWeekDayValues = weekDayValues.filter(v => v > 0);
+    const minValue = nonZeroWeekDayValues.length > 0 ? Math.min(...nonZeroWeekDayValues) : 0;
+    const avgValue = weekDays.reduce((acc, d) => acc + d.value, 0) / (weekDays.length || 1);
+    const totalWeekDays = weekDays.reduce((acc, d) => acc + d.value, 0) || 1;
+
+    const historyWeeks = Array.from({ length: 7 }).map((_, idx) => selectedWeek - 3 + idx);
+    const historyData = historyWeeks.map((week) => {
+        const value = baseScraps
+            .filter(s => {
+                const date = new Date(s.date);
+                return date.getFullYear() === selectedYear && getWeekNumber(date) === week;
+            })
+            .reduce((acc, s) => acc + (s.totalValue || 0), 0);
+        return { week, value };
+    });
+
+    const historyValues = historyData.map(w => w.value);
+    const maxHistoryValue = Math.max(...historyValues, 1);
+    const nonZeroHistoryValues = historyValues.filter(v => v > 0);
+    const minHistoryValue = nonZeroHistoryValues.length > 0 ? Math.min(...nonZeroHistoryValues) : 0;
+    const avgHistoryValue = historyData.reduce((acc, w) => acc + w.value, 0) / (historyData.length || 1);
+    const totalHistoryValue = historyData.reduce((acc, w) => acc + w.value, 0) || 1;
+
+    const weekDayMaxAbs = Math.max(...weekDayValues, 0);
+    const historyMax = Math.max(...historyValues, 0);
+
+    const getWeekDayBarColor = (day: typeof weekDays[number]) => {
+        const value = day.value;
+        if (value === 0) return 'from-cyan-600 to-cyan-500';
+        if (day.idx === 0) return 'from-yellow-500 to-yellow-400';
+        if (value === weekDayMaxAbs) return 'from-red-600 to-red-500';
+        if (minValue > 0 && value === minValue) return 'from-emerald-600 to-emerald-500';
+        return 'from-cyan-600 to-cyan-500';
+    };
+
+    const getHistoryBarColor = (week: number, value: number) => {
+        if (value === 0) return 'from-cyan-600 to-cyan-500';
+        if (week === selectedWeek) return 'from-yellow-500 to-yellow-400';
+        if (value === historyMax) return 'from-red-600 to-red-500';
+        if (minHistoryValue > 0 && value === minHistoryValue) return 'from-emerald-600 to-emerald-500';
+        return 'from-cyan-600 to-cyan-500';
+    };
 
     return (
         <div className="space-y-6">
             <div>
-                <h4 className="font-bold text-lg text-slate-900 dark:text-white mb-4 flex justify-between items-center">
-                    <span>Valores por Dia da Semana</span>
-                    <span className="text-xs font-normal text-slate-600 dark:text-zinc-400">Máx: {formatCurrency(maxValue)}</span>
-                </h4>
-                <div className="flex items-end justify-center gap-3 h-72 bg-gradient-to-br from-slate-50 to-slate-100 dark:from-zinc-800 dark:to-zinc-900 p-6 rounded-lg border border-slate-200 dark:border-zinc-700">
-                    {Array.from({ length: 7 }).map((_, idx) => {
-                        const val = weekData[idx] || 0;
-                        const pct = (val / maxValue) * 100;
-                        const isAboveAvg = val > avgValue;
-                        
+                <h4 className="font-bold text-lg text-slate-900 dark:text-white mb-3">Valores por Dia da Semana</h4>
+                <div className="text-[10px] font-bold text-slate-500 flex gap-4 uppercase mb-2"><span>MAX: {formatCurrency(maxValue)}</span><span>MIN: {formatCurrency(minValue)}</span><span>MÉDIA: {formatCurrency(avgValue)}</span></div>
+                <div className="flex items-end justify-between w-full gap-1 h-80 bg-gradient-to-br from-slate-50 to-slate-100 dark:from-zinc-800 dark:to-zinc-900 p-6 pt-14 pb-8 rounded-lg border border-slate-200 dark:border-zinc-700">
+                    {weekDays.map((day) => {
+                        const safeWeekMax = maxValue > 0 ? maxValue : 1;
+                        const share = ((day.value / totalWeekDays) * 100).toFixed(1);
+                        const weekDayBarColor = getWeekDayBarColor(day);
+
                         return (
-                            <div key={idx} className="flex flex-col items-center justify-end w-24 gap-1 group" title={`${weekDayNames[idx]}: ${formatCurrency(val)}`}>
-                                <div className="w-full bg-slate-300 dark:bg-zinc-700 rounded-t-sm overflow-hidden shadow-sm transition-all duration-300 group-hover:shadow-md" style={{ height: `${Math.max(pct, 5)}%`, minHeight: '2px' }}>
-                                    <div className={`w-full h-full rounded-t-sm transition-all ${isAboveAvg ? 'bg-gradient-to-t from-purple-500 to-purple-400 dark:from-purple-600 dark:to-purple-500' : 'bg-gradient-to-t from-indigo-500 to-indigo-400 dark:from-indigo-600 dark:to-indigo-500'}`}></div>
+                            <div key={day.key} className="flex flex-col items-center justify-end flex-1 gap-1 group relative h-full" title={`${day.dayName} ${formatShortDate(day.date)}: ${formatCurrency(day.value)}`}>
+                                <div className="text-[10px] mb-1 text-center leading-tight w-full">
+                                    <p className="text-white font-bold">{formatCurrency(day.value)}</p>
+                                    <p className="text-green-500 font-bold">{share}%</p>
                                 </div>
-                                <span className="text-xs text-slate-600 dark:text-zinc-400 font-semibold">{weekDayNames[idx]}</span>
+                                <div className="w-16 bg-slate-300 dark:bg-zinc-700 rounded-t-sm overflow-hidden shadow-sm transition-all duration-300 group-hover:shadow-md" style={{ height: `${Math.max(5, (day.value / safeWeekMax) * 85)}%`, minHeight: '2px' }}>
+                                    <div className={`w-full h-full rounded-t-sm transition-all bg-gradient-to-t ${weekDayBarColor}`}></div>
+                                </div>
+                                <span className="text-xs text-slate-600 dark:text-zinc-400 font-semibold absolute -bottom-8">{day.dayName}</span>
+                                <span className="text-[7px] md:text-[8px] tracking-tighter whitespace-nowrap text-slate-500 dark:text-zinc-500 absolute -bottom-12">{formatShortDate(day.date)}</span>
                             </div>
                         );
                     })}
                 </div>
             </div>
             <div>
-                <h4 className="font-bold text-lg text-slate-900 dark:text-white mb-4">Semanas: Mês Atual vs Anterior</h4>
-                <div className="flex items-end justify-center gap-2 h-80 bg-gradient-to-br from-slate-50 to-slate-100 dark:from-zinc-800 dark:to-zinc-900 p-6 rounded-lg overflow-x-auto border border-slate-200 dark:border-zinc-700 custom-scrollbar">
-                    {Array.from({ length: 6 }).map((_, week) => {
-                        const currentVal = currentMonthWeeks[week] || 0;
-                        const previousVal = previousMonthWeeks[week] || 0;
-                        const maxWeekVal = Math.max(currentVal, previousVal, 1);
-                        const currentPct = (currentVal / maxWeekVal) * 100;
-                        const previousPct = (previousVal / maxWeekVal) * 100;
+                <h4 className="font-bold text-lg text-slate-900 dark:text-white mb-4">Histórico Semanal (7 Semanas)</h4>
+                <div className="text-[10px] font-bold text-slate-500 flex gap-4 uppercase mb-2"><span>MAX: {formatCurrency(maxHistoryValue)}</span><span>MIN: {formatCurrency(minHistoryValue)}</span><span>MÉDIA: {formatCurrency(avgHistoryValue)}</span></div>
+                <div className="flex items-end justify-start gap-4 overflow-x-auto custom-scrollbar w-full h-80 bg-gradient-to-br from-slate-50 to-slate-100 dark:from-zinc-800 dark:to-zinc-900 p-6 pt-14 pb-8 rounded-lg border border-slate-200 dark:border-zinc-700">
+                    {historyData.map(({ week, value }) => {
+                        const safeHistoryMax = maxHistoryValue > 0 ? maxHistoryValue : 1;
+                        const share = ((value / totalHistoryValue) * 100).toFixed(1);
+                        const historyBarColor = getHistoryBarColor(week, value);
                         return (
-                            <div key={week} className="flex flex-col items-center justify-end flex-1 min-w-[5rem] gap-1">
-                                <div className="w-full flex gap-1.5 h-full items-end">
-                                    <div 
-                                        className="flex-1 bg-gradient-to-t from-blue-500 to-blue-400 dark:from-blue-600 dark:to-blue-500 rounded-t-sm shadow-sm transition-all hover:shadow-md" 
-                                        style={{ height: `${Math.max(currentPct, 5)}%` }} 
-                                        title={`Atual: ${formatCurrency(currentVal)}`}
-                                    ></div>
-                                    <div 
-                                        className="flex-1 bg-gradient-to-t from-slate-400 to-slate-300 dark:from-slate-600 dark:to-slate-500 rounded-t-sm shadow-sm transition-all hover:shadow-md" 
-                                        style={{ height: `${Math.max(previousPct, 5)}%` }} 
-                                        title={`Anterior: ${formatCurrency(previousVal)}`}
-                                    ></div>
+                            <div key={`hist-${week}`} className="flex flex-col justify-end items-center gap-1 relative h-full min-w-[40px] w-14" title={`Semana ${week}: ${formatCurrency(value)}`}>
+                                <div className="text-[10px] mb-1 text-center leading-tight w-full">
+                                    <p className="text-white font-bold">{formatCurrency(value)}</p>
+                                    <p className="text-green-500 font-bold">{share}%</p>
                                 </div>
-                                <span className="text-xs text-slate-600 dark:text-zinc-400 font-semibold">S{week + 1}</span>
+                                <div
+                                    className={`w-full bg-gradient-to-t ${historyBarColor} rounded-t-sm shadow-sm transition-all hover:shadow-md`}
+                                    style={{ height: `${Math.max(5, (value / safeHistoryMax) * 85)}%` }}
+                                ></div>
+                                <span className="text-xs text-slate-600 dark:text-zinc-400 font-semibold absolute -bottom-8">Sem {week}</span>
                             </div>
                         );
                     })}
-                </div>
-                <div className="flex gap-4 mt-4 text-sm justify-center">
-                    <div className="flex items-center gap-2">
-                        <div className="w-4 h-4 bg-blue-500 dark:bg-blue-600 rounded"></div>
-                        <span className="text-slate-700 dark:text-zinc-300">Mês Atual</span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                        <div className="w-4 h-4 bg-slate-400 dark:bg-slate-600 rounded"></div>
-                        <span className="text-slate-700 dark:text-zinc-300">Mês Anterior</span>
-                    </div>
                 </div>
             </div>
         </div>
@@ -1787,70 +1916,112 @@ const WeekAnalysisChart = ({ filtered, specificWeek }: { filtered: ScrapData[]; 
 };
 
 // --- MONTH ANALYSIS CHART ---
-const MonthAnalysisChart = ({ filtered, specificMonth }: { filtered: ScrapData[]; specificMonth: string }) => {
+const MonthAnalysisChart = ({ filtered, baseScraps, specificMonth }: { filtered: ScrapData[]; baseScraps: ScrapData[]; specificMonth: string }) => {
     const weekData: Record<number, number> = {};
     const monthData: Record<number, number> = {};
+    const selectedYear = specificMonth?.split('-')[0] || String(new Date().getFullYear());
     
     filtered.forEach(s => {
         const date = new Date(s.date);
         const week = getWeekNumber(date);
-        const month = date.getMonth();
-        const currentMonth = new Date().getMonth();
         weekData[week] = (weekData[week] || 0) + (s.totalValue || 0);
-        if (month === currentMonth) monthData[month] = (monthData[month] || 0) + (s.totalValue || 0);
     });
 
-    const maxWeekValue = Math.max(...Object.values(weekData), 1);
-    const maxMonthValue = Math.max(...Object.values(monthData), 1);
-    const avgWeekValue = Object.values(weekData).reduce((a, b) => a + b, 0) / Object.keys(weekData).length || 0;
+    baseScraps.filter(s => s.date.startsWith(selectedYear)).forEach(s => {
+        const date = new Date(s.date);
+        const month = date.getMonth();
+        monthData[month] = (monthData[month] || 0) + (s.totalValue || 0);
+    });
+
+    const uniqueMonthWeeks = Object.keys(weekData).map(Number).sort((a, b) => a - b);
+
+    const weekValues = Object.values(weekData);
+    const monthValuesRaw = Object.values(monthData);
+    const maxWeekValue = Math.max(...weekValues, 1);
+    const nonZeroWeekValues = weekValues.filter(v => v > 0);
+    const minWeekValue = nonZeroWeekValues.length > 0 ? Math.min(...nonZeroWeekValues) : 0;
+    const maxMonthValue = Math.max(...monthValuesRaw, 1);
+    const nonZeroMonthValues = monthValuesRaw.filter(v => v > 0);
+    const minMonthValue = nonZeroMonthValues.length > 0 ? Math.min(...nonZeroMonthValues) : 0;
+    const avgWeekValue = Object.values(weekData).reduce((a, b) => a + b, 0) / (Object.keys(weekData).length || 1);
+    const avgMonthValue = Object.values(monthData).reduce((a, b) => a + b, 0) / (Object.keys(monthData).length || 1);
+    const totalMonthWeeks = Object.values(weekData).reduce((a, b) => a + b, 0) || 1;
+    const totalYearMonths = Object.values(monthData).reduce((a, b) => a + b, 0) || 1;
+
+    const selectedMonthIndex = specificMonth ? Number(specificMonth.split('-')[1]) - 1 : new Date().getMonth();
+    const monthValues = Array.from({ length: 12 }).map((_, idx) => monthData[idx] || 0);
+    const maxWeekAbs = Math.max(...weekValues, 0);
+    const maxMonthAbs = Math.max(...monthValues, 0);
+
+    const getWeekBarColor = (value: number) => {
+        if (value === 0) return 'from-cyan-600 to-cyan-500';
+        if (value === maxWeekAbs) return 'from-red-600 to-red-500';
+        if (minWeekValue > 0 && value === minWeekValue) return 'from-emerald-600 to-emerald-500';
+        return 'from-cyan-600 to-cyan-500';
+    };
+
+    const getMonthBarColor = (idx: number, value: number) => {
+        if (value === 0) return 'from-cyan-600 to-cyan-500';
+        if (idx === selectedMonthIndex) return 'from-yellow-500 to-yellow-400';
+        if (value === maxMonthAbs) return 'from-red-600 to-red-500';
+        if (minMonthValue > 0 && value === minMonthValue) return 'from-emerald-600 to-emerald-500';
+        return 'from-cyan-600 to-cyan-500';
+    };
 
     return (
         <div className="space-y-6">
             <div>
-                <h4 className="font-bold text-lg text-slate-900 dark:text-white mb-4 flex justify-between items-center">
-                    <span>Valores por Semana do Mês</span>
-                    <span className="text-xs font-normal text-slate-600 dark:text-zinc-400">Máx: {formatCurrency(maxWeekValue)}</span>
-                </h4>
-                <div className="flex items-end justify-center gap-2 h-72 bg-gradient-to-br from-slate-50 to-slate-100 dark:from-zinc-800 dark:to-zinc-900 p-6 rounded-lg border border-slate-200 dark:border-zinc-700">
-                    {Array.from({ length: 6 }).map((_, idx) => {
-                        const val = weekData[idx] || 0;
-                        const pct = (val / maxWeekValue) * 100;
-                        const isAboveAvg = val > avgWeekValue;
+                <h4 className="font-bold text-lg text-slate-900 dark:text-white mb-3">Valores por Semana do Mês</h4>
+                <div className="text-[10px] font-bold text-slate-500 flex gap-4 uppercase mb-2"><span>MAX: {formatCurrency(maxWeekValue)}</span><span>MIN: {formatCurrency(minWeekValue)}</span><span>MÉDIA: {formatCurrency(avgWeekValue)}</span></div>
+                <div className="flex items-end justify-between w-full gap-1 h-80 bg-gradient-to-br from-slate-50 to-slate-100 dark:from-zinc-800 dark:to-zinc-900 p-6 pt-14 pb-8 rounded-lg border border-slate-200 dark:border-zinc-700">
+                    {uniqueMonthWeeks.map((week) => {
+                        const val = weekData[week] || 0;
+                        const safeWeekValMax = maxWeekValue > 0 ? maxWeekValue : 1;
+                        const share = ((val / totalMonthWeeks) * 100).toFixed(1);
+                        const weekBarColor = getWeekBarColor(val);
                         
                         return (
-                            <div key={idx} className="flex flex-col items-center justify-end flex-1 gap-1 group" title={`Semana ${idx + 1}: ${formatCurrency(val)}`}>
-                                <div 
-                                    className={`w-full bg-slate-300 dark:bg-zinc-700 rounded-t-sm overflow-hidden shadow-sm transition-all duration-300 group-hover:shadow-md ${isAboveAvg ? 'ring-2 ring-green-400 dark:ring-green-500' : ''}`}
-                                    style={{ height: `${Math.max(pct, 5)}%`, minHeight: '2px' }}
-                                >
-                                    <div className={`w-full h-full rounded-t-sm transition-all ${isAboveAvg ? 'bg-gradient-to-t from-green-500 to-green-400 dark:from-green-600 dark:to-green-500' : 'bg-gradient-to-t from-emerald-500 to-emerald-400 dark:from-emerald-600 dark:to-emerald-500'}`}></div>
+                            <div key={week} className="flex flex-col items-center justify-end flex-1 gap-1 group relative h-full" title={`Semana ${week}: ${formatCurrency(val)}`}>
+                                <div className="text-[10px] mb-1 text-center leading-tight w-full">
+                                    <p className="text-white font-bold">{formatCurrency(val)}</p>
+                                    <p className="text-green-500 font-bold">{share}%</p>
                                 </div>
-                                <span className="text-xs text-slate-600 dark:text-zinc-400 font-semibold">S{idx + 1}</span>
+                                <div 
+                                    className="w-16 bg-slate-300 dark:bg-zinc-700 rounded-t-sm overflow-hidden shadow-sm transition-all duration-300 group-hover:shadow-md"
+                                    style={{ height: `${Math.max(5, (val / safeWeekValMax) * 85)}%`, minHeight: '2px' }}
+                                >
+                                    <div className={`w-full h-full rounded-t-sm transition-all bg-gradient-to-t ${weekBarColor}`}></div>
+                                </div>
+                                <span className="text-xs text-slate-600 dark:text-zinc-400 font-semibold absolute -bottom-8">Sem {week}</span>
                             </div>
                         );
                     })}
                 </div>
             </div>
             <div>
-                <h4 className="font-bold text-lg text-slate-900 dark:text-white mb-4 flex justify-between items-center">
-                    <span>Todos os Meses do Ano</span>
-                    <span className="text-xs font-normal text-slate-600 dark:text-zinc-400">Máx: {formatCurrency(maxMonthValue)}</span>
-                </h4>
-                <div className="flex items-end justify-center gap-2 h-80 bg-gradient-to-br from-slate-50 to-slate-100 dark:from-zinc-800 dark:to-zinc-900 p-6 rounded-lg border border-slate-200 dark:border-zinc-700">
+                <h4 className="font-bold text-lg text-slate-900 dark:text-white mb-3">Todos os Meses do Ano</h4>
+                <div className="text-[10px] font-bold text-slate-500 flex gap-4 uppercase mb-2"><span>MAX: {formatCurrency(maxMonthValue)}</span><span>MIN: {formatCurrency(minMonthValue)}</span><span>MÉDIA: {formatCurrency(avgMonthValue)}</span></div>
+                <div className="flex items-end justify-between w-full gap-1 h-80 bg-gradient-to-br from-slate-50 to-slate-100 dark:from-zinc-800 dark:to-zinc-900 p-6 pt-14 pb-8 rounded-lg border border-slate-200 dark:border-zinc-700">
                     {Array.from({ length: 12 }).map((_, idx) => {
                         const monthNames = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
                         const val = monthData[idx] || 0;
-                        const pct = (val / maxMonthValue) * 100;
+                        const safeMonthMax = maxMonthValue > 0 ? maxMonthValue : 1;
+                        const share = ((val / totalYearMonths) * 100).toFixed(1);
+                        const monthBarColor = getMonthBarColor(idx, val);
                         
                         return (
-                            <div key={idx} className="flex flex-col items-center justify-end flex-1 gap-1 group" title={`${monthNames[idx]}: ${formatCurrency(val)}`}>
-                                <div 
-                                    className="w-full bg-slate-300 dark:bg-zinc-700 rounded-t-sm overflow-hidden shadow-sm transition-all duration-300 group-hover:shadow-md"
-                                    style={{ height: `${Math.max(pct, 5)}%`, minHeight: '2px' }}
-                                >
-                                    <div className="w-full h-full bg-gradient-to-t from-indigo-500 to-indigo-400 dark:from-indigo-600 dark:to-indigo-500 rounded-t-sm transition-all"></div>
+                            <div key={idx} className="flex flex-col items-center justify-end flex-1 gap-1 group relative h-full" title={`${monthNames[idx]}: ${formatCurrency(val)}`}>
+                                <div className="text-[10px] mb-1 text-center leading-tight w-full">
+                                    <p className="text-white font-bold">{formatCurrency(val)}</p>
+                                    <p className="text-green-500 font-bold">{share}%</p>
                                 </div>
-                                <span className="text-xs text-slate-600 dark:text-zinc-400 font-semibold">{monthNames[idx]}</span>
+                                <div 
+                                    className="w-16 bg-slate-300 dark:bg-zinc-700 rounded-t-sm overflow-hidden shadow-sm transition-all duration-300 group-hover:shadow-md"
+                                    style={{ height: `${Math.max(5, (val / safeMonthMax) * 85)}%`, minHeight: '2px' }}
+                                >
+                                    <div className={`w-full h-full bg-gradient-to-t ${monthBarColor} rounded-t-sm transition-all`}></div>
+                                </div>
+                                <span className="text-xs text-slate-600 dark:text-zinc-400 font-semibold absolute -bottom-8">{monthNames[idx]}</span>
                             </div>
                         );
                     })}
@@ -1861,70 +2032,109 @@ const MonthAnalysisChart = ({ filtered, specificMonth }: { filtered: ScrapData[]
 };
 
 // --- YEAR ANALYSIS CHART ---
-const YearAnalysisChart = ({ filtered, specificYear }: { filtered: ScrapData[]; specificYear: string }) => {
+const YearAnalysisChart = ({ filtered, baseScraps, specificYear }: { filtered: ScrapData[]; baseScraps: ScrapData[]; specificYear: string }) => {
     const monthData: Record<number, number> = {};
     const yearData: Record<number, number> = {};
     
     filtered.forEach(s => {
         const date = new Date(s.date);
         const month = date.getMonth();
-        const year = date.getFullYear();
         monthData[month] = (monthData[month] || 0) + (s.totalValue || 0);
+    });
+
+    baseScraps.forEach(s => {
+        const date = new Date(s.date);
+        const year = date.getFullYear();
         yearData[year] = (yearData[year] || 0) + (s.totalValue || 0);
     });
 
-    const maxMonthValue = Math.max(...Object.values(monthData), 1);
-    const maxYearValue = Math.max(...Object.values(yearData), 1);
-    const avgMonthValue = Object.values(monthData).reduce((a, b) => a + b, 0) / Object.keys(monthData).length || 0;
+    const monthValues = Object.values(monthData).map(v => Number(v) || 0);
+    const yearValues = Object.values(yearData).map(v => Number(v) || 0);
+    const maxMonthValue = Math.max(...monthValues, 1);
+    const nonZeroMonthValues = monthValues.filter(v => v > 0);
+    const minMonthValue = nonZeroMonthValues.length > 0 ? Math.min(...nonZeroMonthValues) : 0;
+    const maxYearValue = Math.max(...yearValues, 1);
+    const nonZeroYearValues = yearValues.filter(v => v > 0);
+    const minYearValue = nonZeroYearValues.length > 0 ? Math.min(...nonZeroYearValues) : 0;
+    const avgMonthValue = Object.values(monthData).reduce((a, b) => a + b, 0) / (Object.keys(monthData).length || 1);
+    const avgYearValue = Object.values(yearData).reduce((a, b) => a + b, 0) / (Object.keys(yearData).length || 1);
+    const totalYearSelected = Object.values(monthData).reduce((a, b) => a + b, 0) || 1;
+    const totalAllYears = Object.values(yearData).reduce((a, b) => a + b, 0) || 1;
+
+    const selectedYear = Number(specificYear) || new Date().getFullYear();
+    const maxMonthAbs = Math.max(...monthValues, 0);
+    const maxYearAbs = Math.max(...yearValues, 0);
+
+    const getYearMonthBarColor = (idx: number, value: number) => {
+        if (value === 0) return 'from-cyan-600 to-cyan-500';
+        if (value === maxMonthAbs) return 'from-red-600 to-red-500';
+        if (minMonthValue > 0 && value === minMonthValue) return 'from-emerald-600 to-emerald-500';
+        return 'from-cyan-600 to-cyan-500';
+    };
+
+    const getYearBarColor = (year: number, value: number) => {
+        if (value === 0) return 'from-cyan-600 to-cyan-500';
+        if (year === selectedYear) return 'from-yellow-500 to-yellow-400';
+        if (value === maxYearAbs) return 'from-red-600 to-red-500';
+        if (minYearValue > 0 && value === minYearValue) return 'from-emerald-600 to-emerald-500';
+        return 'from-cyan-600 to-cyan-500';
+    };
 
     return (
         <div className="space-y-6">
             <div>
-                <h4 className="font-bold text-lg text-slate-900 dark:text-white mb-4 flex justify-between items-center">
-                    <span>Meses do Ano {specificYear}</span>
-                    <span className="text-xs font-normal text-slate-600 dark:text-zinc-400">Máx: {formatCurrency(maxMonthValue)}</span>
-                </h4>
-                <div className="flex items-end justify-center gap-2 h-72 bg-gradient-to-br from-slate-50 to-slate-100 dark:from-zinc-800 dark:to-zinc-900 p-6 rounded-lg border border-slate-200 dark:border-zinc-700">
+                <h4 className="font-bold text-lg text-slate-900 dark:text-white mb-3">Meses do Ano {specificYear}</h4>
+                <div className="text-[10px] font-bold text-slate-500 flex gap-4 uppercase mb-2"><span>MAX: {formatCurrency(maxMonthValue)}</span><span>MIN: {formatCurrency(minMonthValue)}</span><span>MÉDIA: {formatCurrency(avgMonthValue)}</span></div>
+                <div className="flex items-end justify-between w-full gap-1 h-80 bg-gradient-to-br from-slate-50 to-slate-100 dark:from-zinc-800 dark:to-zinc-900 p-6 pt-14 pb-8 rounded-lg border border-slate-200 dark:border-zinc-700">
                     {Array.from({ length: 12 }).map((_, idx) => {
                         const monthNames = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
                         const val = monthData[idx] || 0;
-                        const pct = (val / maxMonthValue) * 100;
-                        const isAboveAvg = val > avgMonthValue;
+                        const safeMonthVal = maxMonthValue > 0 ? maxMonthValue : 1;
+                        const share = ((val / totalYearSelected) * 100).toFixed(1);
+                        const yearMonthBarColor = getYearMonthBarColor(idx, val);
                         
                         return (
-                            <div key={idx} className="flex flex-col items-center justify-end flex-1 gap-1 group" title={`${monthNames[idx]}: ${formatCurrency(val)}`}>
-                                <div 
-                                    className={`w-full bg-slate-300 dark:bg-zinc-700 rounded-t-sm overflow-hidden shadow-sm transition-all duration-300 group-hover:shadow-md ${isAboveAvg ? 'ring-2 ring-rose-400 dark:ring-rose-500' : ''}`}
-                                    style={{ height: `${Math.max(pct, 5)}%`, minHeight: '2px' }}
-                                >
-                                    <div className={`w-full h-full rounded-t-sm transition-all ${isAboveAvg ? 'bg-gradient-to-t from-rose-500 to-rose-400 dark:from-rose-600 dark:to-rose-500' : 'bg-gradient-to-t from-orange-500 to-orange-400 dark:from-orange-600 dark:to-orange-500'}`}></div>
+                            <div key={idx} className="flex flex-col items-center justify-end flex-1 gap-1 group relative h-full" title={`${monthNames[idx]}: ${formatCurrency(val)}`}>
+                                <div className="text-[10px] mb-1 text-center leading-tight w-full">
+                                    <p className="text-white font-bold">{formatCurrency(val)}</p>
+                                    <p className="text-green-500 font-bold">{share}%</p>
                                 </div>
-                                <span className="text-xs text-slate-600 dark:text-zinc-400 font-semibold">{monthNames[idx]}</span>
+                                <div 
+                                    className="w-16 bg-slate-300 dark:bg-zinc-700 rounded-t-sm overflow-hidden shadow-sm transition-all duration-300 group-hover:shadow-md"
+                                    style={{ height: `${Math.max(5, (val / safeMonthVal) * 85)}%`, minHeight: '2px' }}
+                                >
+                                    <div className={`w-full h-full rounded-t-sm transition-all bg-gradient-to-t ${yearMonthBarColor}`}></div>
+                                </div>
+                                <span className="text-xs text-slate-600 dark:text-zinc-400 font-semibold absolute -bottom-8">{monthNames[idx]}</span>
                             </div>
                         );
                     })}
                 </div>
             </div>
             <div>
-                <h4 className="font-bold text-lg text-slate-900 dark:text-white mb-4 flex justify-between items-center">
-                    <span>Histórico: Todos os Anos</span>
-                    <span className="text-xs font-normal text-slate-600 dark:text-zinc-400">Máx: {formatCurrency(maxYearValue)}</span>
-                </h4>
-                <div className="flex items-end justify-center gap-2 h-80 bg-gradient-to-br from-slate-50 to-slate-100 dark:from-zinc-800 dark:to-zinc-900 p-6 rounded-lg overflow-x-auto border border-slate-200 dark:border-zinc-700 custom-scrollbar">
+                <h4 className="font-bold text-lg text-slate-900 dark:text-white mb-3">Histórico: Todos os Anos</h4>
+                <div className="text-[10px] font-bold text-slate-500 flex gap-4 uppercase mb-2"><span>MAX: {formatCurrency(maxYearValue)}</span><span>MIN: {formatCurrency(minYearValue)}</span><span>MÉDIA: {formatCurrency(avgYearValue)}</span></div>
+                <div className="flex items-end justify-between w-full gap-1 h-80 bg-gradient-to-br from-slate-50 to-slate-100 dark:from-zinc-800 dark:to-zinc-900 p-6 pt-14 pb-8 rounded-lg border border-slate-200 dark:border-zinc-700">
                     {Array.from(new Set(Object.keys(yearData).map(Number)))
                         .sort()
                         .map((year) => {
                             const val = yearData[year] || 0;
-                            const pct = (val / maxYearValue) * 100;
+                            const safeYearMax = maxYearValue > 0 ? maxYearValue : 1;
+                            const share = ((val / totalAllYears) * 100).toFixed(1);
+                            const yearBarColor = getYearBarColor(year, val);
                             return (
-                                <div key={year} className="flex flex-col items-center justify-end flex-1 min-w-[4rem] gap-1 group" title={`${year}: ${formatCurrency(val)}`}>
-                                    <div 
-                                        className="w-full bg-slate-300 dark:bg-zinc-700 rounded-t-sm overflow-hidden shadow-sm transition-all duration-300 group-hover:shadow-md"
-                                        style={{ height: `${Math.max(pct, 5)}%`, minHeight: '2px' }}
-                                    >
-                                        <div className="w-full h-full bg-gradient-to-t from-cyan-500 to-cyan-400 dark:from-cyan-600 dark:to-cyan-500 rounded-t-sm transition-all"></div>
+                                <div key={year} className="flex flex-col items-center justify-end flex-1 gap-1 group relative h-full" title={`${year}: ${formatCurrency(val)}`}>
+                                    <div className="text-[10px] mb-1 text-center leading-tight w-full">
+                                        <p className="text-white font-bold">{formatCurrency(val)}</p>
+                                        <p className="text-green-500 font-bold">{share}%</p>
                                     </div>
-                                    <span className="text-xs text-slate-600 dark:text-zinc-400 font-semibold">{year}</span>
+                                    <div 
+                                        className="w-16 bg-slate-300 dark:bg-zinc-700 rounded-t-sm overflow-hidden shadow-sm transition-all duration-300 group-hover:shadow-md"
+                                        style={{ height: `${Math.max(5, (val / safeYearMax) * 85)}%`, minHeight: '2px' }}
+                                    >
+                                        <div className={`w-full h-full bg-gradient-to-t ${yearBarColor} rounded-t-sm transition-all`}></div>
+                                    </div>
+                                    <span className="text-xs text-slate-600 dark:text-zinc-400 font-semibold absolute -bottom-8">{year}</span>
                                 </div>
                             );
                         })}
