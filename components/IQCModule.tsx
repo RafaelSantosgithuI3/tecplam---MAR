@@ -878,8 +878,9 @@ const HistoryGroupCard = ({ nf, items, users, groupBy = 'NF', isExpanded, onTogg
                         {isExpanded ? <ChevronUp size={20} className="text-slate-400" /> : <ChevronDown size={20} className="text-slate-400" />}
                     </div>
                 </div>
+            </div>
 
-                {isExpanded && (
+            {isExpanded && (
                     <div className="mt-6 pt-4 border-t border-slate-100 dark:border-zinc-800 animate-fadeIn">
                         <h4 className="text-xs font-bold uppercase text-slate-400 mb-2">Resumo do Envio</h4>
                         <div className="flex flex-wrap gap-2 mb-4">
@@ -905,7 +906,7 @@ const HistoryGroupCard = ({ nf, items, users, groupBy = 'NF', isExpanded, onTogg
                         <div className="mb-4">
                             <input
                                 type="text"
-                                placeholder="Filtrar itens na NF..."
+                                placeholder="Filtrar por código..."
                                 className="w-full bg-slate-50 dark:bg-zinc-950 border border-slate-200 dark:border-zinc-800 rounded-lg px-3 py-2 text-sm"
                                 value={itemFilter}
                                 onChange={e => setItemFilter(e.target.value)}
@@ -925,7 +926,7 @@ const HistoryGroupCard = ({ nf, items, users, groupBy = 'NF', isExpanded, onTogg
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    {items.filter(i => !itemFilter || (i.item || '').toLowerCase().includes(itemFilter.toLowerCase())).map(i => (
+                                    {items.filter(i => !itemFilter || (i.code || '').toLowerCase().includes(itemFilter.toLowerCase())).map(i => (
                                         <tr key={i.id} className="border-b border-slate-100 dark:border-zinc-800 last:border-0 hover:bg-blue-50/50 dark:hover:bg-blue-900/10 cursor-pointer transition-colors" onClick={(e) => { e.stopPropagation(); if (onClickScrap) onClickScrap(i); }}>
                                             <td className="p-2 text-slate-700 dark:text-zinc-300">{i.item}</td>
                                             <td className="p-2 text-slate-700 dark:text-zinc-300">{i.model}</td>
@@ -965,7 +966,6 @@ const HistoryGroupCard = ({ nf, items, users, groupBy = 'NF', isExpanded, onTogg
                         </div>
                     </div>
                 )}
-            </div>
 
         </Card>
     );
