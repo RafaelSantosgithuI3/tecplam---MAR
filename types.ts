@@ -22,6 +22,7 @@ export const PERMISSIONS = {
   VIEW_MANAGEMENT: 'view_management', // Gestão de Modelos/Linhas
   VIEW_DASHBOARD: 'view_dashboard',   // Dashboard Geral
   VIEW_ADMIN: 'view_admin_panel',      // Aba de Permissões/Usuários
+  VIEW_NOTICES: 'view_notices',
   VIEW_LINE_STOP: 'view_line_stop',
   VIEW_MAINTENANCE: 'view_maintenance',
   VIEW_MEETING: 'view_meeting',
@@ -121,7 +122,7 @@ export interface MeetingLog {
 
 export interface Permission {
   role: string;
-  module: 'CHECKLIST' | 'MEETING' | 'MAINTENANCE' | 'AUDIT' | 'ADMIN' | 'LINE_STOP' | 'MANAGEMENT' | 'PEOPLE_MANAGEMENT' | 'PEOPLE_MANAGEMENT_MANAGERS' | 'SCRAP' | 'IQC' | 'PREPARATION';
+  module: 'CHECKLIST' | 'MEETING' | 'MAINTENANCE' | 'AUDIT' | 'ADMIN' | 'LINE_STOP' | 'MANAGEMENT' | 'PEOPLE_MANAGEMENT' | 'PEOPLE_MANAGEMENT_MANAGERS' | 'SCRAP' | 'IQC' | 'PREPARATION' | 'NOTICES';
   tab: string;
   allowed: boolean;
 }
@@ -159,6 +160,9 @@ export const MODULE_TABS: Record<string, { key: string; label: string }[]> = {
     { key: 'USERS', label: 'Usuários' },
     { key: 'PERMISSIONS', label: 'Permissões' },
     { key: 'RECOVERY', label: 'Solicitações' },
+  ],
+  NOTICES: [
+    { key: 'MANAGE', label: 'Gerenciar Avisos' },
   ],
   MANAGEMENT: [
     { key: 'LINES', label: 'Linhas' },
@@ -225,7 +229,8 @@ export const MODULE_NAMES: Record<string, string> = {
   PEOPLE_MANAGEMENT_MANAGERS: 'Gestão de Pessoas (Gestor)',
   SCRAP: 'Scrap & Refugo',
   IQC: 'IQC & Logística',
-  PREPARATION: 'Preparação de Linhas'
+  PREPARATION: 'Preparação de Linhas',
+  NOTICES: 'Quadro de Avisos'
 };
 
 export interface ScrapData {

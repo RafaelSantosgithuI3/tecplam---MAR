@@ -667,6 +667,64 @@ app.post('/api/config/permissions', async (req, res) => {
     } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// --- NOTICES ---
+
+app.post('/api/notices', async (req, res) => {
+    const { message, targetRoles, durationDays, createdBy } = req.body;
+
+    if (!message || !Array.isArray(targetRoles) || targetRoles.length === 0 || !durationDays || !createdBy) {
+        return res.status(400).json({ error: 'Dados inválidos para criar comunicado.' });
+    }
+
+    try {
+        const expiresAt = new Date();
+        expiresAt.setDate(expiresAt.getDate() + Number(durationDays));
+
+        const notice = await prisma.notice.create({
+            data: {
+                message,
+                targetRoles: JSON.stringify(targetRoles),
+                expiresAt,
+                createdBy
+            }
+        });
+
+        res.json(notice);
+    } catch (e) {
+        console.error('Create Notice Error:', e);
+        res.status(500).json({ error: e.message });
+    }
+});
+
+app.get('/api/notices', async (req, res) => {
+    try {
+        const notices = await prisma.notice.findMany({
+            where: {
+                expiresAt: { gt: new Date() }
+            },
+            orderBy: { createdAt: 'desc' }
+        });
+
+        res.json(notices);
+    } catch (e) {
+        console.error('Get Notices Error:', e);
+        res.status(500).json({ error: e.message });
+    }
+});
+
+app.delete('/api/notices/:id', async (req, res) => {
+    try {
+        await prisma.notice.delete({
+            where: { id: parseInt(req.params.id) }
+        });
+
+        res.json({ message: 'Comunicado excluido.' });
+    } catch (e) {
+        console.error('Delete Notice Error:', e);
+        res.status(500).json({ error: e.message });
+    }
+});
+
 // --- MEETINGS ---
 
 app.get('/api/meetings', async (req, res) => {

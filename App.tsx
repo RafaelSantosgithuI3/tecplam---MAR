@@ -51,6 +51,15 @@ interface LeaderStatus {
     statuses: { date: string, status: 'OK' | 'NG' | 'PENDING', logId?: string }[];
 }
 
+interface Notice {
+    id: number;
+    message: string;
+    targetRoles: string;
+    expiresAt: string;
+    createdAt: string;
+    createdBy: string;
+}
+
 const SECTORS_LIST = [
     'GQ', 'PRODUÇÃO', 'SMD/IAC', 'PRÉ-FORMA',
     'MANUTENÇÃO', 'MATERIAIS', 'PCP',
@@ -233,6 +242,13 @@ const App = () => {
     // Alerts State
     const [pendingLineStopsCount, setPendingLineStopsCount] = useState(0);
     const [pendingScrapCount, setPendingScrapCount] = useState(0);
+    const [activeNotices, setActiveNotices] = useState<Notice[]>([]);
+    const [usersMap, setUsersMap] = useState<Record<string, string>>({});
+    const [showNoticeModal, setShowNoticeModal] = useState(false);
+    const [noticeMessage, setNoticeMessage] = useState('');
+    const [noticeDuration, setNoticeDuration] = useState(7);
+    const [noticeRoles, setNoticeRoles] = useState<string[]>([]);
+    const [isSavingNotice, setIsSavingNotice] = useState(false);
 
     // Preview / Personal
     const [personalLogs, setPersonalLogs] = useState<ChecklistLog[]>([]);
@@ -253,7 +269,7 @@ const App = () => {
     const inactivityTimerRef = useRef<NodeJS.Timeout | null>(null);
     const lastActivityRef = useRef<number>(Date.now());
 
-    const isSuperAdmin = currentUser ? (currentUser.matricula === 'admin' || currentUser.role === 'Admin' || currentUser.isAdmin === true) : false;
+    const isSuperAdmin = currentUser ? (currentUser?.matricula === 'admin' || currentUser?.role === 'Admin' || currentUser?.isAdmin === true) : false;
 
     // --- PERMISSION HELPERS ---
     const permissionToModule: Record<string, string> = {
@@ -278,7 +294,7 @@ const App = () => {
         const targetModule = permissionToModule[requiredPermission];
         if (targetModule) {
             // Módulo permitido se existe permissão module-level (tab=null) allowed
-            const moduleRule = permissions.find(p => p.role === currentUser.role && p.module === targetModule && !p.tab);
+            const moduleRule = permissions.find(p => p.role === currentUser?.role && p.module === targetModule && !p.tab);
             if (moduleRule) return moduleRule.allowed;
         }
 
@@ -291,11 +307,11 @@ const App = () => {
         if (isSuperAdmin) return true;
 
         // 1. Checa se módulo está ativo
-        const moduleRule = permissions.find(p => p.role === currentUser.role && p.module === moduleName && !p.tab);
+        const moduleRule = permissions.find(p => p.role === currentUser?.role && p.module === moduleName && !p.tab);
         if (!moduleRule || !moduleRule.allowed) return false;
 
         // 2. Sem regras de tab? Assume all tabs allowed
-        const tabRules = permissions.filter(p => p.role === currentUser.role && p.module === moduleName && !!p.tab);
+        const tabRules = permissions.filter(p => p.role === currentUser?.role && p.module === moduleName && !!p.tab);
         if (tabRules.length === 0) return true;
 
         // 3. Checa a regra específica do tab
@@ -352,9 +368,99 @@ const App = () => {
         setView('CHECKLIST_MENU');
     };
 
+    const fetchActiveNotices = async () => {
+        try {
+            const notices = await apiFetch('/notices');
+            setActiveNotices(Array.isArray(notices) ? notices : []);
+        } catch (e) {
+            console.error('Erro ao carregar comunicados', e);
+            setActiveNotices([]);
+        }
+    };
+
+    const fetchUsersMap = async () => {
+        try {
+            const usersData = await apiFetch('/users');
+            const map: Record<string, string> = {};
+            if (Array.isArray(usersData)) {
+                usersData.forEach((u: any) => {
+                    if (u?.matricula) {
+                        map[u.matricula] = u.name || u.matricula;
+                    }
+                });
+            }
+            setUsersMap(map);
+        } catch (e) {
+            console.error('Erro ao carregar usuários para o quadro de avisos', e);
+            setUsersMap({});
+        }
+    };
+
+    const toggleNoticeRole = (roleName: string) => {
+        setNoticeRoles(prev => prev.includes(roleName)
+            ? prev.filter(role => role !== roleName)
+            : [...prev, roleName]
+        );
+    };
+
+    const resetNoticeModal = () => {
+        setShowNoticeModal(false);
+        setNoticeMessage('');
+        setNoticeDuration(7);
+        setNoticeRoles([]);
+        setIsSavingNotice(false);
+    };
+
+    const handleCreateNotice = async () => {
+        if (!noticeMessage.trim() || noticeRoles.length === 0 || noticeDuration <= 0 || !currentUser) {
+            alert('Preencha a mensagem, selecione ao menos um cargo e informe uma duração válida.');
+            return;
+        }
+
+        try {
+            setIsSavingNotice(true);
+            await apiFetch('/notices', {
+                method: 'POST',
+                body: JSON.stringify({
+                    message: noticeMessage,
+                    targetRoles: noticeRoles,
+                    durationDays: noticeDuration,
+                    createdBy: currentUser?.matricula
+                })
+            });
+            resetNoticeModal();
+            await fetchActiveNotices();
+        } catch (e: any) {
+            alert(e?.message || 'Erro ao criar comunicado.');
+            setIsSavingNotice(false);
+        }
+    };
+
+    const handleDeleteNotice = async (notice: Notice) => {
+        if (!currentUser) return;
+
+        const canDeleteNotice = (currentUser?.role || '').toUpperCase().includes('ADMIN') || notice.createdBy === currentUser?.matricula;
+        if (!canDeleteNotice) return;
+
+        const confirmed = window.confirm('Deseja realmente excluir este comunicado?');
+        if (!confirmed) return;
+
+        try {
+            await apiFetch(`/notices/${notice.id}`, { method: 'DELETE' });
+            setActiveNotices(prev => prev.filter(item => item.id !== notice.id));
+        } catch (e: any) {
+            alert(e?.message || 'Erro ao excluir comunicado.');
+        }
+    };
+
     // --- Effects ---
     useEffect(() => {
         initApp();
+    }, []);
+
+    useEffect(() => {
+        fetchActiveNotices();
+        fetchUsersMap();
     }, []);
 
     useEffect(() => {
@@ -583,33 +689,31 @@ const App = () => {
                     setPendingLineStopsCount(visibleStops.length);
 
                     if (hasAccess(PERMISSIONS.VIEW_AUDIT)) {
-                        const all = await getAllUsers();
-                        let missing = await getMissingLeadersForToday(all);
-
-                        const now = getManausDate();
-                        const currentMinutes = now.getHours() * 60 + now.getMinutes();
-                        // --- ADICIONE ESTE BLOCO DE FILTRO ---
-                        missing = missing.filter(leader => {
-                            const role = (leader.role || '').toLowerCase();
-                            // Define quais palavras-chave ativam o alerta
-                            return role.includes('líder de produção') ||
-                                role.includes('líder do reparo/retrabalho') ||
-                                role.includes('tecnico de processo') ||
-                                role.includes('técnico de processo') ||
-                                role.includes('coordenador');
-                        });
-                        // -------------------------------------
-                        missing = missing.filter(leader => {
-                            const shift = leader.shift || '1';
-                            if (shift === '1') {
-                                return currentMinutes >= 450;
-                            } else if (shift === '2') {
-                                return currentMinutes >= 1040 || currentMinutes < 480;
-                            }
-                            return true;
-                        });
-
-                        setMissingLeadersNames(missing.map(u => u.name));
+                        // TODO: Reativar quando necessário.
+                        // const all = await getAllUsers();
+                        // let missing = await getMissingLeadersForToday(all);
+                        //
+                        // const now = getManausDate();
+                        // const currentMinutes = now.getHours() * 60 + now.getMinutes();
+                        // missing = missing.filter(leader => {
+                        //     const role = (leader.role || '').toLowerCase();
+                        //     return role.includes('líder de produção') ||
+                        //         role.includes('líder do reparo/retrabalho') ||
+                        //         role.includes('tecnico de processo') ||
+                        //         role.includes('técnico de processo') ||
+                        //         role.includes('coordenador');
+                        // });
+                        // missing = missing.filter(leader => {
+                        //     const shift = leader.shift || '1';
+                        //     if (shift === '1') {
+                        //         return currentMinutes >= 450;
+                        //     } else if (shift === '2') {
+                        //         return currentMinutes >= 1040 || currentMinutes < 480;
+                        //     }
+                        //     return true;
+                        // });
+                        //
+                        // setMissingLeadersNames(missing.map(u => u.name));
                     }
                 } catch (e) {
                     console.error("Erro ao buscar alertas", e);
@@ -743,6 +847,17 @@ const App = () => {
         setLoginMatricula('');
         setLoginPassword('');
     };
+
+    const canCreateNotice = !!currentUser && hasTabAccess('NOTICES', 'MANAGE');
+
+    const visibleNotices = currentUser ? activeNotices.filter(notice => {
+        try {
+            const parsedRoles = JSON.parse(notice.targetRoles || '[]');
+            return Array.isArray(parsedRoles) && parsedRoles.includes(currentUser?.role || '');
+        } catch {
+            return false;
+        }
+    }).sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()) : [];
 
     const initMeetingForm = () => {
         setMeetingTitle('');
@@ -1699,10 +1814,49 @@ const App = () => {
     if (view === 'MENU') {
         return (
             <Layout sidebar={<SidebarContent />} onToggleTheme={toggleTheme} isDark={isDark}>
-                <header className="mb-4 md:mb-8">
-                    <h1 className="text-lg md:text-2xl font-bold mb-2 text-slate-900 dark:text-white">Bem-vindo, {currentUser?.name.split(' ')[0]}</h1>
-                    <p className="text-slate-500 dark:text-zinc-400">Selecione um módulo para iniciar.</p>
+                <header className="mb-4 md:mb-8 flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+                    <div>
+                        <h1 className="text-lg md:text-2xl font-bold mb-2 text-slate-900 dark:text-white">Bem-vindo, {currentUser?.name.split(' ')[0]}</h1>
+                        <p className="text-slate-500 dark:text-zinc-400">Selecione um módulo para iniciar.</p>
+                    </div>
+                    {canCreateNotice && (
+                        <Button onClick={() => setShowNoticeModal(true)}>
+                            <Plus size={16} /> Criar Comunicado
+                        </Button>
+                    )}
                 </header>
+
+                {currentUser && (
+                    <div className="mb-4 flex flex-col gap-3">
+                        {visibleNotices.map(notice => {
+                            const fullName = usersMap[notice.createdBy] || notice.createdBy;
+                            const primeiroNome = (fullName || '').trim().split(' ')[0] || 'Sistema';
+                            const dataFormatada = new Date(notice.createdAt).toLocaleDateString('pt-BR', {
+                                day: '2-digit',
+                                month: '2-digit',
+                                year: '2-digit'
+                            });
+
+                            return (
+                                <div key={notice.id} className="relative w-full bg-yellow-500/20 dark:bg-yellow-500/10 border-l-4 border-yellow-500 text-yellow-900 dark:text-yellow-100 p-4 rounded shadow-sm mb-3 text-sm md:text-base">
+                                    <h3 className="font-bold text-base md:text-lg mb-2 flex items-center gap-2">📌 Quadro de Avisos</h3>
+                                    {(((currentUser?.role || '').toUpperCase().includes('ADMIN')) || notice.createdBy === currentUser?.matricula) && (
+                                        <button
+                                            type="button"
+                                            className="absolute top-4 right-4"
+                                            onClick={() => handleDeleteNotice(notice)}
+                                            aria-label="Excluir comunicado"
+                                        >
+                                            <Trash2 size={16} className="text-red-500 hover:text-red-700" />
+                                        </button>
+                                    )}
+                                    <p className="whitespace-pre-wrap">{notice.message}</p>
+                                    <p className="text-[10px] md:text-xs text-yellow-700 dark:text-yellow-300 mt-3 text-right font-medium">Criado por: {primeiroNome} | Data: {dataFormatada}</p>
+                                </div>
+                            );
+                        })}
+                    </div>
+                )}
 
                 {/* ALERTS SECTION */}
                 <div className="mb-8 space-y-4">
@@ -1727,6 +1881,7 @@ const App = () => {
                         </div>
                     )}
 
+                    {/* TODO: Reativar quando necessário.
                     {missingLeadersNames.length > 0 && hasAccess(PERMISSIONS.VIEW_AUDIT) && (
                         <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-500/50 p-4 rounded-xl flex flex-col gap-3">
                             <div className="flex items-center gap-4">
@@ -1743,9 +1898,90 @@ const App = () => {
                             </div>
                         </div>
                     )}
+                    */}
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+
+                {showNoticeModal && (
+                    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[110] flex items-center justify-center p-4">
+                        <Card className="w-full max-w-2xl bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 shadow-2xl">
+                            <div className="flex items-center justify-between mb-4">
+                                <div>
+                                    <h3 className="text-lg font-bold text-slate-900 dark:text-zinc-100">Criar Comunicado</h3>
+                                    <p className="text-sm text-slate-500 dark:text-zinc-400">Defina a mensagem, duração e os cargos que receberão o aviso.</p>
+                                </div>
+                                <button
+                                    onClick={resetNoticeModal}
+                                    className="p-2 hover:bg-slate-100 dark:hover:bg-zinc-800 rounded-full transition-colors"
+                                    disabled={isSavingNotice}
+                                >
+                                    <X size={20} className="text-slate-500 dark:text-zinc-400" />
+                                </button>
+                            </div>
+
+                            <div className="space-y-4">
+                                <div>
+                                    <label className="block text-xs font-medium text-slate-600 dark:text-zinc-400 mb-1.5 uppercase tracking-wide">Mensagem</label>
+                                    <textarea
+                                        className="w-full min-h-[100px] p-2.5 bg-white dark:bg-zinc-950 border border-slate-300 dark:border-zinc-800 rounded-lg text-slate-900 dark:text-zinc-100 outline-none focus:ring-2 focus:ring-blue-600/50"
+                                        value={noticeMessage}
+                                        onChange={e => setNoticeMessage(e.target.value)}
+                                        placeholder="Digite o comunicado..."
+                                        disabled={isSavingNotice}
+                                    />
+                                </div>
+
+                                <div>
+                                    <label className="block text-xs font-medium text-slate-600 dark:text-zinc-400 mb-1.5 uppercase tracking-wide">Duração (Dias)</label>
+                                    <input
+                                        type="number"
+                                        min="1"
+                                        className="w-full bg-white dark:bg-zinc-950 border border-slate-300 dark:border-zinc-800 rounded-lg p-2.5 text-slate-900 dark:text-zinc-100 outline-none focus:ring-2 focus:ring-blue-600/50"
+                                        value={noticeDuration}
+                                        onChange={e => setNoticeDuration(Number(e.target.value))}
+                                        disabled={isSavingNotice}
+                                    />
+                                </div>
+
+                                <div>
+                                    <div className="flex items-center justify-between mb-2">
+                                        <label className="block text-xs font-medium text-slate-600 dark:text-zinc-400 uppercase tracking-wide">Cargos</label>
+                                        <label className="flex items-center gap-2 text-sm text-slate-700 dark:text-zinc-300">
+                                            <input
+                                                type="checkbox"
+                                                checked={availableRoles.length > 0 && noticeRoles.length === availableRoles.length}
+                                                onChange={e => setNoticeRoles(e.target.checked ? availableRoles.map(role => role.name) : [])}
+                                                disabled={isSavingNotice}
+                                            />
+                                            Selecionar Todos
+                                        </label>
+                                    </div>
+                                    <div className="max-h-56 overflow-y-auto rounded-lg border border-slate-200 dark:border-zinc-800 bg-slate-50 dark:bg-zinc-950 p-3 space-y-2 custom-scrollbar">
+                                        {availableRoles.map(role => (
+                                            <label key={role.id} className="flex items-center gap-2 text-sm text-slate-700 dark:text-zinc-300">
+                                                <input
+                                                    type="checkbox"
+                                                    checked={noticeRoles.includes(role.name)}
+                                                    onChange={() => toggleNoticeRole(role.name)}
+                                                    disabled={isSavingNotice}
+                                                />
+                                                {role.name}
+                                            </label>
+                                        ))}
+                                    </div>
+                                </div>
+
+                                <div className="flex justify-end gap-2 pt-2">
+                                    <Button variant="ghost" onClick={resetNoticeModal} disabled={isSavingNotice}>Cancelar</Button>
+                                    <Button onClick={handleCreateNotice} disabled={isSavingNotice}>
+                                        {isSavingNotice ? 'Salvando...' : 'Salvar Comunicado'}
+                                    </Button>
+                                </div>
+                            </div>
+                        </Card>
+                    </div>
+                )}
                     {hasAccess(PERMISSIONS.VIEW_CHECKLIST) && (
                         <div onClick={handleStartChecklist} className="group bg-white dark:bg-zinc-900 p-6 rounded-2xl border border-slate-200 dark:border-zinc-800 hover:border-blue-600/50 hover:bg-slate-50 dark:hover:bg-zinc-800 transition-all cursor-pointer relative overflow-hidden h-40 flex flex-col justify-center shadow-sm">
                             <div className="flex items-center gap-4">
@@ -1890,6 +2126,7 @@ const App = () => {
                         </div>
                     )}
                 </div>
+
             </Layout>
         );
     }
@@ -2280,6 +2517,7 @@ const App = () => {
                                 ) : (
                                     <p className="text-center text-slate-400 dark:text-zinc-600 py-8">Selecione um cargo acima para gerenciar as permissões.</p>
                                 )}
+
                             </Card>
                         )}
 

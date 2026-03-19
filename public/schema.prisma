@@ -246,17 +246,6 @@ model ScrapBox {
   @@map("scrap_boxes")
 }
 
-model Notice {
-  id          Int      @id @default(autoincrement())
-  message     String
-  targetRoles String
-  expiresAt   DateTime
-  createdAt   DateTime @default(now())
-  createdBy   String
-
-  @@map("notices")
-}
-
 model Employee {
   matricula       String          @id @unique
   photo           String?
