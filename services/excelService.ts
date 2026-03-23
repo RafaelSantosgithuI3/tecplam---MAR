@@ -1801,6 +1801,7 @@ export const exportLeaderLayout = async (leader: any, subordinados: any[]) => {
     const sheet = workbook.getWorksheet(1) || workbook.addWorksheet('Layout por Líder');
 
     const sortedSubordinados = [...(Array.isArray(subordinados) ? subordinados : [])]
+        .filter((subordinado: any) => String(subordinado?.role || '').toUpperCase().includes('MONTADOR'))
         .sort((a, b) => {
             const priorityDiff = getLayoutRolePriority(String(a?.role || '')) - getLayoutRolePriority(String(b?.role || ''));
             if (priorityDiff !== 0) return priorityDiff;
@@ -1845,7 +1846,7 @@ export const exportModelLayout = async (model: string, workstations: any[], empl
         if (!response.ok) throw new Error('Erro 404: template_layout.xlsx');
         const buffer = await response.arrayBuffer();
         await workbook.xlsx.load(buffer);
-        const sheet = workbook.getWorksheet(1);
+        const sheet = workbook.worksheets[0];
         if (!sheet) throw new Error('Aba 1 não encontrada');
 
         const normalize = (value: any) => String(value || '').trim();
@@ -1857,16 +1858,31 @@ export const exportModelLayout = async (model: string, workstations: any[], empl
 
         const modelWorkstations = [...(Array.isArray(workstations) ? workstations : [])]
             .filter(workstationMatchesModel)
-            .sort((a, b) => {
-                const orderA = Number(a?.order) || 0;
-                const orderB = Number(b?.order) || 0;
-                return orderA - orderB;
-            });
+            .sort((a, b) => (Number(a?.order) || 0) - (Number(b?.order) || 0));
 
-        const modelLayouts = await apiFetch(`/layout?modelo=${encodeURIComponent(model)}`).catch(() => []);
-        const safeLayouts = Array.isArray(modelLayouts) ? modelLayouts : [];
+        const thinBorder: Partial<ExcelJS.Borders> = {
+            top: { style: 'thin' },
+            left: { style: 'thin' },
+            bottom: { style: 'thin' },
+            right: { style: 'thin' }
+        };
+        const applyRowBorderABC = (row: ExcelJS.Row) => {
+            row.getCell(1).border = thinBorder;
+            row.getCell(2).border = thinBorder;
+            row.getCell(3).border = thinBorder;
+        };
+
+        let safeLayouts: any[] = [];
+        try {
+            const result = await apiFetch(`/layout?modelo=${encodeURIComponent(model)}`);
+            safeLayouts = Array.isArray(result) ? result : [];
+        } catch (apiErr) {
+            console.warn('Aviso: falha ao buscar layouts, assumindo array vazio:', apiErr);
+        }
         const postosDoModelo = new Set(modelWorkstations.map((w: any) => normalize(w?.name)));
-        const employeeByMatricula = new Map((Array.isArray(employees) ? employees : []).map((emp: any) => [String(emp?.matricula || ''), emp]));
+        const montadorEmployees = (Array.isArray(employees) ? employees : [])
+            .filter((emp: any) => String(emp?.role || '').toUpperCase().includes('MONTADOR'));
+        const employeeByMatricula = new Map(montadorEmployees.map((emp: any) => [String(emp?.matricula || ''), emp]));
 
         const currentByMatricula = new Map<string, any>();
         safeLayouts
@@ -1890,8 +1906,18 @@ export const exportModelLayout = async (model: string, workstations: any[], empl
                 row.getCell(1).value = employee?.matricula || '';
                 row.getCell(2).value = employee?.fullName || '';
                 row.getCell(3).value = postoName;
+                applyRowBorderABC(row);
                 rowNumber++;
             });
+
+            if (currentForPost.length === 0) {
+                const row = sheet.getRow(rowNumber);
+                row.getCell(1).value = '-';
+                row.getCell(2).value = '-';
+                row.getCell(3).value = postoName;
+                applyRowBorderABC(row);
+                rowNumber++;
+            }
         });
 
         const habilitadosMatriculas = new Set(
@@ -1916,6 +1942,7 @@ export const exportModelLayout = async (model: string, workstations: any[], empl
             row.getCell(1).value = employee?.matricula || '';
             row.getCell(2).value = employee?.fullName || '';
             row.getCell(3).value = 'Posto a definir';
+            applyRowBorderABC(row);
             rowNumber++;
         });
 
@@ -1925,9 +1952,9 @@ export const exportModelLayout = async (model: string, workstations: any[], empl
         const safeFirstName = firstName.replace(/[^a-z0-9]/gi, '_');
         const safeModel = String(model || '').replace(/[^a-z0-9]/gi, '_');
         saveAs(blob, `layout_${safeFirstName}_${safeModel}.xlsx`);
-    } catch (error) {
+    } catch (error: any) {
         console.error('Erro em exportModelLayout:', error);
-        alert('Falha ao gerar Excel: Verifique o template_layout.xlsx na pasta public.');
+        alert(`Falha ao gerar Excel: ${error?.message || 'Erro interno desconhecido'}`);
     }
 };
 
@@ -1975,7 +2002,7 @@ export const exportGloveControlTemplate = async (employees: any[], leaderName: s
         const buffer = await response.arrayBuffer();
         await workbook.xlsx.load(buffer);
 
-        const sheet = workbook.getWorksheet(1);
+        const sheet = workbook.worksheets[0];
         if (!sheet) throw new Error('Aba 1 não encontrada no template');
 
         const getRolePriority = (role: string) => {

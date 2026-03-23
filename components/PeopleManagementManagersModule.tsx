@@ -133,6 +133,7 @@ export const PeopleManagementManagersModule: React.FC<Props> = ({ onBack, curren
         return selectedLeaderId
             ? employees
                 .filter((e) => e.superiorId === selectedLeaderId)
+                .filter((e) => String(e?.role || '').toUpperCase().includes('MONTADOR'))
                 .sort((a, b) => {
                     const priorityDiff = getLayoutRolePriority(String(a?.role || '')) - getLayoutRolePriority(String(b?.role || ''));
                     if (priorityDiff !== 0) return priorityDiff;
@@ -194,6 +195,16 @@ export const PeopleManagementManagersModule: React.FC<Props> = ({ onBack, curren
                         (l: any) => String(l.matricula) === selectedMatricula && String(l.ordemPosto || '') === postoName
                     );
                 }
+            }
+
+            const oldLayout = layoutsList.find(
+                layout =>
+                    String(layout.matricula) === selectedMatricula &&
+                    !!layout.postoAtual &&
+                    String(layout.ordemPosto || '') !== postoName
+            );
+            if (oldLayout?.id) {
+                await updatePostoAtualFlag(oldLayout.id, false);
             }
 
             if (selectedLayout?.id) {
@@ -1153,7 +1164,7 @@ export const PeopleManagementManagersModule: React.FC<Props> = ({ onBack, curren
                             {(() => {
                                 const modelWorkstations = workstations
                                     .filter(w => workstationMatchesModel(w, layoutMasterModel))
-                                    .sort((a, b) => String((a as any)?.name || '').localeCompare(String((b as any)?.name || '')));
+                                    .sort((a, b) => (Number((a as any)?.order) || 0) - (Number((b as any)?.order) || 0));
 
                                 const currentByMatricula = new Map<string, any>();
                                 layoutsList
@@ -1175,7 +1186,6 @@ export const PeopleManagementManagersModule: React.FC<Props> = ({ onBack, curren
                                             return String(employeeA?.fullName || '').localeCompare(String(employeeB?.fullName || ''));
                                         });
 
-                                    const assignedThisPost = currentInPosto.map(layout => String(layout.matricula || ''));
                                     const filledSlots = Math.min(currentInPosto.length, peopleNeeded);
                                     const availableSlots = Math.max(0, peopleNeeded - filledSlots);
 
@@ -1191,15 +1201,18 @@ export const PeopleManagementManagersModule: React.FC<Props> = ({ onBack, curren
                                                 {Array.from({ length: peopleNeeded }).map((_, slotIdx) => {
                                                     const occupantLayout = currentInPosto[slotIdx];
                                                     const occupantMatricula = String(occupantLayout?.matricula || '');
+                                                    const assignedThisPost = currentInPosto.map(layout => String(layout.matricula || ''));
                                                     const usedInOtherSlots = assignedThisPost.filter((mat, idx) => idx !== slotIdx && !!mat);
 
                                                     const options = subordinados
-                                                        .filter(emp => {
-                                                            const matricula = String(emp.matricula);
+                                                        .filter((emp: any) => {
+                                                            const matricula = String(emp?.matricula || '');
                                                             if (matricula === occupantMatricula) return true;
                                                             if (usedInOtherSlots.includes(matricula)) return false;
-                                                            if (currentByMatricula.has(matricula)) return false;
-                                                            return true;
+                                                            if (!currentByMatricula.has(matricula)) return true;
+                                                            return layoutsList.some(
+                                                                l => String(l?.matricula || '') === matricula && String(l?.ordemPosto || '') === postoName
+                                                            );
                                                         })
                                                         .sort((a: any, b: any) => String(a?.fullName || '').localeCompare(String(b?.fullName || '')));
 

@@ -329,8 +329,7 @@ export const PeopleManagementModule = ({ onBack, currentUser, hasTabAccess }: Pe
                 <div className="mt-4">
                     <p className="text-sm font-bold text-slate-500 uppercase tracking-wide mb-2">Colaboradores da sua equipe</p>
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                        {employees
-                            .filter(e => e.superiorId === currentUser.matricula)
+                        {subordinados
                             .filter(e => !searchQuery || e.matricula.toLowerCase().includes(searchQuery.toLowerCase()) || e.fullName.toLowerCase().includes(searchQuery.toLowerCase()))
                             .map(emp => (
                                 <div key={emp.matricula} onClick={() => { setSearchQuery(emp.matricula); handleConsult(emp.matricula); }} className="flex items-center gap-3 p-3 rounded-xl border border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 hover:border-cyan-500 cursor-pointer">
@@ -829,6 +828,7 @@ export const PeopleManagementModule = ({ onBack, currentUser, hasTabAccess }: Pe
     const subordinados = useMemo(
         () => employees
             .filter(e => e.superiorId === currentUser.matricula)
+            .filter(e => String(e?.role || '').toUpperCase().includes('MONTADOR'))
             .sort((a, b) => {
                 const priorityDiff = getLayoutRolePriority(String(a?.role || '')) - getLayoutRolePriority(String(b?.role || ''));
                 if (priorityDiff !== 0) return priorityDiff;
@@ -890,6 +890,16 @@ export const PeopleManagementModule = ({ onBack, currentUser, hasTabAccess }: Pe
                         (l: any) => String(l.matricula) === selectedMatricula && String(l.ordemPosto || '') === postoName
                     );
                 }
+            }
+
+            const oldLayout = layoutsList.find(
+                layout =>
+                    String(layout.matricula) === selectedMatricula &&
+                    !!layout.postoAtual &&
+                    String(layout.ordemPosto || '') !== postoName
+            );
+            if (oldLayout?.id) {
+                await updatePostoAtualFlag(oldLayout.id, false);
             }
 
             if (selectedLayout?.id) {
@@ -979,7 +989,7 @@ export const PeopleManagementModule = ({ onBack, currentUser, hasTabAccess }: Pe
                             {(() => {
                                 const modelWorkstations = workstations
                                     .filter(w => workstationMatchesModel(w, layoutMasterModel))
-                                    .sort((a, b) => String(a?.name || '').localeCompare(String(b?.name || '')));
+                                    .sort((a, b) => (Number((a as any)?.order) || 0) - (Number((b as any)?.order) || 0));
 
                                 const currentByMatricula = new Map<string, any>();
                                 layoutsList
@@ -1001,7 +1011,6 @@ export const PeopleManagementModule = ({ onBack, currentUser, hasTabAccess }: Pe
                                             return String(employeeA?.fullName || '').localeCompare(String(employeeB?.fullName || ''));
                                         });
 
-                                    const assignedThisPost = currentInPosto.map(layout => String(layout.matricula || ''));
                                     const filledSlots = Math.min(currentInPosto.length, peopleNeeded);
                                     const availableSlots = Math.max(0, peopleNeeded - filledSlots);
 
@@ -1017,15 +1026,18 @@ export const PeopleManagementModule = ({ onBack, currentUser, hasTabAccess }: Pe
                                                 {Array.from({ length: peopleNeeded }).map((_, slotIdx) => {
                                                     const occupantLayout = currentInPosto[slotIdx];
                                                     const occupantMatricula = String(occupantLayout?.matricula || '');
+                                                    const assignedThisPost = currentInPosto.map(layout => String(layout.matricula || ''));
                                                     const usedInOtherSlots = assignedThisPost.filter((mat, idx) => idx !== slotIdx && !!mat);
 
                                                     const options = subordinados
-                                                        .filter(emp => {
-                                                            const matricula = String(emp.matricula);
+                                                        .filter((emp: any) => {
+                                                            const matricula = String(emp?.matricula || '');
                                                             if (matricula === occupantMatricula) return true;
                                                             if (usedInOtherSlots.includes(matricula)) return false;
-                                                            if (currentByMatricula.has(matricula)) return false;
-                                                            return true;
+                                                            if (!currentByMatricula.has(matricula)) return true;
+                                                            return layoutsList.some(
+                                                                l => String(l?.matricula || '') === matricula && String(l?.ordemPosto || '') === postoName
+                                                            );
                                                         })
                                                         .sort((a: any, b: any) => String(a?.fullName || '').localeCompare(String(b?.fullName || '')));
 
