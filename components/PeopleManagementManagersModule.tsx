@@ -5,7 +5,7 @@ import { Input } from './Input';
 import { Shield, Plus, Search, User as UserIcon, List, ArrowLeft, CheckCircle, Clock, Save, Download, HandMetal, Scan, X, Upload } from 'lucide-react';
 import { apiFetch } from '../services/networkConfig';
 import { QRStreamReader } from './QRStreamReader';
-import { exportLeaderLayout, exportModelLayout, exportGloveControl, exportGloveControlTemplate, exportEmployeeTemplate } from '../services/excelService';
+import { exportLeaderLayout, exportModelLayout, exportGloveControl, exportEmployeeTemplate } from '../services/excelService';
 import * as XLSX from 'xlsx';
 
 import { EmployeeData, User, ConfigModel, Workstation, ConfigRole } from '../types';
@@ -19,6 +19,23 @@ interface Props {
 type Tab = 'CADASTRO' | 'CONSULTA' | 'PRESENCA' | 'LAYOUT' | 'LUVAS' | 'EDICAO';
 
 export const PeopleManagementManagersModule: React.FC<Props> = ({ onBack, currentUser, hasTabAccess }) => {
+    const getLayoutRolePriority = (role: string) => {
+        const normalizedRole = (role || '').toLowerCase();
+        if (normalizedRole.includes('desmonte')) return 0;
+        if (normalizedRole.includes('alimentador')) return 1;
+        if (normalizedRole.includes('montador')) return 2;
+        return 3;
+    };
+
+    const getGloveRolePriority = (role: string) => {
+        const normalizedRole = (role || '').toLowerCase();
+        if (normalizedRole.includes('lider') || normalizedRole.includes('líder')) return 0;
+        if (normalizedRole.includes('desmonte')) return 1;
+        if (normalizedRole.includes('alimentador')) return 2;
+        if (normalizedRole.includes('montador')) return 3;
+        return 4;
+    };
+
     const allTabs: Tab[] = ['CADASTRO', 'CONSULTA', 'EDICAO', 'PRESENCA', 'LAYOUT', 'LUVAS'];
     const determineInitialTab = (): Tab => {
         if (!hasTabAccess) return 'PRESENCA';
@@ -39,6 +56,7 @@ export const PeopleManagementManagersModule: React.FC<Props> = ({ onBack, curren
     const [selectedLeaderId, setSelectedLeaderId] = useState<string>('');
     const [layoutMasterModel, setLayoutMasterModel] = useState('');
     const [layoutsList, setLayoutsList] = useState<any[]>([]);
+    const [viewMode, setViewMode] = useState<'posto' | 'colaborador'>('colaborador');
 
     const loadBaseData = useCallback(async () => {
         try {
@@ -113,8 +131,108 @@ export const PeopleManagementManagersModule: React.FC<Props> = ({ onBack, curren
     // ── Helper: subordinados do líder selecionado ──
     const subordinados = useMemo(() => {
         return selectedLeaderId
-            ? employees.filter((e) => e.superiorId === selectedLeaderId)
+            ? employees
+                .filter((e) => e.superiorId === selectedLeaderId)
+                .sort((a, b) => {
+                    const priorityDiff = getLayoutRolePriority(String(a?.role || '')) - getLayoutRolePriority(String(b?.role || ''));
+                    if (priorityDiff !== 0) return priorityDiff;
+                    return String(a?.fullName || '').localeCompare(String(b?.fullName || ''));
+                })
             : [];
+    }, [employees, selectedLeaderId]);
+
+    const workstationMatchesModel = (workstation: any, model: string) => {
+        const workstationModel = String(workstation?.modelName || '');
+        const targetModel = String(model || '');
+        return workstationModel === targetModel || workstationModel.substring(0, 7) === targetModel;
+    };
+
+    const updatePostoAtualFlag = async (layoutId: number, postoAtual: boolean) => {
+        await apiFetch(`/layout/${layoutId}`, {
+            method: 'PUT',
+            body: JSON.stringify({ postoAtual })
+        });
+    };
+
+    const handleAssignPostoSlot = async (postoName: string, slotIndex: number, selectedMatricula: string) => {
+        try {
+            const currentInPosto = layoutsList
+                .filter(layout => layout.postoAtual && String(layout.ordemPosto || '') === postoName)
+                .sort((a, b) => {
+                    const employeeA = subordinados.find(s => s.matricula === a.matricula);
+                    const employeeB = subordinados.find(s => s.matricula === b.matricula);
+                    return String(employeeA?.fullName || '').localeCompare(String(employeeB?.fullName || ''));
+                });
+
+            const slotOccupant = currentInPosto[slotIndex];
+
+            if (!selectedMatricula) {
+                if (slotOccupant?.id) {
+                    await updatePostoAtualFlag(slotOccupant.id, false);
+                    await loadLayoutsByModel(layoutMasterModel);
+                }
+                return;
+            }
+
+            const selectedLayout = layoutsList.find(
+                layout => String(layout.matricula) === selectedMatricula && String(layout.ordemPosto || '') === postoName
+            );
+
+            if (!selectedLayout?.id) {
+                alert('Colaborador não possui qualificação para este posto.');
+                return;
+            }
+
+            if (slotOccupant?.id && String(slotOccupant.matricula) !== selectedMatricula) {
+                await updatePostoAtualFlag(slotOccupant.id, false);
+            }
+
+            await updatePostoAtualFlag(selectedLayout.id, true);
+            await loadLayoutsByModel(layoutMasterModel);
+        } catch (e) {
+            alert('Erro ao atualizar vagas por posto.');
+        }
+    };
+
+    const gloveDashboardData = useMemo(() => {
+        const team = selectedLeaderId ? employees.filter((employee) => employee.superiorId === selectedLeaderId) : [];
+        const selfEmployee = selectedLeaderId ? employees.find((employee) => employee.matricula === selectedLeaderId) : null;
+        const baseList = selfEmployee ? [selfEmployee, ...team.filter((employee) => employee.matricula !== selectedLeaderId)] : team;
+        const processedList = [...baseList].sort((a, b) => {
+            const priorityDiff = getGloveRolePriority(a?.role || '') - getGloveRolePriority(b?.role || '');
+            if (priorityDiff !== 0) return priorityDiff;
+            return String(a?.fullName || '').localeCompare(String(b?.fullName || ''));
+        });
+
+        const sizeTotals = new Map<string, number>();
+        const roleTotals = new Map<string, number>();
+        let totalQty = 0;
+
+        processedList.forEach((employee) => {
+            const extraExchanges = Number(employee?.gloveExchanges || 0);
+            const qty = 1 + (Number.isFinite(extraExchanges) ? extraExchanges : 0);
+            const gloveType = String(employee?.gloveType || '').toLowerCase();
+            const gloveSize = String(employee?.gloveSize || '').trim();
+            const role = String(employee?.role || '').trim();
+            const sizeLabel = gloveSize ? `${gloveSize}${gloveType.includes('dedinho') ? ' (D)' : ''}` : '';
+
+            totalQty += qty;
+
+            if (sizeLabel) {
+                sizeTotals.set(sizeLabel, (sizeTotals.get(sizeLabel) || 0) + qty);
+            }
+
+            if (role) {
+                roleTotals.set(role, (roleTotals.get(role) || 0) + 1);
+            }
+        });
+
+        return {
+            processedList,
+            sizeSummary: Array.from(sizeTotals.entries()),
+            roleSummary: Array.from(roleTotals.entries()),
+            totalQty,
+        };
     }, [employees, selectedLeaderId]);
 
     // TAB 1: CADASTRO
@@ -978,20 +1096,156 @@ export const PeopleManagementManagersModule: React.FC<Props> = ({ onBack, curren
                     </div>
                 </div>
                 <div className="bg-white dark:bg-zinc-900 rounded-xl border border-slate-200 dark:border-zinc-800 p-4">
-                    <label className="text-sm font-bold text-slate-700 dark:text-zinc-300 block mb-2">Filtro Mestre de Modelo</label>
-                    <select
-                        className="w-full bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 rounded-xl px-4 py-3 outline-none"
-                        value={layoutMasterModel}
-                        onChange={(e) => setLayoutMasterModel(e.target.value)}
-                    >
-                        <option value="">Selecione um Modelo para Filtrar...</option>
-                        {unifiedModels.map(m => <option key={m.name} value={m.name}>{m.name}</option>)}
-                    </select>
+                    <div className="flex flex-col lg:flex-row lg:items-end gap-4">
+                        <div className="flex-1">
+                            <label className="text-sm font-bold text-slate-700 dark:text-zinc-300 block mb-2">Filtro Mestre de Modelo</label>
+                            <select
+                                className="w-full bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 rounded-xl px-4 py-3 outline-none"
+                                value={layoutMasterModel}
+                                onChange={(e) => setLayoutMasterModel(e.target.value)}
+                            >
+                                <option value="">Selecione um Modelo para Filtrar...</option>
+                                {unifiedModels.map(m => <option key={m.name} value={m.name}>{m.name}</option>)}
+                            </select>
+                        </div>
+                        {layoutMasterModel && (
+                            <div>
+                                <label className="text-sm font-bold text-slate-700 dark:text-zinc-300 block mb-2">Visualização</label>
+                                <div className="inline-flex rounded-xl border border-slate-200 dark:border-zinc-700 overflow-hidden">
+                                    <button
+                                        type="button"
+                                        className={`px-4 py-2 text-sm font-semibold ${viewMode === 'posto' ? 'bg-cyan-600 text-white' : 'bg-slate-50 dark:bg-zinc-800 text-slate-700 dark:text-zinc-300'}`}
+                                        onClick={() => setViewMode('posto')}
+                                    >
+                                        Por Posto
+                                    </button>
+                                    <button
+                                        type="button"
+                                        className={`px-4 py-2 text-sm font-semibold ${viewMode === 'colaborador' ? 'bg-cyan-600 text-white' : 'bg-slate-50 dark:bg-zinc-800 text-slate-700 dark:text-zinc-300'}`}
+                                        onClick={() => setViewMode('colaborador')}
+                                    >
+                                        Por Colaborador
+                                    </button>
+                                </div>
+                            </div>
+                        )}
+                    </div>
                 </div>
 
                 <div className="bg-white dark:bg-zinc-900 rounded-xl border border-slate-200 dark:border-zinc-800 overflow-hidden text-sm mt-4">
                     {subordinados.length === 0 ? (
                         <p className="p-4 text-slate-500">{selectedLeaderId ? 'Nenhum colaborador nesta linha.' : 'Selecione um líder.'}</p>
+                    ) : viewMode === 'posto' && !layoutMasterModel ? (
+                        <p className="p-4 text-slate-500">Selecione um modelo para visualizar as vagas por posto.</p>
+                    ) : viewMode === 'posto' ? (
+                        <div className="p-4 space-y-4">
+                            {(() => {
+                                const modelWorkstations = workstations
+                                    .filter(w => workstationMatchesModel(w, layoutMasterModel))
+                                    .sort((a, b) => String((a as any)?.name || '').localeCompare(String((b as any)?.name || '')));
+
+                                const currentByMatricula = new Map<string, any>();
+                                layoutsList
+                                    .filter(layout => layout.postoAtual)
+                                    .forEach(layout => currentByMatricula.set(String(layout.matricula), layout));
+
+                                if (modelWorkstations.length === 0) {
+                                    return <p className="text-slate-500">Nenhum posto encontrado para este modelo.</p>;
+                                }
+
+                                return modelWorkstations.map((posto: any) => {
+                                    const postoName = String(posto?.name || '');
+                                    const peopleNeeded = Math.max(0, Number(posto?.peopleNeeded || 0));
+                                    const currentInPosto = layoutsList
+                                        .filter(layout => layout.postoAtual && String(layout.ordemPosto || '') === postoName)
+                                        .sort((a, b) => {
+                                            const employeeA = subordinados.find(s => s.matricula === a.matricula);
+                                            const employeeB = subordinados.find(s => s.matricula === b.matricula);
+                                            return String(employeeA?.fullName || '').localeCompare(String(employeeB?.fullName || ''));
+                                        });
+
+                                    const qualifiedMatriculas = Array.from(new Set(
+                                        layoutsList
+                                            .filter(layout => String(layout.ordemPosto || '') === postoName)
+                                            .map(layout => String(layout.matricula || ''))
+                                    )).filter(Boolean);
+
+                                    const assignedThisPost = currentInPosto.map(layout => String(layout.matricula || ''));
+                                    const filledSlots = Math.min(currentInPosto.length, peopleNeeded);
+                                    const availableSlots = Math.max(0, peopleNeeded - filledSlots);
+
+                                    return (
+                                        <div key={posto.id || postoName} className="rounded-xl border border-slate-200 dark:border-zinc-700 p-4 bg-slate-50 dark:bg-zinc-900/70">
+                                            <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-2 mb-3">
+                                                <h4 className="text-base font-bold text-slate-900 dark:text-zinc-100">{postoName}</h4>
+                                                <span className="text-xs font-semibold px-3 py-1 rounded-full bg-cyan-100 text-cyan-700 dark:bg-cyan-900/30 dark:text-cyan-300">
+                                                    Slots: {filledSlots}/{peopleNeeded} Disponíveis
+                                                </span>
+                                            </div>
+                                            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                                {Array.from({ length: peopleNeeded }).map((_, slotIdx) => {
+                                                    const occupantLayout = currentInPosto[slotIdx];
+                                                    const occupantMatricula = String(occupantLayout?.matricula || '');
+                                                    const usedInOtherSlots = assignedThisPost.filter((mat, idx) => idx !== slotIdx && !!mat);
+
+                                                    const hasEmptyCurrentWorkstation = (employee: any) => {
+                                                        const currentWorkstationValue =
+                                                            employee?.currentWorkstationId ??
+                                                            employee?.currentWorkstation ??
+                                                            employee?.currentWorkstationName ??
+                                                            employee?.currentStation ??
+                                                            employee?.currentPostoId ??
+                                                            employee?.currentPosto;
+
+                                                        return currentWorkstationValue === null
+                                                            || currentWorkstationValue === undefined
+                                                            || String(currentWorkstationValue).trim() === '';
+                                                    };
+
+                                                    const options = qualifiedMatriculas
+                                                        .filter(matricula => {
+                                                            const employee = subordinados.find(emp => String(emp.matricula) === matricula);
+                                                            if (!employee) return false;
+
+                                                            if (matricula === occupantMatricula) return true;
+                                                            if (usedInOtherSlots.includes(matricula)) return false;
+
+                                                            const currentLayout = currentByMatricula.get(matricula);
+                                                            if (currentLayout && String(currentLayout?.ordemPosto || '') !== postoName) return false;
+
+                                                            return hasEmptyCurrentWorkstation(employee);
+                                                        })
+                                                        .map(matricula => subordinados.find(emp => String(emp.matricula) === matricula))
+                                                        .filter(Boolean)
+                                                        .sort((a: any, b: any) => String(a?.fullName || '').localeCompare(String(b?.fullName || '')));
+
+                                                    return (
+                                                        <div key={`${postoName}-${slotIdx}`} className="space-y-1">
+                                                            <label className="text-xs font-bold text-slate-600 dark:text-zinc-300">Vaga {slotIdx + 1}</label>
+                                                            <select
+                                                                className="w-full bg-white dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 rounded-lg px-3 py-2 outline-none"
+                                                                value={occupantMatricula}
+                                                                onChange={(e) => handleAssignPostoSlot(postoName, slotIdx, e.target.value)}
+                                                            >
+                                                                <option value="">Não alocado</option>
+                                                                {options.map((emp: any) => (
+                                                                    <option key={emp.matricula} value={emp.matricula}>
+                                                                        {emp.fullName} ({emp.matricula})
+                                                                    </option>
+                                                                ))}
+                                                            </select>
+                                                        </div>
+                                                    );
+                                                })}
+                                            </div>
+                                            {availableSlots > 0 && (
+                                                <p className="text-xs text-slate-500 dark:text-zinc-400 mt-3">{availableSlots} vaga(s) sem alocação.</p>
+                                            )}
+                                        </div>
+                                    );
+                                });
+                            })()}
+                        </div>
                     ) : !layoutMasterModel ? (
                         <div className="divide-y divide-slate-200 dark:divide-zinc-800">
                             {subordinados.map(s => (
@@ -1050,11 +1304,36 @@ export const PeopleManagementManagersModule: React.FC<Props> = ({ onBack, curren
                                         groupedByEmployee[layout.matricula].push(layout);
                                     });
 
-                                    return Object.entries(groupedByEmployee).map(([matricula, layouts]) => {
+                                    const capacityByPosto = new Map<string, number>();
+                                    workstations
+                                        .filter(w => workstationMatchesModel(w, layoutMasterModel))
+                                        .forEach(w => {
+                                            const capacity = Number((w as any)?.peopleNeeded || 0);
+                                            capacityByPosto.set(String((w as any)?.name || ''), Number.isFinite(capacity) ? capacity : 0);
+                                        });
+
+                                    const allocatedByPosto = new Map<string, number>();
+                                    layoutsList
+                                        .filter(layout => layout.postoAtual)
+                                        .forEach(layout => {
+                                            const posto = String(layout?.ordemPosto || '');
+                                            allocatedByPosto.set(posto, (allocatedByPosto.get(posto) || 0) + 1);
+                                        });
+
+                                    return Object.entries(groupedByEmployee)
+                                        .sort(([matA], [matB]) => {
+                                            const aEmployee = subordinados.find(s => s.matricula === matA);
+                                            const bEmployee = subordinados.find(s => s.matricula === matB);
+                                            const priorityDiff = getLayoutRolePriority(String(aEmployee?.role || '')) - getLayoutRolePriority(String(bEmployee?.role || ''));
+                                            if (priorityDiff !== 0) return priorityDiff;
+                                            return String(aEmployee?.fullName || '').localeCompare(String(bEmployee?.fullName || ''));
+                                        })
+                                        .map(([matricula, layouts]) => {
                                         const employee = subordinados.find(s => s.matricula === matricula);
                                         if (!employee) return null;
 
                                         const postoAtualLayout = layouts.find(l => l.postoAtual);
+                                        const postoAtualId = postoAtualLayout?.id;
 
                                         return (
                                             <tr key={matricula} className="hover:bg-slate-50 dark:hover:bg-zinc-800/50">
@@ -1087,11 +1366,21 @@ export const PeopleManagementManagersModule: React.FC<Props> = ({ onBack, curren
                                                         }}
                                                     >
                                                         <option value="">Nenhum</option>
-                                                        {layouts.map((layout) => (
-                                                            <option key={layout.id} value={layout.id}>
-                                                                {layout.ordemPosto}
-                                                            </option>
-                                                        ))}
+                                                        {layouts
+                                                            .filter(layout => {
+                                                                const posto = String(layout?.ordemPosto || '');
+                                                                const capacity = capacityByPosto.get(posto);
+                                                                if (!capacity || capacity <= 0) return true;
+
+                                                                const allocated = allocatedByPosto.get(posto) || 0;
+                                                                const isCurrentEmployeePosto = layout.id === postoAtualId;
+                                                                return isCurrentEmployeePosto || allocated < capacity;
+                                                            })
+                                                            .map((layout) => (
+                                                                <option key={layout.id} value={layout.id}>
+                                                                    {layout.ordemPosto}
+                                                                </option>
+                                                            ))}
                                                     </select>
                                                 </td>
                                                 <td className="p-4 text-right flex justify-end gap-2">
@@ -1172,9 +1461,8 @@ export const PeopleManagementManagersModule: React.FC<Props> = ({ onBack, curren
 
     // TAB 5: LUVAS — usa selectedLeaderId
     const renderLuvas = () => {
-        const team = selectedLeaderId ? employees.filter(e => e.superiorId === selectedLeaderId) : [];
-        const selfEmployee = selectedLeaderId ? employees.find(e => e.matricula === selectedLeaderId) : null;
-        const displayList = selfEmployee ? [selfEmployee, ...team.filter(e => e.matricula !== selectedLeaderId)] : team;
+        const { processedList, sizeSummary, roleSummary, totalQty } = gloveDashboardData;
+        const totalRoles = roleSummary.reduce((acc, [, qty]) => acc + qty, 0);
         const leaderObj = leaders.find(l => l.matricula === selectedLeaderId);
 
         const handleUpdateGlove = async (matricula: string, field: 'gloveSize' | 'gloveType' | 'gloveExchanges', value: string | number) => {
@@ -1187,7 +1475,7 @@ export const PeopleManagementManagersModule: React.FC<Props> = ({ onBack, curren
         };
 
         const generateSpreadsheet = async () => {
-            try { await exportGloveControlTemplate(displayList); }
+            try { await exportGloveControl(processedList, leaderObj?.name || currentUser?.name || 'Geral'); }
             catch (e) { alert('Falha gerando XLSX!'); }
         };
 
@@ -1204,8 +1492,56 @@ export const PeopleManagementManagersModule: React.FC<Props> = ({ onBack, curren
                     </h3>
                     <Button onClick={generateSpreadsheet}><Download size={16} /> Exportar Planilha</Button>
                 </div>
+                {processedList.length > 0 && (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                        <div className="rounded-2xl border border-slate-200 dark:border-zinc-800 bg-slate-50/80 dark:bg-zinc-900/80 p-4">
+                            <div className="flex items-center justify-between mb-3">
+                                <h4 className="text-sm font-bold text-slate-800 dark:text-zinc-100">Resumo por Tamanho</h4>
+                                <span className="text-xs font-medium text-slate-500 dark:text-zinc-400">Qtd</span>
+                            </div>
+                            <div className="space-y-2 text-sm">
+                                {sizeSummary.length === 0 ? (
+                                    <p className="text-slate-500 dark:text-zinc-400">Sem tamanhos informados.</p>
+                                ) : (
+                                    sizeSummary.map(([size, qty]) => (
+                                        <div key={size} className="flex items-center justify-between rounded-xl bg-white dark:bg-zinc-950 px-3 py-2 border border-slate-200/80 dark:border-zinc-800">
+                                            <span className="font-medium text-slate-700 dark:text-zinc-200">{size}</span>
+                                            <span className="font-semibold text-slate-900 dark:text-zinc-100">{qty}</span>
+                                        </div>
+                                    ))
+                                )}
+                                <div className="flex items-center justify-between pt-2 border-t border-slate-200 dark:border-zinc-800 font-bold text-slate-900 dark:text-zinc-100">
+                                    <span>TOTAL</span>
+                                    <span>{totalQty}</span>
+                                </div>
+                            </div>
+                        </div>
+                        <div className="rounded-2xl border border-slate-200 dark:border-zinc-800 bg-slate-50/80 dark:bg-zinc-900/80 p-4">
+                            <div className="flex items-center justify-between mb-3">
+                                <h4 className="text-sm font-bold text-slate-800 dark:text-zinc-100">Resumo por Função</h4>
+                                <span className="text-xs font-medium text-slate-500 dark:text-zinc-400">Qtd</span>
+                            </div>
+                            <div className="space-y-2 text-sm">
+                                {roleSummary.length === 0 ? (
+                                    <p className="text-slate-500 dark:text-zinc-400">Sem funções informadas.</p>
+                                ) : (
+                                    roleSummary.map(([role, qty]) => (
+                                        <div key={role} className="flex items-center justify-between rounded-xl bg-white dark:bg-zinc-950 px-3 py-2 border border-slate-200/80 dark:border-zinc-800">
+                                            <span className="font-medium text-slate-700 dark:text-zinc-200">{role}</span>
+                                            <span className="font-semibold text-slate-900 dark:text-zinc-100">{qty}</span>
+                                        </div>
+                                    ))
+                                )}
+                                <div className="flex items-center justify-between pt-2 border-t border-slate-200 dark:border-zinc-800 font-bold text-slate-900 dark:text-zinc-100">
+                                    <span>TOTAL</span>
+                                    <span>{totalRoles}</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                )}
                 <div className="bg-white dark:bg-zinc-900 rounded-xl border border-slate-200 dark:border-zinc-800 overflow-hidden text-sm">
-                    {displayList.length === 0 ? (
+                    {processedList.length === 0 ? (
                         <p className="p-4 text-slate-500">{selectedLeaderId ? 'Nenhum colaborador nesta equipe.' : 'Selecione um líder.'}</p>
                     ) : (
                         <table className="w-full text-left">
@@ -1220,7 +1556,7 @@ export const PeopleManagementManagersModule: React.FC<Props> = ({ onBack, curren
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-slate-200 dark:divide-zinc-800">
-                                {displayList.map(s => (
+                                {processedList.map(s => (
                                     <tr key={s.matricula} className={`hover:bg-slate-50 dark:hover:bg-zinc-800/50 ${s.matricula === selectedLeaderId ? 'bg-indigo-50/30 dark:bg-indigo-900/10' : ''}`}>
                                         <td className="p-4 font-mono">{s.matricula}</td>
                                         <td className="p-4">{s.fullName} {s.matricula === selectedLeaderId && <span className="text-xs text-indigo-500 font-bold ml-2">(Líder)</span>}</td>
@@ -1431,7 +1767,8 @@ export const PeopleManagementManagersModule: React.FC<Props> = ({ onBack, curren
                             <Button variant="outline" className="flex-1" onClick={() => setShowPrintModal(false)}>Cancelar</Button>
                             <Button className="flex-1" onClick={() => {
                                 if (!printSelectedModel) return alert('Selecione um modelo');
-                                exportModelLayout(printSelectedModel, workstations, employees);
+                                const leaderObj = leaders.find(l => l.matricula === selectedLeaderId);
+                                exportModelLayout(printSelectedModel, workstations, employees, leaderObj?.name || 'LIDER');
                                 setShowPrintModal(false);
                             }}>Gerar Excel</Button>
                         </div>

@@ -1780,30 +1780,57 @@ const commonDataStyle: Partial<ExcelJS.Style> = {
 };
 
 export const exportLeaderLayout = async (leader: any, subordinados: any[]) => {
+    const getLayoutRolePriority = (role: string) => {
+        const normalizedRole = String(role || '').toLowerCase();
+        if (normalizedRole.includes('desmonte')) return 0;
+        if (normalizedRole.includes('alimentador')) return 1;
+        if (normalizedRole.includes('montador')) return 2;
+        return 3;
+    };
+
     const workbook = new ExcelJS.Workbook();
-    const sheet = workbook.addWorksheet('Layout por Líder');
+    try {
+        const response = await fetch('/template_manpower.xlsx');
+        if (!response.ok) throw new Error(`Template fetch status: ${response.status}`);
+        const buffer = await response.arrayBuffer();
+        await workbook.xlsx.load(buffer);
+    } catch (e) {
+        workbook.addWorksheet('Layout por Líder');
+    }
 
-    sheet.columns = [
-        { header: 'Matrícula', key: 'matricula', width: 15 },
-        { header: 'Nome', key: 'nome', width: 40 },
-        { header: 'Função', key: 'funcao', width: 25 },
-        { header: 'Turno', key: 'turno', width: 10 },
-        { header: 'Postos Vinculados', key: 'postos', width: 50 },
-    ];
+    const sheet = workbook.getWorksheet(1) || workbook.addWorksheet('Layout por Líder');
 
-    // Style Header
-    sheet.getRow(1).eachCell(cell => { cell.style = commonHeaderStyle as any; });
-
-    subordinados.forEach(s => {
-        const row = sheet.addRow({
-            matricula: s.matricula,
-            nome: s.fullName,
-            funcao: s.role,
-            turno: s.shift,
-            postos: s.workstations ? s.workstations.map((w: any) => `${w.modelName} - ${w.name}`).join(' | ') : '-'
+    const sortedSubordinados = [...(Array.isArray(subordinados) ? subordinados : [])]
+        .sort((a, b) => {
+            const priorityDiff = getLayoutRolePriority(String(a?.role || '')) - getLayoutRolePriority(String(b?.role || ''));
+            if (priorityDiff !== 0) return priorityDiff;
+            return String(a?.fullName || '').localeCompare(String(b?.fullName || ''));
         });
-        row.eachCell(cell => { cell.style = commonDataStyle as any; });
-    });
+
+    for (let i = 0; i < sortedSubordinados.length; i++) {
+        const subordinado = sortedSubordinados[i];
+        const rowNumber = 3 + i;
+
+        let postosText = '';
+        try {
+            const layouts = await apiFetch(`/layout?matricula=${encodeURIComponent(String(subordinado?.matricula || ''))}`);
+            if (Array.isArray(layouts)) {
+                postosText = layouts
+                    .map((layout: any) => `{${layout?.modelo || ''}:${layout?.ordemPosto || ''}}`)
+                    .filter(Boolean)
+                    .join(', ');
+            }
+        } catch (e) {
+            postosText = '';
+        }
+
+        sheet.getCell(`A${rowNumber}`).value = subordinado?.matricula || '';
+        sheet.getCell(`B${rowNumber}`).value = subordinado?.fullName || '';
+        sheet.getCell(`C${rowNumber}`).value = subordinado?.role || '';
+        sheet.getCell(`D${rowNumber}`).value = subordinado?.shift || '';
+        sheet.getCell(`E${rowNumber}`).value = postosText;
+        sheet.getCell(`E${rowNumber}`).alignment = { wrapText: true, vertical: 'middle' };
+    }
 
     const buffer = await workbook.xlsx.writeBuffer();
     const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
@@ -1811,34 +1838,97 @@ export const exportLeaderLayout = async (leader: any, subordinados: any[]) => {
     saveAs(blob, `LAYOUT_LIDER_${safeName}.xlsx`);
 };
 
-export const exportModelLayout = async (model: string, workstations: any[], employees: any[]) => {
-    const workbook = new ExcelJS.Workbook();
-    const sheet = workbook.addWorksheet('Layout por Modelo');
+export const exportModelLayout = async (model: string, workstations: any[], employees: any[], leaderName: string) => {
+    try {
+        const workbook = new ExcelJS.Workbook();
+        const response = await fetch('/template_layout.xlsx');
+        if (!response.ok) throw new Error('Erro 404: template_layout.xlsx');
+        const buffer = await response.arrayBuffer();
+        await workbook.xlsx.load(buffer);
+        const sheet = workbook.getWorksheet(1);
+        if (!sheet) throw new Error('Aba 1 não encontrada');
 
-    sheet.columns = [
-        { header: 'ID do Posto', key: 'posto_id', width: 15 },
-        { header: 'Posto de Trabalho', key: 'posto', width: 30 },
-        { header: 'Colaboradores Habilitados', key: 'colaboradores', width: 60 }
-    ];
+        const normalize = (value: any) => String(value || '').trim();
+        const workstationMatchesModel = (workstation: any) => {
+            const workstationModel = normalize(workstation?.modelName);
+            const targetModel = normalize(model);
+            return workstationModel === targetModel || workstationModel.substring(0, 7) === targetModel;
+        };
 
-    // Style Header
-    sheet.getRow(1).eachCell(cell => { cell.style = commonHeaderStyle as any; });
+        const modelWorkstations = [...(Array.isArray(workstations) ? workstations : [])]
+            .filter(workstationMatchesModel)
+            .sort((a, b) => {
+                const orderA = Number(a?.order) || 0;
+                const orderB = Number(b?.order) || 0;
+                return orderA - orderB;
+            });
 
-    const modelWks = workstations.filter(w => w.modelName === model);
+        const modelLayouts = await apiFetch(`/layout?modelo=${encodeURIComponent(model)}`);
+        const safeLayouts = Array.isArray(modelLayouts) ? modelLayouts : [];
+        const postosDoModelo = new Set(modelWorkstations.map((w: any) => normalize(w?.name)));
+        const employeeByMatricula = new Map((Array.isArray(employees) ? employees : []).map((emp: any) => [String(emp?.matricula || ''), emp]));
 
-    modelWks.forEach(wks => {
-        const habilitados = employees.filter(e => e.workstations && e.workstations.some((w: any) => w.id === wks.id));
-        const row = sheet.addRow({
-            posto: wks.name,
-            posto_id: wks.id,
-            colaboradores: habilitados.length > 0 ? habilitados.map(e => `${e.fullName} (${e.matricula})`).join(', ') : 'Nenhum'
+        const currentByMatricula = new Map<string, any>();
+        safeLayouts
+            .filter((layout: any) => !!layout?.postoAtual)
+            .forEach((layout: any) => {
+                currentByMatricula.set(String(layout?.matricula || ''), layout);
+            });
+
+        let rowNumber = 3;
+
+        modelWorkstations.forEach((workstation: any) => {
+            const postoName = normalize(workstation?.name);
+            const currentForPost = safeLayouts
+                .filter((layout: any) => !!layout?.postoAtual && normalize(layout?.ordemPosto) === postoName)
+                .map((layout: any) => employeeByMatricula.get(String(layout?.matricula || '')))
+                .filter(Boolean)
+                .sort((a: any, b: any) => normalize(a?.fullName).localeCompare(normalize(b?.fullName)));
+
+            currentForPost.forEach((employee: any) => {
+                const row = sheet.getRow(rowNumber);
+                row.getCell(1).value = employee?.matricula || '';
+                row.getCell(2).value = employee?.fullName || '';
+                row.getCell(3).value = postoName;
+                rowNumber++;
+            });
         });
-        row.eachCell(cell => { cell.style = commonDataStyle as any; });
-    });
 
-    const buffer = await workbook.xlsx.writeBuffer();
-    const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
-    saveAs(blob, `LAYOUT_MODELO_${model.replace(/[^a-z0-9]/gi, '_')}.xlsx`);
+        const habilitadosMatriculas = new Set(
+            safeLayouts
+                .map((layout: any) => String(layout?.matricula || ''))
+                .filter(Boolean)
+        );
+
+        const postoADefinir = Array.from(habilitadosMatriculas)
+            .map((matricula) => {
+                const current = currentByMatricula.get(matricula);
+                const currentPosto = normalize(current?.ordemPosto);
+                const hasCurrentInModel = !!current && postosDoModelo.has(currentPosto);
+                if (hasCurrentInModel) return null;
+                return employeeByMatricula.get(matricula) || null;
+            })
+            .filter(Boolean)
+            .sort((a: any, b: any) => normalize(a?.fullName).localeCompare(normalize(b?.fullName)));
+
+        postoADefinir.forEach((employee: any) => {
+            const row = sheet.getRow(rowNumber);
+            row.getCell(1).value = employee?.matricula || '';
+            row.getCell(2).value = employee?.fullName || '';
+            row.getCell(3).value = 'Posto a definir';
+            rowNumber++;
+        });
+
+        const outputBuffer = await workbook.xlsx.writeBuffer();
+        const blob = new Blob([outputBuffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+        const firstName = String(leaderName || 'LIDER').trim().split(/\s+/)[0] || 'LIDER';
+        const safeFirstName = firstName.replace(/[^a-z0-9]/gi, '_');
+        const safeModel = String(model || '').replace(/[^a-z0-9]/gi, '_');
+        saveAs(blob, `layout_${safeFirstName}_${safeModel}.xlsx`);
+    } catch (error) {
+        console.error('Erro em exportModelLayout:', error);
+        alert('Falha ao gerar Excel: Verifique o template_layout.xlsx na pasta public.');
+    }
 };
 
 export const exportWorkstationsByModel = async (workstations: any[]) => {
@@ -1873,11 +1963,10 @@ export const exportWorkstationsByModel = async (workstations: any[]) => {
 };
 
 export const exportGloveControl = async (displayList: any[], leaderName: string) => {
-    void leaderName;
-    await exportGloveControlTemplate(displayList);
+    await exportGloveControlTemplate(displayList, leaderName);
 };
 
-export const exportGloveControlTemplate = async (employees: any[]) => {
+export const exportGloveControlTemplate = async (employees: any[], leaderName: string = '') => {
     try {
         const workbook = new ExcelJS.Workbook();
 
@@ -1909,6 +1998,9 @@ export const exportGloveControlTemplate = async (employees: any[]) => {
             bottom: { style: 'thin' }, right: { style: 'thin' },
         };
         const applyBorder = (cell: ExcelJS.Cell) => { cell.border = thinBorder; };
+        const leftAlignment: Partial<ExcelJS.Alignment> = { vertical: 'middle', horizontal: 'left' };
+        const centerAlignment: Partial<ExcelJS.Alignment> = { vertical: 'middle', horizontal: 'center' };
+        const highlightFill: ExcelJS.Fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFFF00' } };
 
         type RowEntry = { name: string; matricula: string; role: string; sizeDisplay: string; gloveType: string; fValue: number };
         const rowData: RowEntry[] = sorted.map(emp => {
@@ -1916,7 +2008,7 @@ export const exportGloveControlTemplate = async (employees: any[]) => {
             const gloveType = emp?.gloveType || '';
             const gloveTypeLower = (emp?.gloveType || '').toLowerCase();
             const trocasExtras = isNaN(Number(emp?.gloveExchanges)) ? 0 : Number(emp?.gloveExchanges);
-            const sizeDisplay = `${emp?.gloveSize || ''}${gloveTypeLower.includes('dedinho') ? ' (D)' : ''}`.trim();
+            const sizeDisplay = `${emp?.gloveSize || ''}${gloveTypeLower.includes('dedinho') ? '(D)' : ''}`.trim();
             const fValue = 1 + trocasExtras;
             return {
                 name: emp?.fullName || emp?.name || '',
@@ -1939,6 +2031,32 @@ export const exportGloveControlTemplate = async (employees: any[]) => {
             row.getCell(5).value = rd.gloveType;
             row.getCell(6).value = rd.fValue;
             [1, 2, 3, 4, 5, 6].forEach(col => applyBorder(row.getCell(col)));
+            row.getCell(1).alignment = leftAlignment;
+            row.getCell(2).alignment = centerAlignment;
+            row.getCell(3).alignment = centerAlignment;
+            row.getCell(4).alignment = centerAlignment;
+            row.getCell(5).alignment = centerAlignment;
+            row.getCell(6).alignment = centerAlignment;
+
+            if ((rd.role || '').toUpperCase() !== 'MONTADOR') {
+                row.getCell(3).font = { bold: true };
+                row.getCell(3).fill = highlightFill;
+            }
+
+            if ((rd.sizeDisplay || '').includes('(D)')) {
+                row.getCell(4).font = { bold: true };
+                row.getCell(4).fill = highlightFill;
+            }
+
+            if ((rd.gloveType || '').toLowerCase().includes('dedinho')) {
+                row.getCell(5).font = { bold: true };
+                row.getCell(5).fill = highlightFill;
+            }
+
+            if (rd.fValue > 1) {
+                row.getCell(6).font = { bold: true };
+                row.getCell(6).fill = highlightFill;
+            }
             currentRow++;
         });
 
@@ -1963,6 +2081,8 @@ export const exportGloveControlTemplate = async (employees: any[]) => {
             row.getCell(9).value = qty;
             applyBorder(row.getCell(8));
             applyBorder(row.getCell(9));
+            row.getCell(8).alignment = centerAlignment;
+            row.getCell(9).alignment = centerAlignment;
             sizeTotalQty += qty;
             sizeRow++;
         });
@@ -1972,6 +2092,12 @@ export const exportGloveControlTemplate = async (employees: any[]) => {
         sizeTotalRow.getCell(9).value = sizeTotalQty;
         applyBorder(sizeTotalRow.getCell(8));
         applyBorder(sizeTotalRow.getCell(9));
+        sizeTotalRow.getCell(8).alignment = centerAlignment;
+        sizeTotalRow.getCell(9).alignment = centerAlignment;
+            sizeTotalRow.getCell(8).font = { bold: true };
+            sizeTotalRow.getCell(8).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFD9D9D9' } };
+            sizeTotalRow.getCell(9).font = { bold: true };
+            sizeTotalRow.getCell(9).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFD9D9D9' } };
 
         // Role summary K:L from row 3
         const roleMap: Record<string, number> = {};
@@ -1982,7 +2108,7 @@ export const exportGloveControlTemplate = async (employees: any[]) => {
                 roleMap[rd.role] = 0;
                 roleOrder.push(rd.role);
             }
-            roleMap[rd.role] += rd.fValue;
+            roleMap[rd.role] += 1;
         });
 
         let roleRow = 3;
@@ -1994,6 +2120,8 @@ export const exportGloveControlTemplate = async (employees: any[]) => {
             row.getCell(12).value = qty;
             applyBorder(row.getCell(11));
             applyBorder(row.getCell(12));
+            row.getCell(11).alignment = centerAlignment;
+            row.getCell(12).alignment = centerAlignment;
             roleTotalQty += qty;
             roleRow++;
         });
@@ -2003,10 +2131,18 @@ export const exportGloveControlTemplate = async (employees: any[]) => {
         roleTotalRow.getCell(12).value = roleTotalQty;
         applyBorder(roleTotalRow.getCell(11));
         applyBorder(roleTotalRow.getCell(12));
+        roleTotalRow.getCell(11).alignment = centerAlignment;
+        roleTotalRow.getCell(12).alignment = centerAlignment;
+            roleTotalRow.getCell(11).font = { bold: true };
+            roleTotalRow.getCell(11).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFD9D9D9' } };
+            roleTotalRow.getCell(12).font = { bold: true };
+            roleTotalRow.getCell(12).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFD9D9D9' } };
 
         const outputBuffer = await workbook.xlsx.writeBuffer();
         const blob = new Blob([outputBuffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
-        saveAs(blob, `Controle_Luvas_${new Date().toISOString().slice(0, 10)}.xlsx`);
+        const weekNum = getWeekNumber(new Date());
+        const firstName = String(leaderName && leaderName !== 'Geral' ? leaderName : 'Lider').trim().split(/\s+/)[0];
+        saveAs(blob, `Controle de luvas_${firstName}_Semana${weekNum}.xlsx`);
     } catch (error) {
         console.error('Erro na geração de luvas:', error);
         throw error;
