@@ -870,20 +870,31 @@ export const PeopleManagementModule = ({ onBack, currentUser, hasTabAccess }: Pe
                 return;
             }
 
-            const selectedLayout = layoutsList.find(
+            let selectedLayout = layoutsList.find(
                 layout => String(layout.matricula) === selectedMatricula && String(layout.ordemPosto || '') === postoName
             );
-
-            if (!selectedLayout?.id) {
-                alert('Colaborador não possui qualificação para este posto.');
-                return;
-            }
 
             if (slotOccupant?.id && String(slotOccupant.matricula) !== selectedMatricula) {
                 await updatePostoAtualFlag(slotOccupant.id, false);
             }
 
-            await updatePostoAtualFlag(selectedLayout.id, true);
+            if (!selectedLayout?.id) {
+                await apiFetch(`/employees/${selectedMatricula}/workstation-slots`, {
+                    method: 'POST',
+                    body: JSON.stringify({ modelText: layoutMasterModel, workstationName: postoName })
+                });
+
+                const novosLayouts = await apiFetch(`/layout?modelo=${encodeURIComponent(layoutMasterModel)}`).catch(() => []);
+                if (Array.isArray(novosLayouts)) {
+                    selectedLayout = novosLayouts.find(
+                        (l: any) => String(l.matricula) === selectedMatricula && String(l.ordemPosto || '') === postoName
+                    );
+                }
+            }
+
+            if (selectedLayout?.id) {
+                await updatePostoAtualFlag(selectedLayout.id, true);
+            }
             await loadLayoutsByModel(layoutMasterModel);
         } catch (e) {
             alert('Erro ao atualizar vagas por posto.');
@@ -990,12 +1001,6 @@ export const PeopleManagementModule = ({ onBack, currentUser, hasTabAccess }: Pe
                                             return String(employeeA?.fullName || '').localeCompare(String(employeeB?.fullName || ''));
                                         });
 
-                                    const qualifiedMatriculas = Array.from(new Set(
-                                        layoutsList
-                                            .filter(layout => String(layout.ordemPosto || '') === postoName)
-                                            .map(layout => String(layout.matricula || ''))
-                                    )).filter(Boolean);
-
                                     const assignedThisPost = currentInPosto.map(layout => String(layout.matricula || ''));
                                     const filledSlots = Math.min(currentInPosto.length, peopleNeeded);
                                     const availableSlots = Math.max(0, peopleNeeded - filledSlots);
@@ -1014,35 +1019,14 @@ export const PeopleManagementModule = ({ onBack, currentUser, hasTabAccess }: Pe
                                                     const occupantMatricula = String(occupantLayout?.matricula || '');
                                                     const usedInOtherSlots = assignedThisPost.filter((mat, idx) => idx !== slotIdx && !!mat);
 
-                                                    const hasEmptyCurrentWorkstation = (employee: any) => {
-                                                        const currentWorkstationValue =
-                                                            employee?.currentWorkstationId ??
-                                                            employee?.currentWorkstation ??
-                                                            employee?.currentWorkstationName ??
-                                                            employee?.currentStation ??
-                                                            employee?.currentPostoId ??
-                                                            employee?.currentPosto;
-
-                                                        return currentWorkstationValue === null
-                                                            || currentWorkstationValue === undefined
-                                                            || String(currentWorkstationValue).trim() === '';
-                                                    };
-
-                                                    const options = qualifiedMatriculas
-                                                        .filter(matricula => {
-                                                            const employee = subordinados.find(emp => String(emp.matricula) === matricula);
-                                                            if (!employee) return false;
-
+                                                    const options = subordinados
+                                                        .filter(emp => {
+                                                            const matricula = String(emp.matricula);
                                                             if (matricula === occupantMatricula) return true;
                                                             if (usedInOtherSlots.includes(matricula)) return false;
-
-                                                            const currentLayout = currentByMatricula.get(matricula);
-                                                            if (currentLayout && String(currentLayout?.ordemPosto || '') !== postoName) return false;
-
-                                                            return hasEmptyCurrentWorkstation(employee);
+                                                            if (currentByMatricula.has(matricula)) return false;
+                                                            return true;
                                                         })
-                                                        .map(matricula => subordinados.find(emp => String(emp.matricula) === matricula))
-                                                        .filter(Boolean)
                                                         .sort((a: any, b: any) => String(a?.fullName || '').localeCompare(String(b?.fullName || '')));
 
                                                     return (

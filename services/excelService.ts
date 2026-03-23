@@ -1863,7 +1863,7 @@ export const exportModelLayout = async (model: string, workstations: any[], empl
                 return orderA - orderB;
             });
 
-        const modelLayouts = await apiFetch(`/layout?modelo=${encodeURIComponent(model)}`);
+        const modelLayouts = await apiFetch(`/layout?modelo=${encodeURIComponent(model)}`).catch(() => []);
         const safeLayouts = Array.isArray(modelLayouts) ? modelLayouts : [];
         const postosDoModelo = new Set(modelWorkstations.map((w: any) => normalize(w?.name)));
         const employeeByMatricula = new Map((Array.isArray(employees) ? employees : []).map((emp: any) => [String(emp?.matricula || ''), emp]));
