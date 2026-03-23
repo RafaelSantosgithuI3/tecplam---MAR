@@ -1,11 +1,11 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { Button } from './Button';
 import { Card } from './Card';
 import { Input } from './Input';
 import { Shield, Plus, Search, User as UserIcon, List, ArrowLeft, CheckCircle, Clock, Save, Download, HandMetal, Scan, X, Upload } from 'lucide-react';
 import { apiFetch } from '../services/networkConfig';
 import { QRStreamReader } from './QRStreamReader';
-import { exportLeaderLayout, exportModelLayout, exportGloveControl, exportEmployeeTemplate } from '../services/excelService';
+import { exportLeaderLayout, exportModelLayout, exportGloveControl, exportGloveControlTemplate, exportEmployeeTemplate } from '../services/excelService';
 import * as XLSX from 'xlsx';
 
 import { EmployeeData, User, ConfigModel, Workstation, ConfigRole } from '../types';
@@ -124,6 +124,8 @@ export const PeopleManagementManagersModule: React.FC<Props> = ({ onBack, curren
     });
     const [isEdit, setIsEdit] = useState(false);
     const [conflictModalData, setConflictModalData] = useState<{ matricula: string, resolve: (val: boolean) => void } | null>(null);
+    const [applyToAllConflicts, setApplyToAllConflicts] = useState(false);
+    const globalConflictActionRef = useRef<boolean | null>(null);
     const [isBatchUploading, setIsBatchUploading] = useState(false);
 
     const handleExcelUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -140,6 +142,7 @@ export const PeopleManagementManagersModule: React.FC<Props> = ({ onBack, curren
                 const data = XLSX.utils.sheet_to_json<any>(ws, { defval: '' });
 
                 setIsBatchUploading(true);
+                globalConflictActionRef.current = null;
 
                 for (let i = 0; i < data.length; i++) {
                     const row = data[i];
@@ -176,9 +179,14 @@ export const PeopleManagementManagersModule: React.FC<Props> = ({ onBack, curren
                     try {
                         const check = await apiFetch(`/employees/search/${matricula}`);
                         if (check && check.matricula) {
-                            const replace = await new Promise<boolean>((resolve) => {
-                                setConflictModalData({ matricula, resolve });
-                            });
+                            let replace: boolean;
+                            if (globalConflictActionRef.current !== null) {
+                                replace = globalConflictActionRef.current;
+                            } else {
+                                replace = await new Promise<boolean>((resolve) => {
+                                    setConflictModalData({ matricula, resolve });
+                                });
+                            }
                             if (!replace) continue;
                             payload.isEdit = true;
                         }
@@ -575,7 +583,7 @@ export const PeopleManagementManagersModule: React.FC<Props> = ({ onBack, curren
                             <div className="grid grid-cols-2 gap-y-3 text-sm">
                                 <div><p className="text-xs text-slate-500 uppercase font-bold">Tamanho da Luva</p><p className="font-medium text-slate-700 dark:text-zinc-300">{consultResult.gloveSize || 'Não definido'}</p></div>
                                 <div><p className="text-xs text-slate-500 uppercase font-bold">Tipo da Luva</p><p className="font-medium text-slate-700 dark:text-zinc-300">{consultResult.gloveType || 'Não definido'}</p></div>
-                                <div className="col-span-2"><p className="text-xs text-slate-500 uppercase font-bold">Trocas a mais por semana</p><p className="font-medium text-slate-700 dark:text-zinc-300">{consultResult.gloveExchanges || '0'}</p></div>
+                                <div className="col-span-2"><p className="text-xs text-slate-500 uppercase font-bold">Trocas a mais na semana</p><p className="font-medium text-slate-700 dark:text-zinc-300">{consultResult.gloveExchanges || '0'}</p></div>
                             </div>
                         </Card>
                     </div>
@@ -1179,7 +1187,7 @@ export const PeopleManagementManagersModule: React.FC<Props> = ({ onBack, curren
         };
 
         const generateSpreadsheet = async () => {
-            try { await exportGloveControl(displayList, leaderObj?.name || selectedLeaderId); }
+            try { await exportGloveControlTemplate(displayList); }
             catch (e) { alert('Falha gerando XLSX!'); }
         };
 
@@ -1208,7 +1216,7 @@ export const PeopleManagementManagersModule: React.FC<Props> = ({ onBack, curren
                                     <th className="p-4">Função</th>
                                     <th className="p-4">Tamanho</th>
                                     <th className="p-4">Tipo</th>
-                                    <th className="p-4">Trocas (Semana)</th>
+                                    <th className="p-4">Trocas a mais (semana)</th>
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-slate-200 dark:divide-zinc-800">
@@ -1439,11 +1447,23 @@ export const PeopleManagementManagersModule: React.FC<Props> = ({ onBack, curren
                             A matrícula <strong>{conflictModalData.matricula}</strong> já existe no banco de dados.
                         </p>
                         <p className="text-sm font-medium text-slate-700 dark:text-zinc-300">Deseja substituir ou pular este registro?</p>
+                        <label className="flex items-center gap-2 text-sm text-slate-600 dark:text-zinc-400 cursor-pointer justify-center">
+                            <input type="checkbox" checked={applyToAllConflicts} onChange={(e) => setApplyToAllConflicts(e.target.checked)} />
+                            Aplicar a todos os conflitos restantes
+                        </label>
                         <div className="flex justify-center gap-3 pt-4">
-                            <Button variant="danger" onClick={() => { conflictModalData.resolve(false); setConflictModalData(null); }}>
+                            <Button variant="danger" onClick={() => {
+                                if (applyToAllConflicts) globalConflictActionRef.current = false;
+                                conflictModalData.resolve(false);
+                                setConflictModalData(null);
+                            }}>
                                 Pular
                             </Button>
-                            <Button onClick={() => { conflictModalData.resolve(true); setConflictModalData(null); }}>
+                            <Button onClick={() => {
+                                if (applyToAllConflicts) globalConflictActionRef.current = true;
+                                conflictModalData.resolve(true);
+                                setConflictModalData(null);
+                            }}>
                                 Substituir
                             </Button>
                         </div>

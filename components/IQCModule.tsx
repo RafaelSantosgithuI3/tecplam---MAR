@@ -13,7 +13,7 @@ import {
 } from '../services/scrapService';
 import { getAllUsers } from '../services/authService';
 import { getLines, getModels, getWeekNumber } from '../services/storageService';
-import { exportExecutiveReport, exportInvoiceReport } from '../services/excelService';
+import { exportEspelhoScrapTemplate, exportExecutiveReport, exportIQCEnvioTemplate } from '../services/excelService';
 import { getMaterials } from '../services/materialService';
 import { MaterialsManager } from './MaterialsManager';
 import { Material } from '../types';
@@ -270,6 +270,15 @@ const ExecutiveDashboard = ({ scraps, users }: { scraps: ScrapData[], users: Use
         };
     }, [filtered]);
 
+    const handleDashboardExport = async () => {
+        if (filters.status === 'SENT') {
+            const dateRef = filters.specificDate || filters.specificWeek || filters.specificMonth || filters.specificYear || undefined;
+            await exportIQCEnvioTemplate(filtered, undefined, dateRef);
+            return;
+        }
+        await exportExecutiveReport(filtered);
+    };
+
     return (
         <div className="space-y-6">
             <Card>
@@ -307,7 +316,7 @@ const ExecutiveDashboard = ({ scraps, users }: { scraps: ScrapData[], users: Use
                             <option value="SENT">Enviados</option>
                         </select>
 
-                        <Button onClick={() => exportExecutiveReport(filtered)} className="bg-green-600 hover:bg-green-700 text-white ml-2">
+                        <Button onClick={handleDashboardExport} className="bg-green-600 hover:bg-green-700 text-white ml-2">
                             <Download size={18} /> Excel (Filtrado)
                         </Button>
                     </div>
@@ -843,39 +852,51 @@ const HistoryGroupCard = ({ nf, items, users, groupBy = 'NF', isExpanded, onTogg
         <Card className={`border-l-4 border-l-blue-500 transition-all ${isExpanded ? 'ring-2 ring-blue-500/20' : ''}`}>
             <div className="cursor-pointer" onClick={onToggle}>
                 <div className="flex justify-between items-start md:items-center flex-col md:flex-row gap-4">
-                    <div className="flex items-center gap-4">
+                    <div className="flex items-center gap-4 flex-1 min-w-0">
                         <div className="bg-blue-100 dark:bg-blue-900/30 p-2.5 rounded-lg text-blue-600 dark:text-blue-400 font-bold">
                             <FileText size={20} />
                         </div>
-                        <div>
+                        <div className="min-w-0">
                             <h3 className="font-bold text-lg text-slate-900 dark:text-white">
                                 {groupBy === 'BOX' ? `Caixa #${nf} (NF: ${items[0]?.nfNumber || 'SEM_NF'})` : `NF: ${nf}`}
                             </h3>
-                            <p className="text-xs text-slate-500 dark:text-zinc-400">
+                            <p className="text-xs text-slate-500 dark:text-zinc-400 truncate whitespace-nowrap text-ellipsis">
                                 Enviado em {sentDate} por <b>{sentByName}</b>
                             </p>
                         </div>
                     </div>
-                    <div className="flex items-center gap-3">
+                    <div className="flex-none flex justify-center items-center gap-3">
                         <Button
                             variant="ghost"
                             size="sm"
                             className="text-green-600 hover:bg-green-50 border border-green-200 h-10"
                             onClick={(e) => {
                                 e.stopPropagation();
-                                exportInvoiceReport(items, nf);
+                                exportIQCEnvioTemplate(items, nf, items[0]?.sentAt ? String(items[0].sentAt).slice(0, 10) : undefined);
                             }}
                         >
                             <FileSpreadsheet size={16} className="mr-2" />
-                            Excel
+                            CONTROLE DE DEVOLUÇÃO
                         </Button>
-                        <div className="text-right">
-                            <p className="text-2xl font-bold text-slate-900 dark:text-white">{formatCurrency(totalValue)}</p>
-                            <p className="text-xs text-slate-500">{items.reduce((acc, s) => acc + (s.qty || 0), 0)} itens registrados</p>
-                        </div>
+                        <Button
+                            variant="secondary"
+                            size="sm"
+                            className="h-10"
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                exportEspelhoScrapTemplate(items, nf);
+                            }}
+                        >
+                            <FileSpreadsheet size={16} className="mr-2" />
+                            ESPELHO SCRAP
+                        </Button>
                     </div>
-                    <div>
-                        {isExpanded ? <ChevronUp size={20} className="text-slate-400" /> : <ChevronDown size={20} className="text-slate-400" />}
+                    <div className="flex-1 flex flex-col justify-center items-end min-w-0">
+                        <p className="text-2xl font-bold text-slate-900 dark:text-white text-right">{formatCurrency(totalValue)}</p>
+                        <p className="text-xs text-slate-500 text-right">{items.reduce((acc, s) => acc + (s.qty || 0), 0)} itens registrados</p>
+                        <div>
+                            {isExpanded ? <ChevronUp size={20} className="text-slate-400" /> : <ChevronDown size={20} className="text-slate-400" />}
+                        </div>
                     </div>
                 </div>
             </div>

@@ -5,6 +5,7 @@ import { User, ChecklistItem, ChecklistLog, MeetingLog, LineStopData, ChecklistD
 import { getLogs, getLogsByWeekSyncStrict } from './storageService';
 import { getAllUsers } from './authService';
 import { getMaterials } from './scrapService';
+import { apiFetch } from '../services/networkConfig';
 
 const getWeekNumber = (d: Date) => {
     d = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
@@ -1166,6 +1167,240 @@ export const exportInvoiceReport = async (scraps: ScrapData[], nfNumber: string)
     await exportExecutiveReport(scraps, `Relatorio_NF_${nfNumber}`);
 };
 
+export const exportIQCEnvioTemplate = async (scraps: any[], nfNumber?: string, dateFilter?: string) => {
+    const workbook = new ExcelJS.Workbook();
+    const modelsData = await apiFetch('/config/models').catch(() => []);
+    const unifiedModelMap: Record<string, string> = {};
+    modelsData.forEach((m: any) => { unifiedModelMap[m.name] = m.unifiedCode || String(m.name || '').split('/')[0].trim(); });
+
+    const formatDateBR = (input: any): string => {
+        if (!input) return '';
+        const date = new Date(input);
+        if (isNaN(date.getTime())) return '';
+        const day = String(date.getDate()).padStart(2, '0');
+        const month = String(date.getMonth() + 1).padStart(2, '0');
+        const year = String(date.getFullYear());
+        return `${day}/${month}/${year}`;
+    };
+
+    const parseDate = (input: any): Date | null => {
+        if (!input) return null;
+        const date = new Date(input);
+        return isNaN(date.getTime()) ? null : date;
+    };
+
+    let loadedTemplate = false;
+    try {
+        const response = await fetch('/template_envio.xlsx');
+        if (!response.ok) throw new Error(`Template fetch status: ${response.status}`);
+        const buffer = await response.arrayBuffer();
+        await workbook.xlsx.load(buffer);
+        loadedTemplate = true;
+    } catch (e) {
+        console.warn('Template de envio não encontrado. Criando planilha base.', e);
+    }
+
+    let sheet = workbook.worksheets[0];
+    if (!sheet) {
+        sheet = workbook.addWorksheet('Envio IQC');
+    }
+
+    if (!loadedTemplate) {
+        sheet.columns = [
+            { key: 'code', width: 16 },
+            { key: 'model', width: 16 },
+            { key: 'description', width: 32 },
+            { key: 'item', width: 18 },
+            { key: 'plant', width: 12 },
+            { key: 'scrapType', width: 12 },
+            { key: 'qty', width: 12 },
+            { key: 'status', width: 12 },
+            { key: 'client', width: 14 },
+            { key: 'nf', width: 16 },
+            { key: 'totalValue', width: 16 },
+            { key: 'sentAt', width: 14 },
+        ];
+
+        const baseHeaderRow = sheet.getRow(4);
+        baseHeaderRow.values = [
+            '',
+            'Codigo',
+            'Modelo',
+            'Descricao',
+            'Categoria',
+            'Planta',
+            'Tipo',
+            'QTY',
+            'Status',
+            'Cliente',
+            'NF',
+            'Valor Total',
+            'Data Envio'
+        ];
+        baseHeaderRow.font = { bold: true };
+    }
+
+    type GroupedItem = {
+        code: string;
+        model: string;
+        description: string;
+        item: string;
+        plant: string;
+        status: string;
+        nf: string;
+        sentAt: string;
+        sentAtDate: Date | null;
+        qty: number;
+        totalValue: number;
+    };
+
+    const grouped: Record<string, GroupedItem> = {};
+
+    scraps.forEach((scrap) => {
+        const code = String(scrap?.code || '').trim();
+        const rawModel = String(scrap?.model || '').trim();
+        const model = unifiedModelMap[rawModel] || rawModel.split('/')[0].trim();
+        const description = String(scrap?.description || '').trim();
+        const item = String(scrap?.item || '').trim();
+        const plant = String(scrap?.plant || '').trim();
+        const status = String(scrap?.status || '').trim();
+        const currentNf = String(nfNumber || scrap?.nfNumber || '').trim();
+        const sentAtDate = parseDate(scrap?.sentAt);
+        const sentAt = formatDateBR(sentAtDate);
+
+        const key = `${code}||${model}||${description}||${item}||${plant}||${status}||${currentNf}||${sentAt}`;
+
+        if (!grouped[key]) {
+            grouped[key] = {
+                code,
+                model,
+                description,
+                item,
+                plant,
+                status,
+                nf: currentNf,
+                sentAt,
+                sentAtDate,
+                qty: 0,
+                totalValue: 0,
+            };
+        }
+
+        grouped[key].qty += Number(scrap?.qty || 0);
+        grouped[key].totalValue += Number(scrap?.totalValue || 0);
+    });
+
+    const groupedSorted = Object.values(grouped).sort((a, b) => {
+        const dateA = a.sentAtDate ? a.sentAtDate.getTime() : Number.MAX_SAFE_INTEGER;
+        const dateB = b.sentAtDate ? b.sentAtDate.getTime() : Number.MAX_SAFE_INTEGER;
+        return dateA - dateB;
+    });
+
+    let currentRow = 5;
+    groupedSorted.forEach((rowData) => {
+        const row = sheet.getRow(currentRow);
+        sheet.getCell(`A${currentRow}`).value = rowData.code;
+        row.getCell(2).value = String(rowData.model);
+        row.getCell(2).numFmt = '@';
+        sheet.getCell(`C${currentRow}`).value = rowData.description;
+        sheet.getCell(`D${currentRow}`).value = rowData.item;
+        sheet.getCell(`E${currentRow}`).value = rowData.plant;
+        sheet.getCell(`F${currentRow}`).value = 'SCRAP';
+        sheet.getCell(`G${currentRow}`).value = rowData.qty;
+        sheet.getCell(`H${currentRow}`).value = rowData.status;
+        sheet.getCell(`I${currentRow}`).value = 'SAMSUNG';
+        sheet.getCell(`J${currentRow}`).value = rowData.nf;
+        sheet.getCell(`K${currentRow}`).value = rowData.totalValue;
+        sheet.getCell(`L${currentRow}`).value = rowData.sentAt;
+
+        row.eachCell({ includeEmpty: false }, (cell) => {
+            cell.border = {
+                top: { style: 'thin' },
+                left: { style: 'thin' },
+                bottom: { style: 'thin' },
+                right: { style: 'thin' },
+            };
+        });
+
+        currentRow += 1;
+    });
+
+    const today = new Date();
+    const dateStr = dateFilter || `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+    const safeDate = String(dateStr).replace(/[\\/:*?"<>|]/g, '_');
+    const safeNf = String(nfNumber || '').replace(/[\\/:*?"<>|]/g, '_');
+
+    const buffer = await workbook.xlsx.writeBuffer();
+    const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+    const fileName = safeNf ? `FORQIT_05 CONTROLE DE DEVOLUÇÃO_NF=${safeNf}_${safeDate}.xlsx` : `FORQIT_05 CONTROLE DE DEVOLUÇÃO_${safeDate}.xlsx`;
+    saveAs(blob, fileName);
+};
+
+export const exportEspelhoScrapTemplate = async (scraps: any[], nfNumber: string) => {
+    const workbook = new ExcelJS.Workbook();
+    const modelsData = await apiFetch('/config/models').catch(() => []);
+    const unifiedModelMap: Record<string, string> = {};
+    modelsData.forEach((m: any) => { unifiedModelMap[m.name] = m.unifiedCode || String(m.name || '').split('/')[0].trim(); });
+
+    try {
+        const response = await fetch('/template_espelho.xlsx');
+        if (!response.ok) throw new Error(`Template fetch status: ${response.status}`);
+        const buffer = await response.arrayBuffer();
+        await workbook.xlsx.load(buffer);
+    } catch (e) {
+        console.warn('Template espelho não encontrado. Criando planilha em branco.', e);
+    }
+
+    let sheet = workbook.worksheets[0];
+    if (!sheet) {
+        sheet = workbook.addWorksheet('Espelho Scrap');
+    }
+
+    const grouped: Record<string, { code: string; model: string; description: string; qty: number; status: string }> = {};
+
+    scraps.forEach((scrap) => {
+        const code = String(scrap?.code || '').trim();
+        const rawModel = String(scrap?.model || '').trim();
+        const model = unifiedModelMap[rawModel] || rawModel.split('/')[0].trim();
+        const description = String(scrap?.description || '').trim();
+        const status = String(scrap?.status || '').trim();
+        const key = `${code}||${model}||${description}||${status}`;
+
+        if (!grouped[key]) {
+            grouped[key] = { code, model, description, qty: 0, status };
+        }
+
+        grouped[key].qty += Number(scrap?.qty || 0);
+    });
+
+    let currentRow = 3;
+    Object.values(grouped).forEach((group) => {
+        const row = sheet.getRow(currentRow);
+        sheet.getCell(currentRow, 1).value = group.code;
+        row.getCell(2).value = String(group.model);
+        row.getCell(2).numFmt = '@';
+        sheet.getCell(currentRow, 3).value = group.description;
+        sheet.getCell(currentRow, 4).value = group.qty;
+        sheet.getCell(currentRow, 5).value = group.status;
+        sheet.getCell(currentRow, 6).value = nfNumber;
+
+        row.eachCell({ includeEmpty: false }, (cell) => {
+            cell.border = {
+                top: { style: 'thin' },
+                left: { style: 'thin' },
+                bottom: { style: 'thin' },
+                right: { style: 'thin' },
+            };
+        });
+
+        currentRow += 1;
+    });
+
+    const buffer = await workbook.xlsx.writeBuffer();
+    const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+    saveAs(blob, `Espelho_Scrap_NF_${nfNumber}.xlsx`);
+};
+
 // ... existing exports ...
 
 export const downloadPreparationExcel = async (logs: PreparationLog[], filters: { date: string, shift: string }) => {
@@ -1638,50 +1873,143 @@ export const exportWorkstationsByModel = async (workstations: any[]) => {
 };
 
 export const exportGloveControl = async (displayList: any[], leaderName: string) => {
-    const workbook = new ExcelJS.Workbook();
-    const sheet = workbook.addWorksheet('Luvas - Equipe');
+    void leaderName;
+    await exportGloveControlTemplate(displayList);
+};
 
-    sheet.columns = [
-        { header: 'Matrícula', key: 'matricula', width: 15 },
-        { header: 'Nome', key: 'nome', width: 30 },
-        { header: 'Função', key: 'funcao', width: 25 },
-        { header: 'Tamanho', key: 'tamanho', width: 15 },
-        { header: 'Tipo', key: 'tipo', width: 15 },
-        { header: 'Trocas/Sem', key: 'trocas', width: 15 }
-    ];
+export const exportGloveControlTemplate = async (employees: any[]) => {
+    try {
+        const workbook = new ExcelJS.Workbook();
 
-    const headerRow = sheet.getRow(1);
-    headerRow.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1E3A8A' } };
-    headerRow.font = { color: { argb: 'FFFFFFFF' }, bold: true };
-    headerRow.alignment = { horizontal: 'center' };
+        const response = await fetch('/template_luvas.xlsx');
+        if (!response.ok) throw new Error('Erro 404: template_luvas.xlsx não encontrado na pasta public');
+        const buffer = await response.arrayBuffer();
+        await workbook.xlsx.load(buffer);
 
-    let totalLuvas = 0;
+        const sheet = workbook.getWorksheet(1);
+        if (!sheet) throw new Error('Aba 1 não encontrada no template');
 
-    displayList.forEach(e => {
-        let sizeVal = e.gloveSize || '';
-        if (e.gloveType === 'Dedinho' && sizeVal) {
-            sizeVal = `${sizeVal}(D)`;
-        }
+        const getRolePriority = (role: string) => {
+            const r = (role || '').toLowerCase();
+            if (r.includes('lider') || r.includes('líder')) return 0;
+            if (r.includes('desmonte')) return 1;
+            if (r.includes('alimentador')) return 2;
+            return 3;
+        };
 
-        const trocas = Number(e.gloveExchanges) || 0;
-        totalLuvas += trocas;
-
-        sheet.addRow({
-            matricula: e.matricula,
-            nome: e.fullName,
-            funcao: e.role,
-            tamanho: sizeVal,
-            tipo: e.gloveType || '',
-            trocas: trocas
+        const safeEmployees = Array.isArray(employees) ? employees : [];
+        const sorted = [...safeEmployees].sort((a, b) => {
+            const roleA = (a?.role || '').toLowerCase();
+            const roleB = (b?.role || '').toLowerCase();
+            return getRolePriority(roleA) - getRolePriority(roleB);
         });
-    });
 
-    const dashRow = sheet.addRow(['', '', '', '', 'TOTAL LUVAS:', totalLuvas]);
-    dashRow.font = { bold: true };
-    dashRow.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFEF08A' } }; // yellow light
+        const thinBorder: Partial<ExcelJS.Borders> = {
+            top: { style: 'thin' }, left: { style: 'thin' },
+            bottom: { style: 'thin' }, right: { style: 'thin' },
+        };
+        const applyBorder = (cell: ExcelJS.Cell) => { cell.border = thinBorder; };
 
-    const buffer = await workbook.xlsx.writeBuffer();
-    const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
-    saveAs(blob, `controle_luvas_${leaderName}.xlsx`);
+        type RowEntry = { name: string; matricula: string; role: string; sizeDisplay: string; gloveType: string; fValue: number };
+        const rowData: RowEntry[] = sorted.map(emp => {
+            const role = emp?.role || '';
+            const gloveType = emp?.gloveType || '';
+            const gloveTypeLower = (emp?.gloveType || '').toLowerCase();
+            const trocasExtras = isNaN(Number(emp?.gloveExchanges)) ? 0 : Number(emp?.gloveExchanges);
+            const sizeDisplay = `${emp?.gloveSize || ''}${gloveTypeLower.includes('dedinho') ? ' (D)' : ''}`.trim();
+            const fValue = 1 + trocasExtras;
+            return {
+                name: emp?.fullName || emp?.name || '',
+                matricula: emp?.matricula || '',
+                role,
+                sizeDisplay,
+                gloveType,
+                fValue,
+            };
+        });
+
+        // Main data A-F from row 3
+        let currentRow = 3;
+        rowData.forEach(rd => {
+            const row = sheet.getRow(currentRow);
+            row.getCell(1).value = rd.name;
+            row.getCell(2).value = rd.matricula;
+            row.getCell(3).value = rd.role;
+            row.getCell(4).value = rd.sizeDisplay;
+            row.getCell(5).value = rd.gloveType;
+            row.getCell(6).value = rd.fValue;
+            [1, 2, 3, 4, 5, 6].forEach(col => applyBorder(row.getCell(col)));
+            currentRow++;
+        });
+
+        // Size summary H:I from row 3
+        const sizeMap: Record<string, number> = {};
+        const sizeOrder: string[] = [];
+        rowData.forEach(rd => {
+            if (!rd.sizeDisplay) return;
+            if (sizeMap[rd.sizeDisplay] === undefined) {
+                sizeMap[rd.sizeDisplay] = 0;
+                sizeOrder.push(rd.sizeDisplay);
+            }
+            sizeMap[rd.sizeDisplay] += rd.fValue;
+        });
+
+        let sizeRow = 3;
+        let sizeTotalQty = 0;
+        sizeOrder.forEach(size => {
+            const qty = sizeMap[size];
+            const row = sheet.getRow(sizeRow);
+            row.getCell(8).value = size;
+            row.getCell(9).value = qty;
+            applyBorder(row.getCell(8));
+            applyBorder(row.getCell(9));
+            sizeTotalQty += qty;
+            sizeRow++;
+        });
+
+        const sizeTotalRow = sheet.getRow(sizeRow);
+        sizeTotalRow.getCell(8).value = 'TOTAL';
+        sizeTotalRow.getCell(9).value = sizeTotalQty;
+        applyBorder(sizeTotalRow.getCell(8));
+        applyBorder(sizeTotalRow.getCell(9));
+
+        // Role summary K:L from row 3
+        const roleMap: Record<string, number> = {};
+        const roleOrder: string[] = [];
+        rowData.forEach(rd => {
+            if (!rd.role) return;
+            if (roleMap[rd.role] === undefined) {
+                roleMap[rd.role] = 0;
+                roleOrder.push(rd.role);
+            }
+            roleMap[rd.role] += rd.fValue;
+        });
+
+        let roleRow = 3;
+        let roleTotalQty = 0;
+        roleOrder.forEach(role => {
+            const qty = roleMap[role];
+            const row = sheet.getRow(roleRow);
+            row.getCell(11).value = role;
+            row.getCell(12).value = qty;
+            applyBorder(row.getCell(11));
+            applyBorder(row.getCell(12));
+            roleTotalQty += qty;
+            roleRow++;
+        });
+
+        const roleTotalRow = sheet.getRow(roleRow);
+        roleTotalRow.getCell(11).value = 'TOTAL';
+        roleTotalRow.getCell(12).value = roleTotalQty;
+        applyBorder(roleTotalRow.getCell(11));
+        applyBorder(roleTotalRow.getCell(12));
+
+        const outputBuffer = await workbook.xlsx.writeBuffer();
+        const blob = new Blob([outputBuffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+        saveAs(blob, `Controle_Luvas_${new Date().toISOString().slice(0, 10)}.xlsx`);
+    } catch (error) {
+        console.error('Erro na geração de luvas:', error);
+        throw error;
+    }
 };
 

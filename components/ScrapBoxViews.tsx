@@ -476,7 +476,10 @@ export const ScrapBoxIdentified = ({ currentUser, onUpdate, users = [] }: { curr
                                     <div className="flex justify-between items-start mb-4">
                                         <div>
                                             <h3 className="font-bold text-lg text-slate-900 dark:text-white">Caixa #{box.id}</h3>
-                                            <span className="text-xs text-zinc-500 uppercase">{box.type}</span>
+                                                <div className="flex items-center gap-2 mt-1">
+                                                    <span className="bg-slate-200 dark:bg-zinc-800 text-xs px-2 py-1 rounded font-bold uppercase">{box.type}</span>
+                                                    <span className="bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 text-xs px-2 py-1 rounded font-bold uppercase">{box.plant || 'SEM PLANTA'}</span>
+                                                </div>
                                         </div>
                                         <div className="bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 text-[10px] px-2 py-1 rounded font-bold">
                                             IDENTIFICADA
