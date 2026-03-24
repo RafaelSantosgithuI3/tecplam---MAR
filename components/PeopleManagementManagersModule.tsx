@@ -5,7 +5,7 @@ import { Input } from './Input';
 import { Shield, Plus, Search, User as UserIcon, List, ArrowLeft, CheckCircle, Clock, Save, Download, HandMetal, Scan, X, Upload } from 'lucide-react';
 import { apiFetch } from '../services/networkConfig';
 import { QRStreamReader } from './QRStreamReader';
-import { exportLeaderLayout, exportModelLayout, exportGloveControl, exportEmployeeTemplate } from '../services/excelService';
+import { exportLeaderLayout, exportModelLayout, exportGloveControl, exportEmployeeTemplate, exportEmployeeListForManagers } from '../services/excelService';
 import * as XLSX from 'xlsx';
 
 import { EmployeeData, User, ConfigModel, Workstation, ConfigRole } from '../types';
@@ -133,14 +133,14 @@ export const PeopleManagementManagersModule: React.FC<Props> = ({ onBack, curren
         return selectedLeaderId
             ? employees
                 .filter((e) => e.superiorId === selectedLeaderId)
-                .filter((e) => String(e?.role || '').toUpperCase().includes('MONTADOR'))
+                .filter((e) => !layoutMasterModel || String(e?.role || '').toUpperCase().includes('MONTADOR'))
                 .sort((a, b) => {
                     const priorityDiff = getLayoutRolePriority(String(a?.role || '')) - getLayoutRolePriority(String(b?.role || ''));
                     if (priorityDiff !== 0) return priorityDiff;
                     return String(a?.fullName || '').localeCompare(String(b?.fullName || ''));
                 })
             : [];
-    }, [employees, selectedLeaderId]);
+    }, [employees, selectedLeaderId, layoutMasterModel]);
 
     const workstationMatchesModel = (workstation: any, model: string) => {
         const workstationModel = String(workstation?.modelName || '');
@@ -514,6 +514,7 @@ export const PeopleManagementManagersModule: React.FC<Props> = ({ onBack, curren
     const [searchQuery, setSearchQuery] = useState('');
     const [consultResult, setConsultResult] = useState<any>(null);
     const [showMissesModal, setShowMissesModal] = useState(false);
+    const [consultShiftFilter, setConsultShiftFilter] = useState('');
 
     // Filters for modal
     const [historyFilterType, setHistoryFilterType] = useState<'semana' | 'mes' | 'ano' | 'todos'>('mes');
@@ -577,14 +578,33 @@ export const PeopleManagementManagersModule: React.FC<Props> = ({ onBack, curren
 
     const renderConsulta = () => (
         <div className="space-y-4">
-            <Card className="flex gap-2 items-end">
-                <div className="flex-1"><Input label="Buscar Matrícula" value={searchQuery} onChange={e => setSearchQuery(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleConsult()} /></div>
+            <Card className="flex flex-wrap gap-2 items-end">
+                <div className="flex-1 min-w-[160px]"><Input label="Buscar Matrícula" value={searchQuery} onChange={e => setSearchQuery(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleConsult()} /></div>
+                <div className="flex flex-col gap-1">
+                    <label className="text-xs font-bold text-slate-500 dark:text-zinc-400 uppercase tracking-wide">Turno</label>
+                    <select
+                        className="bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 rounded-xl px-4 py-2.5 text-slate-900 dark:text-zinc-100 text-sm focus:outline-none focus:ring-2 focus:ring-cyan-500/20 focus:border-cyan-500"
+                        value={consultShiftFilter}
+                        onChange={e => setConsultShiftFilter(e.target.value)}
+                    >
+                        <option value="">Todos</option>
+                        <option value="1º TURNO">1º TURNO</option>
+                        <option value="2º TURNO">2º TURNO</option>
+                    </select>
+                </div>
                 {isAndroid && (
                     <Button variant="secondary" onClick={() => setShowScanner(true)}>
                         <Scan size={16} /> Ler QR Code
                     </Button>
                 )}
                 <Button onClick={handleConsult}><Search size={16} /> Buscar</Button>
+                <Button variant="secondary" onClick={() => {
+                    const list = selectedLeaderId
+                        ? employees.filter(e => e.superiorId === selectedLeaderId && (!consultShiftFilter || e.shift === consultShiftFilter))
+                        : employees.filter(e => !consultShiftFilter || e.shift === consultShiftFilter);
+                    const label = consultShiftFilter ? consultShiftFilter.replace(/º\s*/i, '') : 'Todos';
+                    exportEmployeeListForManagers(list, label);
+                }}><Download size={16} /> Baixar Colaboradores</Button>
             </Card>
 
             {showScanner && (
@@ -603,9 +623,10 @@ export const PeopleManagementManagersModule: React.FC<Props> = ({ onBack, curren
                     <p className="text-sm font-bold text-slate-500 uppercase tracking-wide mb-2">{selectedLeaderId ? 'Colaboradores da equipe selecionada' : 'Todos os Colaboradores'}</p>
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                         {(selectedLeaderId ? subordinados : employees)
+                            .filter((emp: any) => !consultShiftFilter || emp.shift === consultShiftFilter)
                             .filter((emp: any) => !searchQuery || emp.matricula.toLowerCase().includes(searchQuery.toLowerCase()) || emp.fullName.toLowerCase().includes(searchQuery.toLowerCase()))
                             .map((emp: any) => (
-                                <div key={emp.matricula} onClick={() => { setSearchQuery(emp.matricula); handleConsult(emp.matricula); }} className="flex items-center gap-3 p-3 rounded-xl border border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 hover:border-cyan-500 cursor-pointer">
+                                <div key={emp.matricula} onClick={() => { setSearchQuery(emp.matricula); handleConsult(emp.matricula); }} className="flex items-center gap-3 p-3 rounded-xl border border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 hover:border-cyan-500 cursor-pointer transition-all">
                                     {emp.photo ? <img src={emp.photo} className="w-10 h-10 rounded-full object-cover shrink-0" /> : <div className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center shrink-0"><UserIcon size={20} className="text-slate-400" /></div>}
                                     <div className="min-w-0">
                                         <p className="font-bold text-sm text-slate-800 dark:text-zinc-100 truncate">{emp.fullName}</p>
@@ -935,15 +956,16 @@ export const PeopleManagementManagersModule: React.FC<Props> = ({ onBack, curren
                             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
                                 {filteredTeam.map(emp => (
                                     <div key={emp.matricula} onClick={() => setAttSelectedEmployee(emp)}
-                                        className="flex items-center gap-3 p-3 rounded-xl border border-slate-200 dark:border-zinc-800 bg-slate-50 dark:bg-zinc-900 hover:border-cyan-500 hover:bg-cyan-50 dark:hover:bg-cyan-900/20 cursor-pointer transition-all">
+                                        className="flex items-center gap-3 p-3 rounded-xl border border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 hover:border-cyan-500 cursor-pointer transition-all">
                                         {emp.photo ? (
                                             <img src={emp.photo} alt={emp.fullName} className="w-10 h-10 rounded-full object-cover shrink-0" />
                                         ) : (
-                                            <div className="w-10 h-10 rounded-full bg-slate-200 dark:bg-zinc-800 flex items-center justify-center shrink-0"><UserIcon size={20} className="text-slate-400" /></div>
+                                            <div className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center shrink-0"><UserIcon size={20} className="text-slate-400" /></div>
                                         )}
-                                        <div className="overflow-hidden">
+                                        <div className="min-w-0">
                                             <p className="font-bold text-sm text-slate-800 dark:text-zinc-100 truncate">{emp.fullName}</p>
-                                            <p className="text-xs text-slate-500">{emp.matricula}</p>
+                                            <p className="text-xs text-slate-500 font-mono truncate">{emp.matricula}</p>
+                                            <p className="text-xs text-slate-500 truncate">{emp.role} • {emp.shift}</p>
                                         </div>
                                     </div>
                                 ))}

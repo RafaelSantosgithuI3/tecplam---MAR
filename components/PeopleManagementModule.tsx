@@ -654,18 +654,19 @@ export const PeopleManagementModule = ({ onBack, currentUser, hasTabAccess }: Pe
                                     <div
                                         key={emp.matricula}
                                         onClick={() => setAttSelectedEmployee(emp)}
-                                        className="flex items-center gap-3 p-3 rounded-xl border border-slate-200 dark:border-zinc-800 bg-slate-50 dark:bg-zinc-900 hover:border-cyan-500 hover:bg-cyan-50 dark:hover:bg-cyan-900/20 cursor-pointer transition-all"
+                                        className="flex items-center gap-3 p-3 rounded-xl border border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 hover:border-cyan-500 cursor-pointer transition-all"
                                     >
                                         {emp.photo ? (
                                             <img src={emp.photo} alt={emp.fullName} className="w-10 h-10 rounded-full object-cover shrink-0" />
                                         ) : (
-                                            <div className="w-10 h-10 rounded-full bg-slate-200 dark:bg-zinc-800 flex items-center justify-center shrink-0">
+                                            <div className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center shrink-0">
                                                 <UserIcon size={20} className="text-slate-400" />
                                             </div>
                                         )}
-                                        <div className="overflow-hidden">
+                                        <div className="min-w-0">
                                             <p className="font-bold text-sm text-slate-800 dark:text-zinc-100 truncate">{emp.fullName}</p>
-                                            <p className="text-xs text-slate-500">{emp.matricula}</p>
+                                            <p className="text-xs text-slate-500 font-mono truncate">{emp.matricula}</p>
+                                            <p className="text-xs text-slate-500 truncate">{emp.role} • {emp.shift}</p>
                                         </div>
                                     </div>
                                 ))}
@@ -828,13 +829,13 @@ export const PeopleManagementModule = ({ onBack, currentUser, hasTabAccess }: Pe
     const subordinados = useMemo(
         () => employees
             .filter(e => e.superiorId === currentUser.matricula)
-            .filter(e => String(e?.role || '').toUpperCase().includes('MONTADOR'))
+            .filter(e => !layoutMasterModel || String(e?.role || '').toUpperCase().includes('MONTADOR'))
             .sort((a, b) => {
                 const priorityDiff = getLayoutRolePriority(String(a?.role || '')) - getLayoutRolePriority(String(b?.role || ''));
                 if (priorityDiff !== 0) return priorityDiff;
                 return String(a?.fullName || '').localeCompare(String(b?.fullName || ''));
             }),
-        [employees, currentUser.matricula]
+        [employees, currentUser.matricula, layoutMasterModel]
     );
 
     const workstationMatchesModel = (workstation: any, model: string) => {

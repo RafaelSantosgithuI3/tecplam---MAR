@@ -68,6 +68,81 @@ export const exportEmployeeTemplate = async (rolesList: any[] = []) => {
     saveAs(blob, 'Template_Cadastro_Funcionarios.xlsx');
 };
 
+export const exportEmployeeListForManagers = async (employees: any[], label?: string) => {
+    const getShiftPriority = (shift: string) => {
+        const s = String(shift || '').trim();
+        if (s.includes('1')) return 0;
+        if (s.includes('2')) return 1;
+        return 2;
+    };
+
+    const sorted = [...employees].sort((a, b) => {
+        const shiftDiff = getShiftPriority(a.shift) - getShiftPriority(b.shift);
+        if (shiftDiff !== 0) return shiftDiff;
+        const roleDiff = String(a.role || '').localeCompare(String(b.role || ''), 'pt-BR', { sensitivity: 'base' });
+        if (roleDiff !== 0) return roleDiff;
+        return String(a.fullName || '').localeCompare(String(b.fullName || ''), 'pt-BR', { sensitivity: 'base' });
+    });
+
+    const workbook = new ExcelJS.Workbook();
+    const sheet = workbook.addWorksheet('Colaboradores');
+
+    sheet.columns = [
+        { header: 'Matrícula', key: 'matricula', width: 15 },
+        { header: 'Nome', key: 'nome', width: 30 },
+        { header: 'Função', key: 'funcao', width: 25 },
+        { header: 'Turno', key: 'turno', width: 15 },
+        { header: 'Líder', key: 'lider', width: 25 },
+        { header: 'Setor', key: 'setor', width: 20 },
+        { header: 'IDL-ST', key: 'idlst', width: 15 },
+        { header: 'Tipo', key: 'tipo', width: 15 },
+        { header: 'Status', key: 'status', width: 15 },
+    ];
+
+    const headerRow = sheet.getRow(1);
+    headerRow.font = { bold: true, color: { argb: 'FFFFFFFF' } };
+    headerRow.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF7C3AED' } };
+    headerRow.alignment = { horizontal: 'center', vertical: 'middle' };
+    headerRow.height = 20;
+    headerRow.eachCell(cell => {
+        cell.border = {
+            top: { style: 'thin' }, left: { style: 'thin' },
+            bottom: { style: 'thin' }, right: { style: 'thin' }
+        };
+    });
+
+    const borderStyle: Partial<ExcelJS.Borders> = {
+        top: { style: 'thin' }, left: { style: 'thin' },
+        bottom: { style: 'thin' }, right: { style: 'thin' }
+    };
+
+    sorted.forEach((emp, idx) => {
+        const dataRow = sheet.addRow({
+            matricula: emp.matricula || '',
+            nome: emp.fullName || '',
+            funcao: emp.role || '',
+            turno: emp.shift || '',
+            lider: emp.superiorId || '',
+            setor: emp.sector || '',
+            idlst: emp.idlSt || '',
+            tipo: emp.type || '',
+            status: emp.status || '',
+        });
+        dataRow.fill = {
+            type: 'pattern', pattern: 'solid',
+            fgColor: { argb: idx % 2 === 0 ? 'FFFAFAFA' : 'FFFFFFFF' }
+        };
+        for (let col = 1; col <= 9; col++) {
+            dataRow.getCell(col).border = borderStyle;
+        }
+    });
+
+    const fileName = label ? `Lista_Colaboradores_${label}.xlsx` : 'Lista_Colaboradores.xlsx';
+    const buffer = await workbook.xlsx.writeBuffer();
+    const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+    saveAs(blob, fileName);
+};
+
 const loadTemplate = async (): Promise<ExcelJS.Workbook> => {
     const workbook = new ExcelJS.Workbook();
     try {
@@ -1384,14 +1459,15 @@ export const exportEspelhoScrapTemplate = async (scraps: any[], nfNumber: string
         sheet.getCell(currentRow, 5).value = group.status;
         sheet.getCell(currentRow, 6).value = nfNumber;
 
-        row.eachCell({ includeEmpty: false }, (cell) => {
+        for (let col = 1; col <= 6; col++) {
+            const cell = row.getCell(col);
             cell.border = {
                 top: { style: 'thin' },
                 left: { style: 'thin' },
                 bottom: { style: 'thin' },
                 right: { style: 'thin' },
             };
-        });
+        }
 
         currentRow += 1;
     });
@@ -1801,12 +1877,19 @@ export const exportLeaderLayout = async (leader: any, subordinados: any[]) => {
     const sheet = workbook.getWorksheet(1) || workbook.addWorksheet('Layout por Líder');
 
     const sortedSubordinados = [...(Array.isArray(subordinados) ? subordinados : [])]
-        .filter((subordinado: any) => String(subordinado?.role || '').toUpperCase().includes('MONTADOR'))
         .sort((a, b) => {
             const priorityDiff = getLayoutRolePriority(String(a?.role || '')) - getLayoutRolePriority(String(b?.role || ''));
             if (priorityDiff !== 0) return priorityDiff;
             return String(a?.fullName || '').localeCompare(String(b?.fullName || ''));
         });
+
+    const thinBorder: Partial<ExcelJS.Borders> = {
+        top: { style: 'thin' },
+        bottom: { style: 'thin' },
+        left: { style: 'thin' },
+        right: { style: 'thin' }
+    };
+    let maxPostosTextLength = 0;
 
     for (let i = 0; i < sortedSubordinados.length; i++) {
         const subordinado = sortedSubordinados[i];
@@ -1817,7 +1900,7 @@ export const exportLeaderLayout = async (leader: any, subordinados: any[]) => {
             const layouts = await apiFetch(`/layout?matricula=${encodeURIComponent(String(subordinado?.matricula || ''))}`);
             if (Array.isArray(layouts)) {
                 postosText = layouts
-                    .map((layout: any) => `{${layout?.modelo || ''}:${layout?.ordemPosto || ''}}`)
+                    .map((layout: any) => String(layout?.ordemPosto || '').trim())
                     .filter(Boolean)
                     .join(', ');
             }
@@ -1825,13 +1908,34 @@ export const exportLeaderLayout = async (leader: any, subordinados: any[]) => {
             postosText = '';
         }
 
-        sheet.getCell(`A${rowNumber}`).value = subordinado?.matricula || '';
-        sheet.getCell(`B${rowNumber}`).value = subordinado?.fullName || '';
-        sheet.getCell(`C${rowNumber}`).value = subordinado?.role || '';
-        sheet.getCell(`D${rowNumber}`).value = subordinado?.shift || '';
-        sheet.getCell(`E${rowNumber}`).value = postosText;
-        sheet.getCell(`E${rowNumber}`).alignment = { wrapText: true, vertical: 'middle' };
+        maxPostosTextLength = Math.max(maxPostosTextLength, postosText.length);
+
+        const cellA = sheet.getCell(`A${rowNumber}`);
+        const cellB = sheet.getCell(`B${rowNumber}`);
+        const cellC = sheet.getCell(`C${rowNumber}`);
+        const cellD = sheet.getCell(`D${rowNumber}`);
+        const cellE = sheet.getCell(`E${rowNumber}`);
+
+        cellA.value = subordinado?.matricula || '';
+        cellB.value = subordinado?.fullName || '';
+        cellC.value = subordinado?.role || '';
+        cellD.value = subordinado?.shift || '';
+        cellE.value = postosText;
+
+        cellA.alignment = { vertical: 'middle', horizontal: 'center' };
+        cellB.alignment = { vertical: 'middle', horizontal: 'left' };
+        cellC.alignment = { vertical: 'middle', horizontal: 'center' };
+        cellD.alignment = { vertical: 'middle', horizontal: 'center' };
+        cellE.alignment = { vertical: 'middle', horizontal: 'center' };
+
+        cellA.border = thinBorder;
+        cellB.border = thinBorder;
+        cellC.border = thinBorder;
+        cellD.border = thinBorder;
+        cellE.border = thinBorder;
     }
+
+    sheet.getColumn('E').width = Math.max(10, maxPostosTextLength + 2);
 
     const buffer = await workbook.xlsx.writeBuffer();
     const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });

@@ -1221,6 +1221,11 @@ export const ScrapManagementAdvanced = ({ scraps, users }: any) => {
         model: 'ALL'
     });
     const [showChartsModal, setShowChartsModal] = useState(false);
+    const [chartFilters, setChartFilters] = useState({
+        period: 'MONTH', specificDate: '', specificWeek: '', specificMonth: '', specificYear: '',
+        shift: 'ALL', leaderName: 'ALL', model: 'ALL'
+    });
+    const [chartDrilldown, setChartDrilldown] = useState<{ label: string; scraps: ScrapData[] } | null>(null);
 
     const [selectedRanking, setSelectedRanking] = useState<{ type: string, name: string, items: ScrapData[] } | null>(null);
     const [selectedItem, setSelectedItem] = useState<ScrapData | null>(null);
@@ -1308,6 +1313,49 @@ export const ScrapManagementAdvanced = ({ scraps, users }: any) => {
         return res;
     }, [scraps, filters.shift, filters.leaderName, filters.model]);
 
+    const chartFiltered = useMemo(() => {
+        let res = [...scraps];
+        const now = new Date();
+        if (chartFilters.period !== 'ALL') {
+            if (chartFilters.period === 'DAY' && chartFilters.specificDate) {
+                res = res.filter(s => s.date === chartFilters.specificDate);
+            } else if (chartFilters.period === 'WEEK' && chartFilters.specificWeek) {
+                const [y, w] = chartFilters.specificWeek.split('-W').map(Number);
+                res = res.filter(s => {
+                    const sd = new Date(s.date);
+                    const utcDate = new Date(sd.getUTCFullYear(), sd.getUTCMonth(), sd.getUTCDate());
+                    return getWeekNumber(utcDate) === w && sd.getFullYear() === y;
+                });
+            } else if (chartFilters.period === 'MONTH' && chartFilters.specificMonth) {
+                res = res.filter(s => s.date.startsWith(chartFilters.specificMonth));
+            } else if (chartFilters.period === 'YEAR' && chartFilters.specificYear) {
+                res = res.filter(s => s.date.startsWith(chartFilters.specificYear));
+            } else if (chartFilters.period === 'MONTH' && !chartFilters.specificMonth) {
+                const m = (now.getMonth() + 1).toString().padStart(2, '0');
+                res = res.filter(s => s.date.startsWith(`${now.getFullYear()}-${m}`));
+            }
+        }
+        if (chartFilters.shift !== 'ALL') res = res.filter(s => s.shift === chartFilters.shift);
+        if (chartFilters.leaderName !== 'ALL') res = res.filter(s => s.leaderName === chartFilters.leaderName);
+        if (chartFilters.model !== 'ALL') res = res.filter(s => s.model === chartFilters.model);
+        return res;
+    }, [scraps, chartFilters]);
+
+    const chartBaseFiltered = useMemo(() => {
+        let res = [...scraps];
+        if (chartFilters.shift !== 'ALL') res = res.filter(s => s.shift === chartFilters.shift);
+        if (chartFilters.leaderName !== 'ALL') res = res.filter(s => s.leaderName === chartFilters.leaderName);
+        if (chartFilters.model !== 'ALL') res = res.filter(s => s.model === chartFilters.model);
+        return res;
+    }, [scraps, chartFilters.shift, chartFilters.leaderName, chartFilters.model]);
+
+    const chartAvailableModels = useMemo(() => {
+        let src = [...scraps];
+        if (chartFilters.shift !== 'ALL') src = src.filter(s => s.shift === chartFilters.shift);
+        if (chartFilters.leaderName !== 'ALL') src = src.filter(s => s.leaderName === chartFilters.leaderName);
+        return Array.from(new Set(src.map(s => s.model).filter(Boolean))).sort();
+    }, [scraps, chartFilters.shift, chartFilters.leaderName]);
+
     // Generate rankings
     const rankings = useMemo(() => {
         const byLeader: Record<string, number> = {};
@@ -1374,7 +1422,7 @@ export const ScrapManagementAdvanced = ({ scraps, users }: any) => {
                         {filters.period === 'WEEK' && <Input type="week" value={filters.specificWeek} onChange={e => setFilters({ ...filters, specificWeek: e.target.value })} className="w-auto max-w-[160px]" />}
                         {filters.period === 'MONTH' && <Input type="month" value={filters.specificMonth} onChange={e => setFilters({ ...filters, specificMonth: e.target.value })} className="w-auto max-w-[160px]" />}
                         {filters.period === 'YEAR' && <Input type="number" placeholder="Ano (Ex: 2024)" value={filters.specificYear} onChange={e => setFilters({ ...filters, specificYear: e.target.value })} className="w-auto max-w-[160px]" />}
-                        <Button variant="primary" onClick={() => setShowChartsModal(true)} size="sm" className="flex items-center gap-2 whitespace-nowrap">
+                        <Button variant="primary" onClick={() => { setChartFilters({...filters}); setShowChartsModal(true); }} size="sm" className="flex items-center gap-2 whitespace-nowrap">
                             <BarChart3 size={16} />
                             Visualizar Gráficos
                         </Button>
@@ -1534,31 +1582,31 @@ export const ScrapManagementAdvanced = ({ scraps, users }: any) => {
                                 <div className="space-y-4 flex-1">
                                     <h3 className="font-bold text-2xl text-slate-900 dark:text-white">Análise Gráfica Avançada</h3>
                                     <div className="flex gap-3 items-center overflow-x-auto whitespace-nowrap pb-2 w-full custom-scrollbar flex-nowrap">
-                                        <select className="bg-white dark:bg-zinc-900 border border-slate-300 dark:border-zinc-800 p-2 rounded text-sm text-slate-900 dark:text-zinc-100 outline-none focus:ring-2 focus:ring-blue-600" onChange={e => setFilters({ ...filters, period: e.target.value })} value={filters.period}>
+                                        <select className="bg-white dark:bg-zinc-900 border border-slate-300 dark:border-zinc-800 p-2 rounded text-sm text-slate-900 dark:text-zinc-100 outline-none focus:ring-2 focus:ring-blue-600" onChange={e => setChartFilters({ ...chartFilters, period: e.target.value })} value={chartFilters.period}>
                                             <option value="ALL">Todo Período</option>
                                             <option value="DAY">Dia Específico</option>
                                             <option value="WEEK">Semana Específica</option>
                                             <option value="MONTH">Mês Específico</option>
                                             <option value="YEAR">Ano Específico</option>
                                         </select>
-                                        {filters.period === 'DAY' && <Input type="date" value={filters.specificDate} onChange={e => setFilters({ ...filters, specificDate: e.target.value })} className="w-auto max-w-[160px]" />}
-                                        {filters.period === 'WEEK' && <Input type="week" value={filters.specificWeek} onChange={e => setFilters({ ...filters, specificWeek: e.target.value })} className="w-auto max-w-[160px]" />}
-                                        {filters.period === 'MONTH' && <Input type="month" value={filters.specificMonth} onChange={e => setFilters({ ...filters, specificMonth: e.target.value })} className="w-auto max-w-[160px]" />}
-                                        {filters.period === 'YEAR' && <Input type="number" placeholder="Ano (Ex: 2024)" value={filters.specificYear} onChange={e => setFilters({ ...filters, specificYear: e.target.value })} className="w-auto max-w-[160px]" />}
-                                        <select className="bg-white dark:bg-zinc-900 border border-slate-300 dark:border-zinc-800 p-2 rounded text-sm text-slate-900 dark:text-zinc-100 outline-none focus:ring-2 focus:ring-blue-600" onChange={e => setFilters({ ...filters, shift: e.target.value, model: 'ALL' })} value={filters.shift}>
+                                        {chartFilters.period === 'DAY' && <Input type="date" value={chartFilters.specificDate} onChange={e => setChartFilters({ ...chartFilters, specificDate: e.target.value })} className="w-auto max-w-[160px]" />}
+                                        {chartFilters.period === 'WEEK' && <Input type="week" value={chartFilters.specificWeek} onChange={e => setChartFilters({ ...chartFilters, specificWeek: e.target.value })} className="w-auto max-w-[160px]" />}
+                                        {chartFilters.period === 'MONTH' && <Input type="month" value={chartFilters.specificMonth} onChange={e => setChartFilters({ ...chartFilters, specificMonth: e.target.value })} className="w-auto max-w-[160px]" />}
+                                        {chartFilters.period === 'YEAR' && <Input type="number" placeholder="Ano (Ex: 2024)" value={chartFilters.specificYear} onChange={e => setChartFilters({ ...chartFilters, specificYear: e.target.value })} className="w-auto max-w-[160px]" />}
+                                        <select className="bg-white dark:bg-zinc-900 border border-slate-300 dark:border-zinc-800 p-2 rounded text-sm text-slate-900 dark:text-zinc-100 outline-none focus:ring-2 focus:ring-blue-600" onChange={e => setChartFilters({ ...chartFilters, shift: e.target.value, model: 'ALL' })} value={chartFilters.shift}>
                                             <option value="ALL">Turno: Todos</option>
                                             <option value="1">Turno 1</option>
                                             <option value="2">Turno 2</option>
                                         </select>
-                                        <select className="bg-white dark:bg-zinc-900 border border-slate-300 dark:border-zinc-800 p-2 rounded text-sm text-slate-900 dark:text-zinc-100 outline-none focus:ring-2 focus:ring-blue-600" onChange={e => setFilters({ ...filters, leaderName: e.target.value, model: 'ALL' })} value={filters.leaderName}>
+                                        <select className="bg-white dark:bg-zinc-900 border border-slate-300 dark:border-zinc-800 p-2 rounded text-sm text-slate-900 dark:text-zinc-100 outline-none focus:ring-2 focus:ring-blue-600" onChange={e => setChartFilters({ ...chartFilters, leaderName: e.target.value, model: 'ALL' })} value={chartFilters.leaderName}>
                                             <option value="ALL">Líder: Todos</option>
                                             {users.filter((u: User) => u.role.toLowerCase().includes('líder') || u.role.toLowerCase().includes('supervisor') || u.role.toLowerCase().includes('coordenador')).map((u: User) => (
                                                 <option key={u.matricula} value={u.name}>{u.name}</option>
                                             ))}
                                         </select>
-                                        <select className="bg-white dark:bg-zinc-900 border border-slate-300 dark:border-zinc-800 p-2 rounded text-sm text-slate-900 dark:text-zinc-100 outline-none focus:ring-2 focus:ring-blue-600" onChange={e => setFilters({ ...filters, model: e.target.value })} value={filters.model}>
+                                        <select className="bg-white dark:bg-zinc-900 border border-slate-300 dark:border-zinc-800 p-2 rounded text-sm text-slate-900 dark:text-zinc-100 outline-none focus:ring-2 focus:ring-blue-600" onChange={e => setChartFilters({ ...chartFilters, model: e.target.value })} value={chartFilters.model}>
                                             <option value="ALL">Modelo: Todos</option>
-                                            {availableModels.map((model: string) => (
+                                            {chartAvailableModels.map((model: string) => (
                                                 <option key={model} value={model}>{model}</option>
                                             ))}
                                         </select>
@@ -1578,8 +1626,8 @@ export const ScrapManagementAdvanced = ({ scraps, users }: any) => {
                                 <div>
                                     <h4 className="font-bold text-lg text-slate-900 dark:text-white mb-4">Comparativo Turnos</h4>
                                     {(() => {
-                                        const shift1Total = filtered.filter(s => s.shift === '1').reduce((acc, s) => acc + (s.totalValue || 0), 0);
-                                        const shift2Total = filtered.filter(s => s.shift === '2').reduce((acc, s) => acc + (s.totalValue || 0), 0);
+                                        const shift1Total = chartFiltered.filter(s => s.shift === '1').reduce((acc, s) => acc + (s.totalValue || 0), 0);
+                                        const shift2Total = chartFiltered.filter(s => s.shift === '2').reduce((acc, s) => acc + (s.totalValue || 0), 0);
                                         const totalValue = shift1Total + shift2Total;
                                         const maxShiftValRaw = Math.max(Number(shift1Total) || 0, Number(shift2Total) || 0);
                                         const safeMaxShift = maxShiftValRaw > 0 ? maxShiftValRaw : 1;
@@ -1590,30 +1638,37 @@ export const ScrapManagementAdvanced = ({ scraps, users }: any) => {
                                         return (
                                             <div className="flex flex-col lg:flex-row gap-4 items-stretch">
                                                 <div className="flex-1 flex items-end justify-center gap-12 h-80 bg-gradient-to-br from-slate-50 to-slate-100 dark:from-zinc-800 dark:to-zinc-900 p-6 pt-10 rounded-lg border border-slate-200 dark:border-zinc-700">
-                                                    <div className="flex flex-col items-center justify-end gap-2 h-full">
+                                                    <div className="flex flex-col items-center justify-end gap-2 h-full cursor-pointer group" onClick={() => setChartDrilldown({ label: 'Turno 1', scraps: chartFiltered.filter(s => s.shift === '1') })}>
                                                         <div className="text-center text-xs mb-2">
                                                             <p className="text-white font-bold text-sm">{formatCurrency(shift1Total)}</p>
                                                             <p className="text-green-500 font-bold">{shift1Pct.toFixed(1)}%</p>
                                                         </div>
-                                                        <div className="w-20 bg-slate-300 dark:bg-zinc-700 rounded-t-md overflow-hidden shadow-md transition-all hover:shadow-lg" style={{ height: `${Math.max(2, shift1Height)}%` }}>
+                                                        <div className="w-20 bg-slate-300 dark:bg-zinc-700 rounded-t-md overflow-hidden shadow-md transition-all group-hover:shadow-xl group-hover:scale-105" style={{ height: `${Math.max(2, shift1Height)}%` }}>
                                                             <div className="w-full h-full bg-gradient-to-t from-cyan-600 to-cyan-500"></div>
                                                         </div>
                                                         <span className="text-xs font-semibold text-slate-600 dark:text-zinc-400 mt-1">Turno 1</span>
                                                     </div>
-                                                    <div className="flex flex-col items-center justify-end gap-2 h-full">
+                                                    <div className="flex flex-col items-center justify-end gap-2 h-full cursor-pointer group" onClick={() => setChartDrilldown({ label: 'Turno 2', scraps: chartFiltered.filter(s => s.shift === '2') })}>
                                                         <div className="text-center text-xs mb-2">
                                                             <p className="text-white font-bold text-sm">{formatCurrency(shift2Total)}</p>
                                                             <p className="text-green-500 font-bold">{shift2Pct.toFixed(1)}%</p>
                                                         </div>
-                                                        <div className="w-20 bg-slate-300 dark:bg-zinc-700 rounded-t-md overflow-hidden shadow-md transition-all hover:shadow-lg" style={{ height: `${Math.max(2, shift2Height)}%` }}>
+                                                        <div className="w-20 bg-slate-300 dark:bg-zinc-700 rounded-t-md overflow-hidden shadow-md transition-all group-hover:shadow-xl group-hover:scale-105" style={{ height: `${Math.max(2, shift2Height)}%` }}>
                                                             <div className="w-full h-full bg-gradient-to-t from-cyan-600 to-cyan-500"></div>
                                                         </div>
                                                         <span className="text-xs font-semibold text-slate-600 dark:text-zinc-400 mt-1">Turno 2</span>
                                                     </div>
                                                 </div>
-                                                <div className="w-full lg:w-72 flex flex-col justify-center text-center p-4 bg-slate-50 dark:bg-zinc-800/50 rounded border border-slate-200 dark:border-zinc-700">
-                                                    <span className="text-sm text-slate-600 dark:text-zinc-400">Total Filtrado:</span>
-                                                    <p className="text-3xl font-bold text-slate-900 dark:text-white">{formatCurrency(totalValue)}</p>
+                                                <div className="w-full lg:w-72 flex flex-col justify-center text-center p-4 bg-slate-50 dark:bg-zinc-800/50 rounded border border-slate-200 dark:border-zinc-700 gap-4">
+                                                    <div>
+                                                        <span className="text-sm text-slate-600 dark:text-zinc-400">Total Filtrado:</span>
+                                                        <p className="text-3xl font-bold text-slate-900 dark:text-white">{formatCurrency(totalValue)}</p>
+                                                    </div>
+                                                    <div className="flex flex-col gap-1 text-xs">
+                                                        <div className="flex items-center gap-2 justify-center"><span className="w-3 h-3 rounded-sm bg-cyan-500 inline-block"></span><span className="text-slate-600 dark:text-zinc-400">Turno 1 — {shift1Pct.toFixed(1)}%</span></div>
+                                                        <div className="flex items-center gap-2 justify-center"><span className="w-3 h-3 rounded-sm bg-cyan-600 inline-block"></span><span className="text-slate-600 dark:text-zinc-400">Turno 2 — {shift2Pct.toFixed(1)}%</span></div>
+                                                    </div>
+                                                    <p className="text-[10px] text-slate-400 italic">Clique nas barras para ver o drilldown</p>
                                                 </div>
                                             </div>
                                         );
@@ -1627,7 +1682,7 @@ export const ScrapManagementAdvanced = ({ scraps, users }: any) => {
                                 <div className="flex items-end justify-between w-full gap-1 h-[400px] bg-gradient-to-br from-slate-50 to-slate-100 dark:from-zinc-800 dark:to-zinc-900 p-6 pt-10 pb-20 rounded-lg border border-slate-200 dark:border-zinc-700">
                                     {(() => {
                                         const byItem: Record<string, { value: number; qty: number; codes: Set<string>; models: Set<string> }> = {};
-                                        filtered.forEach(s => {
+                                        chartFiltered.forEach(s => {
                                             if (!byItem[s.item]) {
                                                 byItem[s.item] = { value: 0, qty: 0, codes: new Set(), models: new Set() };
                                             }
@@ -1636,7 +1691,7 @@ export const ScrapManagementAdvanced = ({ scraps, users }: any) => {
                                             if (s.code) byItem[s.item].codes.add(s.code);
                                             if (s.model) byItem[s.item].models.add(s.model);
                                         });
-                                        const totalValue = filtered.reduce((acc, s) => acc + (s.totalValue || 0), 0);
+                                        const totalValue = chartFiltered.reduce((acc, s) => acc + (s.totalValue || 0), 0);
                                             const itemValuesArray = Object.values(byItem).map(v => Number(v.value) || 0);
                                             const maxItemValueRaw = Math.max(...itemValuesArray);
                                             const safeMaxItems = maxItemValueRaw > 0 ? maxItemValueRaw : 1;
@@ -1664,8 +1719,9 @@ export const ScrapManagementAdvanced = ({ scraps, users }: any) => {
                                                     return (
                                                         <div 
                                                             key={entry.item} 
-                                                            className="flex flex-col items-center justify-end gap-1 group relative h-full flex-1"
+                                                            className="flex flex-col items-center justify-end gap-1 group relative h-full flex-1 cursor-pointer"
                                                             title={`${entry.item}: ${formatCurrency(entry.value)} | Qtd: ${entry.qty} | Cat: ${category} | Modelo: ${firstModel} | Código: ${firstCode}`}
+                                                            onClick={() => setChartDrilldown({ label: entry.item, scraps: chartFiltered.filter(s => s.item === entry.item) })}
                                                         >
                                                             <div className="text-[10px] text-center leading-tight mb-1 w-full">
                                                                 <p className="text-white font-bold">{formatCurrency(entry.value)}</p>
@@ -1690,17 +1746,64 @@ export const ScrapManagementAdvanced = ({ scraps, users }: any) => {
                                 </div>
 
                             {/* Row 3: Temporal Analysis */}
-                            {filters.period === 'DAY' && <DayAnalysisChart filtered={filtered} baseScraps={baseFiltered} specificDate={filters.specificDate} />}
-                            {filters.period === 'WEEK' && <WeekAnalysisChart filtered={filtered} baseScraps={baseFiltered} specificWeek={filters.specificWeek} />}
-                            {filters.period === 'MONTH' && <MonthAnalysisChart filtered={filtered} baseScraps={baseFiltered} specificMonth={filters.specificMonth} />}
-                            {filters.period === 'YEAR' && <YearAnalysisChart filtered={filtered} baseScraps={baseFiltered} specificYear={filters.specificYear} />}
-                            {filters.period === 'ALL' && (
+                            {chartFilters.period === 'DAY' && <DayAnalysisChart filtered={chartFiltered} baseScraps={chartBaseFiltered} specificDate={chartFilters.specificDate} />}
+                            {chartFilters.period === 'WEEK' && <WeekAnalysisChart filtered={chartFiltered} baseScraps={chartBaseFiltered} specificWeek={chartFilters.specificWeek} />}
+                            {chartFilters.period === 'MONTH' && <MonthAnalysisChart filtered={chartFiltered} baseScraps={chartBaseFiltered} specificMonth={chartFilters.specificMonth} />}
+                            {chartFilters.period === 'YEAR' && <YearAnalysisChart filtered={chartFiltered} baseScraps={chartBaseFiltered} specificYear={chartFilters.specificYear} />}
+                            {chartFilters.period === 'ALL' && (
                                 <div className="text-center p-8 bg-slate-50 dark:bg-zinc-800 rounded-lg">
                                     <p className="text-slate-600 dark:text-zinc-400">Selecione um período específico para visualizar análise temporal</p>
                                 </div>
                             )}
                         </div>
                     </Card>
+                </div>
+            )}
+
+            {/* Drilldown Modal */}
+            {chartDrilldown && (
+                <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[60] flex items-center justify-center p-4" onClick={e => { if (e.target === e.currentTarget) setChartDrilldown(null); }}>
+                    <div className="w-full max-w-4xl max-h-[90vh] bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl flex flex-col overflow-hidden border border-slate-200 dark:border-zinc-700">
+                        <div className="flex justify-between items-center p-5 border-b border-slate-200 dark:border-zinc-800 shrink-0">
+                            <h3 className="font-bold text-lg text-slate-900 dark:text-white">Drilldown: {chartDrilldown.label}</h3>
+                            <button onClick={() => setChartDrilldown(null)} className="p-1 hover:bg-slate-100 dark:hover:bg-zinc-800 rounded-full"><X size={22} className="text-slate-500" /></button>
+                        </div>
+                        <div className="overflow-y-auto flex-1 custom-scrollbar">
+                            <table className="w-full text-sm">
+                                <thead className="sticky top-0 bg-slate-50 dark:bg-zinc-800">
+                                    <tr className="text-xs font-bold text-slate-500 dark:text-zinc-400 uppercase">
+                                        <th className="text-left px-4 py-3">Data</th>
+                                        <th className="text-left px-4 py-3">Item</th>
+                                        <th className="text-left px-4 py-3">Código</th>
+                                        <th className="text-left px-4 py-3">Modelo</th>
+                                        <th className="text-left px-4 py-3">Líder</th>
+                                        <th className="text-right px-4 py-3">Qtd</th>
+                                        <th className="text-right px-4 py-3">Total</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-slate-100 dark:divide-zinc-800">
+                                    {chartDrilldown.scraps.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()).map((s, i) => (
+                                        <tr key={i} className="hover:bg-slate-50 dark:hover:bg-zinc-800 cursor-pointer" onClick={() => setDetailModal({ isOpen: true, scrap: s })}>
+                                            <td className="px-4 py-2.5 font-mono text-slate-600 dark:text-zinc-400">{s.date}</td>
+                                            <td className="px-4 py-2.5 text-slate-800 dark:text-zinc-200 max-w-[160px] truncate">{s.item}</td>
+                                            <td className="px-4 py-2.5 font-mono text-slate-600 dark:text-zinc-400">{s.code}</td>
+                                            <td className="px-4 py-2.5 text-slate-600 dark:text-zinc-400">{s.model}</td>
+                                            <td className="px-4 py-2.5 text-slate-600 dark:text-zinc-400">{s.leaderName}</td>
+                                            <td className="px-4 py-2.5 text-right font-bold text-slate-800 dark:text-zinc-200">{s.qty}</td>
+                                            <td className="px-4 py-2.5 text-right font-bold text-slate-800 dark:text-zinc-200">{formatCurrency(s.totalValue || 0)}</td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                            {chartDrilldown.scraps.length === 0 && (
+                                <div className="py-12 text-center text-slate-500">Nenhum dado encontrado.</div>
+                            )}
+                        </div>
+                        <div className="p-4 border-t border-slate-200 dark:border-zinc-800 flex justify-between items-center shrink-0">
+                            <span className="text-xs text-slate-500">{chartDrilldown.scraps.length} registros</span>
+                            <span className="font-bold text-slate-800 dark:text-zinc-200">Total: {formatCurrency(chartDrilldown.scraps.reduce((a, s) => a + (s.totalValue || 0), 0))}</span>
+                        </div>
+                    </div>
                 </div>
             )}
         </div>
@@ -1889,7 +1992,25 @@ const WeekAnalysisChart = ({ filtered, baseScraps, specificWeek }: { filtered: S
             </div>
             <div>
                 <h4 className="font-bold text-lg text-slate-900 dark:text-white mb-4">Histórico Semanal (7 Semanas)</h4>
-                <div className="text-[10px] font-bold text-slate-500 flex gap-4 uppercase mb-2"><span>MAX: {formatCurrency(maxHistoryValue)}</span><span>MIN: {formatCurrency(minHistoryValue)}</span><span>MÉDIA: {formatCurrency(avgHistoryValue)}</span></div>
+                <div className="flex items-center gap-4 mb-2 flex-wrap">
+                    <div className="text-[10px] font-bold text-slate-500 flex gap-4 uppercase"><span>MAX: {formatCurrency(maxHistoryValue)}</span><span>MIN: {formatCurrency(minHistoryValue)}</span><span>MÉDIA: {formatCurrency(avgHistoryValue)}</span></div>
+                    {(() => {
+                        const currIdx = historyData.findIndex(d => d.week === selectedWeek);
+                        const prevIdx = currIdx - 1;
+                        if (currIdx > 0 && prevIdx >= 0 && historyData[prevIdx].value > 0) {
+                            const curr = historyData[currIdx].value;
+                            const prev = historyData[prevIdx].value;
+                            const pct = ((curr - prev) / prev) * 100;
+                            const isUp = pct >= 0;
+                            return (
+                                <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${isUp ? 'bg-red-100 text-red-600 dark:bg-red-900/30 dark:text-red-400' : 'bg-emerald-100 text-emerald-600 dark:bg-emerald-900/30 dark:text-emerald-400'}`}>
+                                    {isUp ? '▲' : '▼'} {Math.abs(pct).toFixed(1)}% vs semana anterior
+                                </span>
+                            );
+                        }
+                        return null;
+                    })()}
+                </div>
                 <div className="flex items-end justify-start gap-4 overflow-x-auto custom-scrollbar w-full h-80 bg-gradient-to-br from-slate-50 to-slate-100 dark:from-zinc-800 dark:to-zinc-900 p-6 pt-14 pb-8 rounded-lg border border-slate-200 dark:border-zinc-700">
                     {historyData.map(({ week, value }) => {
                         const safeHistoryMax = maxHistoryValue > 0 ? maxHistoryValue : 1;
@@ -2000,7 +2121,26 @@ const MonthAnalysisChart = ({ filtered, baseScraps, specificMonth }: { filtered:
             </div>
             <div>
                 <h4 className="font-bold text-lg text-slate-900 dark:text-white mb-3">Todos os Meses do Ano</h4>
-                <div className="text-[10px] font-bold text-slate-500 flex gap-4 uppercase mb-2"><span>MAX: {formatCurrency(maxMonthValue)}</span><span>MIN: {formatCurrency(minMonthValue)}</span><span>MÉDIA: {formatCurrency(avgMonthValue)}</span></div>
+                <div className="flex items-center gap-4 mb-2 flex-wrap">
+                    <div className="text-[10px] font-bold text-slate-500 flex gap-4 uppercase"><span>MAX: {formatCurrency(maxMonthValue)}</span><span>MIN: {formatCurrency(minMonthValue)}</span><span>MÉDIA: {formatCurrency(avgMonthValue)}</span></div>
+                    {(() => {
+                        const prevMonthIndex = selectedMonthIndex - 1;
+                        if (prevMonthIndex >= 0) {
+                            const curr = monthData[selectedMonthIndex] || 0;
+                            const prev = monthData[prevMonthIndex] || 0;
+                            if (prev > 0) {
+                                const pct = ((curr - prev) / prev) * 100;
+                                const isUp = pct >= 0;
+                                return (
+                                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${isUp ? 'bg-red-100 text-red-600 dark:bg-red-900/30 dark:text-red-400' : 'bg-emerald-100 text-emerald-600 dark:bg-emerald-900/30 dark:text-emerald-400'}`}>
+                                        {isUp ? '▲' : '▼'} {Math.abs(pct).toFixed(1)}% vs mês anterior
+                                    </span>
+                                );
+                            }
+                        }
+                        return null;
+                    })()}
+                </div>
                 <div className="flex items-end justify-between w-full gap-1 h-80 bg-gradient-to-br from-slate-50 to-slate-100 dark:from-zinc-800 dark:to-zinc-900 p-6 pt-14 pb-8 rounded-lg border border-slate-200 dark:border-zinc-700">
                     {Array.from({ length: 12 }).map((_, idx) => {
                         const monthNames = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];

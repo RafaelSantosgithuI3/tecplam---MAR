@@ -851,9 +851,11 @@ const App = () => {
     const canCreateNotice = !!currentUser && hasTabAccess('NOTICES', 'MANAGE');
 
     const visibleNotices = currentUser ? activeNotices.filter(notice => {
+        const isCreator = notice.createdBy === currentUser?.matricula;
+        if (isCreator) return true;
         try {
             const parsedRoles = JSON.parse(notice.targetRoles || '[]');
-            return Array.isArray(parsedRoles) && parsedRoles.includes(currentUser?.role || '');
+            return Array.isArray(parsedRoles) && (parsedRoles.includes(currentUser?.role || '') || parsedRoles.includes('ALL'));
         } catch {
             return false;
         }
