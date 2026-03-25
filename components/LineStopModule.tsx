@@ -14,7 +14,12 @@ interface LineStopModuleProps {
 }
 
 export const LineStopModule: React.FC<LineStopModuleProps> = ({ currentUser, onBack, lines, models }) => {
-    const [tab, setTab] = useState<'NEW' | 'PENDING' | 'HISTORY'>('NEW');
+    const LINE_STOP_ACTIVE_TAB_KEY = 'activeTab_LineStopModule';
+    const [tab, setTab] = useState<'NEW' | 'PENDING' | 'HISTORY'>(() => {
+        const saved = sessionStorage.getItem(LINE_STOP_ACTIVE_TAB_KEY);
+        const allowed = ['NEW', 'PENDING', 'HISTORY'];
+        return allowed.includes(saved || '') ? saved as 'NEW' | 'PENDING' | 'HISTORY' : 'NEW';
+    });
     const [form, setForm] = useState<Partial<LineStopData>>({
         line: '', model: '', motif: '', responsibleSector: '',
         startTime: '', endTime: ''
@@ -24,6 +29,11 @@ export const LineStopModule: React.FC<LineStopModuleProps> = ({ currentUser, onB
     const [justification, setJustification] = useState('');
 
     useEffect(() => { loadLogs(); }, []);
+
+    useEffect(() => {
+        sessionStorage.setItem(LINE_STOP_ACTIVE_TAB_KEY, tab);
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+    }, [tab]);
 
     const loadLogs = async () => {
         const all = await getLineStops();

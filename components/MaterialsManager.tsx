@@ -1,6 +1,8 @@
 import React, { useState, useRef } from 'react';
 import { Card } from './Card';
 import { Button } from './Button';
+
+const safeRound = (num: number) => Math.round((num + Number.EPSILON) * 100) / 100;
 import { Input } from './Input';
 import { Download, Upload, Plus, Save, Search, Trash2, Edit2, X, CheckSquare } from 'lucide-react';
 import * as XLSX from 'xlsx';
@@ -83,7 +85,7 @@ export const MaterialsManager: React.FC<MaterialsManagerProps> = ({ materials, s
                     const rawPrice = getVal(['valor', 'price', 'preço', 'preco', 'unit_value', 'custo']);
 
                     if (typeof rawPrice === 'number') {
-                        price = rawPrice;
+                        price = safeRound(rawPrice);
                     } else if (typeof rawPrice === 'string') {
                         let cleanStr = rawPrice.replace('R$', '').trim();
                         if (cleanStr.includes(',') && cleanStr.includes('.')) {
@@ -94,7 +96,7 @@ export const MaterialsManager: React.FC<MaterialsManagerProps> = ({ materials, s
                             cleanStr = cleanStr.replace(',', '.');
                         }
                         const parsed = parseFloat(cleanStr);
-                        price = isNaN(parsed) ? 0 : parsed;
+                        price = isNaN(parsed) ? 0 : safeRound(parsed);
                     }
 
                     parsedMaterials.push({ code, model, description, item, plant, price });
@@ -212,7 +214,7 @@ export const MaterialsManager: React.FC<MaterialsManagerProps> = ({ materials, s
     const formatCurrency = (val: any) => {
         const num = Number(val);
         if (isNaN(num)) return 'R$ 0,00';
-        const rounded = Math.ceil(num * 100) / 100;
+        const rounded = safeRound(num);
         return rounded.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
     }
 
@@ -255,7 +257,7 @@ export const MaterialsManager: React.FC<MaterialsManagerProps> = ({ materials, s
                         <Input label="Descrição" value={newMaterial.description} onChange={e => setNewMaterial({ ...newMaterial, description: e.target.value })} />
                         <Input label="Item (Ex: Bateria)" value={newMaterial.item} onChange={e => setNewMaterial({ ...newMaterial, item: e.target.value })} />
                         <Input label="Planta" value={newMaterial.plant} onChange={e => setNewMaterial({ ...newMaterial, plant: e.target.value })} />
-                        <Input label="Valor (R$)" type="number" value={newMaterial.price} onChange={e => setNewMaterial({ ...newMaterial, price: parseFloat(e.target.value) })} />
+                        <Input label="Valor (R$)" type="number" value={newMaterial.price} onChange={e => setNewMaterial({ ...newMaterial, price: safeRound(parseFloat(e.target.value) || 0) })} />
                     </div>
                     <Button fullWidth onClick={handleManualSave}><Save size={16} /> Adicionar / Atualizar Item</Button>
                 </div>
@@ -372,7 +374,7 @@ export const MaterialsManager: React.FC<MaterialsManagerProps> = ({ materials, s
                             <Input label="Descrição" value={editMaterial.description} onChange={e => setEditMaterial({ ...editMaterial, description: e.target.value })} />
                             <Input label="Item" value={editMaterial.item} onChange={e => setEditMaterial({ ...editMaterial, item: e.target.value })} />
                             <Input label="Planta" value={editMaterial.plant} onChange={e => setEditMaterial({ ...editMaterial, plant: e.target.value })} />
-                            <Input label="Valor (R$)" type="number" value={editMaterial.price} onChange={e => setEditMaterial({ ...editMaterial, price: parseFloat(e.target.value) || 0 })} />
+                            <Input label="Valor (R$)" type="number" value={editMaterial.price} onChange={e => setEditMaterial({ ...editMaterial, price: safeRound(parseFloat(e.target.value) || 0) })} />
                             <div className="flex gap-2 justify-end pt-2">
                                 <Button variant="outline" onClick={() => setEditMaterial(null)}>Cancelar</Button>
                                 <Button onClick={handleEditSave}><Save size={16} /> Salvar</Button>

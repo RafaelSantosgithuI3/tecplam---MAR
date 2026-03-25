@@ -19,7 +19,12 @@ type Tab = 'LAUNCH' | 'VIEW';
 
 export const PreparationModule: React.FC<PreparationModuleProps> = ({ currentUser, onBack, hasTabAccess }) => {
     const allTabs: Tab[] = ['LAUNCH', 'VIEW'];
+    const PREPARATION_ACTIVE_TAB_KEY = 'activeTab_PreparationModule';
     const determineInitialTab = (): Tab => {
+        const saved = sessionStorage.getItem(PREPARATION_ACTIVE_TAB_KEY) as Tab | null;
+        if (saved && allTabs.includes(saved) && (!hasTabAccess || hasTabAccess('PREPARATION', saved))) {
+            return saved;
+        }
         if (!hasTabAccess) return 'LAUNCH';
         const allowed = allTabs.find(t => hasTabAccess('PREPARATION', t));
         return allowed || 'LAUNCH';
@@ -68,6 +73,11 @@ export const PreparationModule: React.FC<PreparationModuleProps> = ({ currentUse
     useEffect(() => {
         loadData();
     }, []);
+
+    useEffect(() => {
+        sessionStorage.setItem(PREPARATION_ACTIVE_TAB_KEY, tab);
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+    }, [tab]);
 
     const loadData = async () => {
         setLines(await getLines());

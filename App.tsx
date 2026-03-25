@@ -120,8 +120,24 @@ const App = () => {
 
     // --- State ---
     const [currentUser, setCurrentUser] = useState<User | null>(null);
-    const [view, setView] = useState<ViewState>('LOGIN');
+    const [view, setView] = useState<ViewState>(() => {
+        const saved = sessionStorage.getItem('app_view') as ViewState | null;
+        const noRestore: ViewState[] = ['LOGIN', 'REGISTER', 'RECOVER', 'SETUP', 'SUCCESS'];
+        return (saved && !noRestore.includes(saved)) ? saved : 'LOGIN';
+    });
+    const currentModule = view;
     const [isLoading, setIsLoading] = useState(false);
+
+    useEffect(() => {
+        const noStore: ViewState[] = ['LOGIN', 'REGISTER', 'RECOVER', 'SETUP', 'SUCCESS'];
+        if (!noStore.includes(view)) {
+            sessionStorage.setItem('app_view', view);
+        }
+    }, [view]);
+
+    useEffect(() => {
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+    }, [currentModule]);
 
     // Network Setup
     // Network Setup - Removed
@@ -183,7 +199,11 @@ const App = () => {
         peopleStopped: '', stationStart: '', stationEnd: '',
         justification: '', motivo: '', responsibleSector: ''
     });
-    const [lineStopTab, setLineStopTab] = useState<'NEW' | 'PENDING' | 'UPLOAD' | 'HISTORY'>('NEW');
+    const [lineStopTab, setLineStopTab] = useState<'NEW' | 'PENDING' | 'UPLOAD' | 'HISTORY'>(() => {
+        const saved = sessionStorage.getItem('activeTab_LineStopDashboard');
+        const allowed = ['NEW', 'PENDING', 'UPLOAD', 'HISTORY'];
+        return allowed.includes(saved || '') ? saved as 'NEW' | 'PENDING' | 'UPLOAD' | 'HISTORY' : 'NEW';
+    });
     const [lineStopLogs, setLineStopLogs] = useState<ChecklistLog[]>([]);
     const [activeLineStopLog, setActiveLineStopLog] = useState<ChecklistLog | null>(null);
     const [justificationInput, setJustificationInput] = useState('');
@@ -206,9 +226,23 @@ const App = () => {
     const [previewMeeting, setPreviewMeeting] = useState<MeetingLog | null>(null);
 
     // Admin / Audit / Management
-    const [adminTab, setAdminTab] = useState<'USERS' | 'PERMISSIONS' | 'RECOVERY'>('USERS');
-    const [managementTab, setManagementTab] = useState<'LINES' | 'ROLES' | 'MODELS' | 'STATIONS'>('LINES');
-    const [auditTab, setAuditTab] = useState<'LEADER_HISTORY' | 'MAINTENANCE_HISTORY' | 'LEADER_EDITOR' | 'MAINTENANCE_EDITOR' | 'LEADERS' | 'LINES' | 'MAINTENANCE_MATRIX'>('LEADER_HISTORY');
+    const [adminTab, setAdminTab] = useState<'USERS' | 'PERMISSIONS' | 'RECOVERY'>(() => {
+        const saved = sessionStorage.getItem('activeTab_Admin');
+        const allowed = ['USERS', 'PERMISSIONS', 'RECOVERY'];
+        return allowed.includes(saved || '') ? saved as 'USERS' | 'PERMISSIONS' | 'RECOVERY' : 'USERS';
+    });
+    const [managementTab, setManagementTab] = useState<'LINES' | 'ROLES' | 'MODELS' | 'STATIONS'>(() => {
+        const saved = sessionStorage.getItem('activeTab_ManagementLegacy');
+        const allowed = ['LINES', 'ROLES', 'MODELS', 'STATIONS'];
+        return allowed.includes(saved || '') ? saved as 'LINES' | 'ROLES' | 'MODELS' | 'STATIONS' : 'LINES';
+    });
+    const [auditTab, setAuditTab] = useState<'LEADER_HISTORY' | 'MAINTENANCE_HISTORY' | 'LEADER_EDITOR' | 'MAINTENANCE_EDITOR' | 'LEADERS' | 'LINES' | 'MAINTENANCE_MATRIX'>(() => {
+        const saved = sessionStorage.getItem('activeTab_AuditLegacy');
+        const allowed = ['LEADER_HISTORY', 'MAINTENANCE_HISTORY', 'LEADER_EDITOR', 'MAINTENANCE_EDITOR', 'LEADERS', 'LINES', 'MAINTENANCE_MATRIX'];
+        return allowed.includes(saved || '')
+            ? saved as 'LEADER_HISTORY' | 'MAINTENANCE_HISTORY' | 'LEADER_EDITOR' | 'MAINTENANCE_EDITOR' | 'LEADERS' | 'LINES' | 'MAINTENANCE_MATRIX'
+            : 'LEADER_HISTORY';
+    });
     const [historyLogs, setHistoryLogs] = useState<ChecklistLog[]>([]);
     const [usersList, setUsersList] = useState<User[]>([]);
 
@@ -261,7 +295,32 @@ const App = () => {
     const [qrCodeManual, setQrCodeManual] = useState('');
 
     // Scrap Navigation
-    const [scrapTab, setScrapTab] = useState<any>(undefined);
+    const [scrapTab, setScrapTab] = useState<any>(() => sessionStorage.getItem('activeTab_ScrapLauncher') || undefined);
+
+    useEffect(() => {
+        sessionStorage.setItem('activeTab_LineStopDashboard', lineStopTab);
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+    }, [lineStopTab]);
+
+    useEffect(() => {
+        sessionStorage.setItem('activeTab_Admin', adminTab);
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+    }, [adminTab]);
+
+    useEffect(() => {
+        sessionStorage.setItem('activeTab_ManagementLegacy', managementTab);
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+    }, [managementTab]);
+
+    useEffect(() => {
+        sessionStorage.setItem('activeTab_AuditLegacy', auditTab);
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+    }, [auditTab]);
+
+    useEffect(() => {
+        if (scrapTab) sessionStorage.setItem('activeTab_ScrapLauncher', String(scrapTab));
+        else sessionStorage.removeItem('activeTab_ScrapLauncher');
+    }, [scrapTab]);
 
     // Refs
     const categoryRefs = useRef<{ [key: string]: HTMLDivElement | null }>({});
@@ -764,7 +823,9 @@ const App = () => {
 
             if (user) {
                 setCurrentUser(user);
-                setView('MENU');
+                const savedView = sessionStorage.getItem('app_view') as ViewState | null;
+                const noRestore: ViewState[] = ['LOGIN', 'REGISTER', 'RECOVER', 'SETUP', 'SUCCESS'];
+                setView((savedView && !noRestore.includes(savedView)) ? savedView : 'MENU');
                 fetchInitialData(user);
             } else {
                 setLoginMatricula('');
@@ -810,7 +871,7 @@ const App = () => {
                     );
                     setPendingLineStopsCount(visibleStops.length);
 
-                    const allScraps = await getScraps();
+                    const allScraps = await getScraps(true);
                     const myPending = allScraps.filter(s => s.leaderName === currentUser?.name && !s.countermeasure && isCriticalItem(s.item));
                     setPendingScrapCount(myPending.length);
                 } catch (e) { console.error(e); }
@@ -843,6 +904,20 @@ const App = () => {
         logoutUser();
         setCurrentUser(null);
         setProfileData(null);
+        sessionStorage.removeItem('app_view');
+        sessionStorage.removeItem('activeTab_LineStopDashboard');
+        sessionStorage.removeItem('activeTab_Admin');
+        sessionStorage.removeItem('activeTab_ManagementLegacy');
+        sessionStorage.removeItem('activeTab_AuditLegacy');
+        sessionStorage.removeItem('activeTab_ScrapLauncher');
+        sessionStorage.removeItem('scrap_active_tab');
+        sessionStorage.removeItem('iqc_active_tab');
+        sessionStorage.removeItem('management_active_tab');
+        sessionStorage.removeItem('preparation_active_tab');
+        sessionStorage.removeItem('people_management_active_tab');
+        sessionStorage.removeItem('people_management_managers_active_tab');
+        sessionStorage.removeItem('line_stop_module_active_tab');
+        sessionStorage.removeItem('audit_module_active_tab');
         setView('LOGIN');
         setLoginMatricula('');
         setLoginPassword('');

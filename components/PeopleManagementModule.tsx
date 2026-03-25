@@ -18,6 +18,7 @@ interface PeopleManagementModuleProps {
 type Tab = 'CADASTRO' | 'CONSULTA' | 'PRESENCA' | 'LAYOUT' | 'LUVAS' | 'EDICAO';
 
 export const PeopleManagementModule = ({ onBack, currentUser, hasTabAccess }: PeopleManagementModuleProps) => {
+    const PEOPLE_MANAGEMENT_ACTIVE_TAB_KEY = 'activeTab_PeopleManagementModule';
     const getLayoutRolePriority = (role: string) => {
         const normalizedRole = (role || '').toLowerCase();
         if (normalizedRole.includes('desmonte')) return 0;
@@ -37,6 +38,10 @@ export const PeopleManagementModule = ({ onBack, currentUser, hasTabAccess }: Pe
 
     const allTabs: Tab[] = ['CADASTRO', 'CONSULTA', 'EDICAO', 'PRESENCA', 'LAYOUT', 'LUVAS'];
     const determineInitialTab = (): Tab => {
+        const saved = sessionStorage.getItem(PEOPLE_MANAGEMENT_ACTIVE_TAB_KEY) as Tab | null;
+        if (saved && allTabs.includes(saved) && (!hasTabAccess || hasTabAccess('PEOPLE_MANAGEMENT', saved))) {
+            return saved;
+        }
         if (!hasTabAccess) return 'CADASTRO';
         const allowed = allTabs.find(t => hasTabAccess('PEOPLE_MANAGEMENT', t));
         return allowed || 'CADASTRO';
@@ -56,6 +61,11 @@ export const PeopleManagementModule = ({ onBack, currentUser, hasTabAccess }: Pe
     useEffect(() => {
         loadBaseData();
     }, []);
+
+    useEffect(() => {
+        sessionStorage.setItem(PEOPLE_MANAGEMENT_ACTIVE_TAB_KEY, tab);
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+    }, [tab]);
 
     useEffect(() => {
         loadLayoutsByModel(layoutMasterModel);
@@ -81,23 +91,23 @@ export const PeopleManagementModule = ({ onBack, currentUser, hasTabAccess }: Pe
 
     const loadBaseData = async () => {
         try {
-            const users = await apiFetch('/users');
+            const users = await apiFetch('/users', { useCache: true });
             if (Array.isArray(users)) {
                 setLeaders(users.filter(u => u.role && (u.role.toLowerCase().includes('lider') || u.role.toLowerCase().includes('líder') || u.role.toLowerCase().includes('supervisor'))));
             }
-            const emp = await apiFetch(`/employees?superiorId=${currentUser.matricula}`);
+            const emp = await apiFetch(`/employees?superiorId=${currentUser.matricula}`, { useCache: true });
             if (Array.isArray(emp)) setEmployees(emp);
 
-            const mods = await apiFetch('/config/models');
+            const mods = await apiFetch('/config/models', { useCache: true });
             if (Array.isArray(mods)) setModels(mods);
 
-            const wks = await apiFetch('/workstations');
+            const wks = await apiFetch('/workstations', { useCache: true });
             if (Array.isArray(wks)) setWorkstations(wks);
 
-            const unifiedList = await apiFetch('/config/models/unified');
+            const unifiedList = await apiFetch('/config/models/unified', { useCache: true });
             if (Array.isArray(unifiedList)) setUnifiedModels(unifiedList);
 
-            const fetchedRoles = await apiFetch('/config/roles');
+            const fetchedRoles = await apiFetch('/config/roles', { useCache: true });
             if (Array.isArray(fetchedRoles)) setConfigRoles(fetchedRoles);
         } catch (e) {
             console.error('Erro ao carregar dados base', e);

@@ -14,7 +14,7 @@ export const getManausDate = (): Date => {
 
 export const getChecklistItems = async (type: 'LEADER' | 'MAINTENANCE' = 'LEADER'): Promise<ChecklistItem[]> => {
     try {
-        const items = await apiFetch('/config/items');
+        const items = await apiFetch('/config/items', { useCache: true });
         if (!items || items.length === 0) {
             if (type === 'LEADER') return CHECKLIST_ITEMS.map(i => ({ ...i, type: 'LEADER' }));
             return [];
@@ -29,7 +29,7 @@ export const getChecklistItems = async (type: 'LEADER' | 'MAINTENANCE' = 'LEADER
 };
 
 export const getAllChecklistItemsRaw = async (): Promise<ChecklistItem[]> => {
-    try { return await apiFetch('/config/items'); } catch (e) { return []; }
+    try { return await apiFetch('/config/items', { useCache: true }); } catch (e) { return []; }
 }
 
 export const saveChecklistItems = async (items: ChecklistItem[]) => {
@@ -44,7 +44,7 @@ export const resetChecklistToDefault = async () => {
 // --- PERMISSIONS ---
 
 export const getPermissions = async (): Promise<Permission[]> => {
-    try { return await apiFetch('/config/permissions'); } catch (e) { return []; }
+    try { return await apiFetch('/config/permissions', { useCache: true }); } catch (e) { return []; }
 }
 
 export const savePermissions = async (permissions: Permission[]) => {
@@ -57,7 +57,7 @@ export const getLines = async (): Promise<ConfigItem[]> => {
     try {
         if (isServerConfigured()) {
             // Backend retorna [{ id: 1, name: "Linha 1" }, ...]
-            const lines = await apiFetch('/config/lines');
+            const lines = await apiFetch('/config/lines', { useCache: true });
             if (Array.isArray(lines) && lines.length > 0) return lines;
         }
         // Fallback local se servidor offline ou vazio
@@ -92,7 +92,7 @@ export const deleteLine = async (id: string | number) => {
 export const getRoles = async (): Promise<ConfigItem[]> => {
     try {
         if (isServerConfigured()) {
-            const roles = await apiFetch('/config/roles');
+            const roles = await apiFetch('/config/roles', { useCache: true });
             if (Array.isArray(roles) && roles.length > 0) return roles;
         }
         return [
@@ -121,7 +121,7 @@ export const deleteRole = async (id: string | number) => {
 // --- MODELOS E POSTOS (Genéricos ainda) ---
 
 export const getModels = async (): Promise<string[]> => {
-    try { const models = await apiFetch('/config/models'); if (Array.isArray(models)) return models.map((m: any) => m.name); return []; } catch (e) { return []; }
+    try { const models = await apiFetch('/config/models', { useCache: true }); if (Array.isArray(models)) return models.map((m: any) => m.name); return []; } catch (e) { return []; }
 };
 
 export const saveModels = async (models: string[]) => {
@@ -130,7 +130,7 @@ export const saveModels = async (models: string[]) => {
 
 export const getModelsFull = async (): Promise<ConfigModel[]> => {
     try {
-        const models = await apiFetch('/config/models');
+        const models = await apiFetch('/config/models', { useCache: true });
         if (Array.isArray(models)) return models;
         return [];
     } catch (e) { return []; }
@@ -147,14 +147,14 @@ export const saveModelsFull = async (models: ConfigModel[]) => {
 
 export const getUnifiedModels = async (): Promise<ConfigModel[]> => {
     try {
-        const models = await apiFetch('/config/models/unified');
+        const models = await apiFetch('/config/models/unified', { useCache: true });
         if (Array.isArray(models)) return models;
         return [];
     } catch (e) { return []; }
 };
 
 export const getStations = async (): Promise<string[]> => {
-    try { const stations = await apiFetch('/config/stations'); if (Array.isArray(stations)) return stations.map((s: any) => s.name); return []; } catch (e) { return []; }
+    try { const stations = await apiFetch('/config/stations', { useCache: true }); if (Array.isArray(stations)) return stations.map((s: any) => s.name); return []; } catch (e) { return []; }
 };
 
 export const saveStations = async (stations: string[]) => {
@@ -163,7 +163,7 @@ export const saveStations = async (stations: string[]) => {
 
 export const getLayoutWorkstations = async (): Promise<any[]> => {
     try {
-        const ws = await apiFetch('/workstations');
+        const ws = await apiFetch('/workstations', { useCache: true });
         return Array.isArray(ws) ? ws : [];
     } catch (e) { return []; }
 };
@@ -216,7 +216,7 @@ export const saveLog = async (log: ChecklistLog) => {
 };
 
 export const getLogs = async (): Promise<ChecklistLog[]> => {
-    try { return await apiFetch('/logs'); } catch (e) { console.error("Erro ao buscar logs", e); return []; }
+    try { return await apiFetch('/logs', { useCache: true }); } catch (e) { console.error("Erro ao buscar logs", e); return []; }
 };
 
 export const getTodayLogForUser = async (matricula: string): Promise<ChecklistLog | undefined> => {
@@ -247,7 +247,7 @@ export const getMissingLeadersForToday = async (allUsers: User[]): Promise<User[
 
 export const getLineStops = async (): Promise<ChecklistLog[]> => {
     try {
-        return await apiFetch('/line-stops');
+        return await apiFetch('/line-stops', { useCache: true });
     } catch (e) {
         console.error("Erro ao buscar paradas", e);
         return [];
@@ -273,7 +273,7 @@ export const saveMeeting = async (meeting: MeetingLog) => {
 }
 
 export const getMeetings = async (): Promise<MeetingLog[]> => {
-    try { return await apiFetch('/meetings'); } catch (e) { console.error("Erro ao buscar atas", e); return []; }
+    try { return await apiFetch('/meetings', { useCache: true }); } catch (e) { console.error("Erro ao buscar atas", e); return []; }
 }
 
 // --- MAINTENANCE ITEMS ---

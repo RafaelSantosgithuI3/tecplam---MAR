@@ -19,6 +19,7 @@ interface Props {
 type Tab = 'CADASTRO' | 'CONSULTA' | 'PRESENCA' | 'LAYOUT' | 'LUVAS' | 'EDICAO';
 
 export const PeopleManagementManagersModule: React.FC<Props> = ({ onBack, currentUser, hasTabAccess }) => {
+    const PEOPLE_MANAGEMENT_MANAGERS_ACTIVE_TAB_KEY = 'activeTab_PeopleManagementManagersModule';
     const getLayoutRolePriority = (role: string) => {
         const normalizedRole = (role || '').toLowerCase();
         if (normalizedRole.includes('desmonte')) return 0;
@@ -38,6 +39,10 @@ export const PeopleManagementManagersModule: React.FC<Props> = ({ onBack, curren
 
     const allTabs: Tab[] = ['CADASTRO', 'CONSULTA', 'EDICAO', 'PRESENCA', 'LAYOUT', 'LUVAS'];
     const determineInitialTab = (): Tab => {
+        const saved = sessionStorage.getItem(PEOPLE_MANAGEMENT_MANAGERS_ACTIVE_TAB_KEY) as Tab | null;
+        if (saved && allTabs.includes(saved) && (!hasTabAccess || hasTabAccess('PEOPLE_MANAGEMENT_MANAGERS', saved))) {
+            return saved;
+        }
         if (!hasTabAccess) return 'PRESENCA';
         const allowed = allTabs.find(t => hasTabAccess('PEOPLE_MANAGEMENT_MANAGERS', t));
         return allowed || 'PRESENCA';
@@ -61,12 +66,12 @@ export const PeopleManagementManagersModule: React.FC<Props> = ({ onBack, curren
     const loadBaseData = useCallback(async () => {
         try {
             const [usersList, empList, modsList, wksList, rolesList, unifiedList] = await Promise.all([
-                apiFetch('/users'),
-                apiFetch('/employees'),
-                apiFetch('/config/models'),
-                apiFetch('/workstations'),
-                apiFetch('/config/roles'),
-                apiFetch('/config/models/unified')
+                apiFetch('/users', { useCache: true }),
+                apiFetch('/employees', { useCache: true }),
+                apiFetch('/config/models', { useCache: true }),
+                apiFetch('/workstations', { useCache: true }),
+                apiFetch('/config/roles', { useCache: true }),
+                apiFetch('/config/models/unified', { useCache: true })
             ]);
 
             if (Array.isArray(usersList)) {
@@ -88,6 +93,11 @@ export const PeopleManagementManagersModule: React.FC<Props> = ({ onBack, curren
     useEffect(() => {
         loadBaseData();
     }, [loadBaseData]);
+
+    useEffect(() => {
+        sessionStorage.setItem(PEOPLE_MANAGEMENT_MANAGERS_ACTIVE_TAB_KEY, tab);
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+    }, [tab]);
 
     useEffect(() => {
         loadLayoutsByModel(layoutMasterModel);

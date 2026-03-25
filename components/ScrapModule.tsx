@@ -26,6 +26,8 @@ const formatCurrency = (val: number | undefined) => {
     return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(val || 0);
 };
 
+const safeRound = (num: number) => Math.round((num + Number.EPSILON) * 100) / 100;
+
 const formatDateDisplay = (dateString: string | Date | undefined): string => {
     if (!dateString) return '-';
     let ds = typeof dateString === 'string' ? dateString : dateString.toISOString();
@@ -64,8 +66,13 @@ type Tab = 'FORM' | 'PENDING' | 'HISTORY' | 'OPERATIONAL' | 'MANAGEMENT_ADVANCED
 
 export const ScrapModule: React.FC<ScrapModuleProps> = ({ currentUser, onBack, initialTab, hasTabAccess }) => {
     const allTabs: Tab[] = ['FORM', 'PENDING', 'HISTORY', 'OPERATIONAL', 'EDIT_DELETE', 'MANAGEMENT_ADVANCED', 'NEW_ADVANCED', 'CONSULTA'];
+    const SCRAP_ACTIVE_TAB_KEY = 'activeTab_ScrapModule';
 
     const determineInitialTab = (): Tab => {
+        const saved = sessionStorage.getItem(SCRAP_ACTIVE_TAB_KEY) as Tab | null;
+        if (saved && allTabs.includes(saved) && (!hasTabAccess || hasTabAccess('SCRAP', saved))) {
+            return saved;
+        }
         if (initialTab && (!hasTabAccess || hasTabAccess('SCRAP', initialTab))) return initialTab;
         if (!hasTabAccess) return 'FORM';
         const allowed = allTabs.find(t => hasTabAccess('SCRAP', t));
@@ -97,7 +104,7 @@ export const ScrapModule: React.FC<ScrapModuleProps> = ({ currentUser, onBack, i
         const l = await getLines();
         setLines(l.map(x => x.name));
 
-        const scrapData = await getScraps();
+        const scrapData = await getScraps(true);
         setScraps(scrapData);
 
         const mats = await getMaterials();
@@ -108,8 +115,13 @@ export const ScrapModule: React.FC<ScrapModuleProps> = ({ currentUser, onBack, i
         loadData();
     }, []);
 
+    useEffect(() => {
+        sessionStorage.setItem(SCRAP_ACTIVE_TAB_KEY, activeTab);
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+    }, [activeTab]);
+
     const refreshScraps = async () => {
-        const s = await getScraps();
+        const s = await getScraps(true);
         setScraps(s);
     }
 
@@ -477,7 +489,7 @@ const ScrapForm = ({ users, models, stations, lines, materials, onSuccess, curre
 
     useEffect(() => {
         const total = (formData.qty || 0) * (formData.unitValue || 0);
-        const totalRounded = Math.ceil(total * 100) / 100;
+        const totalRounded = safeRound(total);
         setFormData(prev => ({ ...prev, totalValue: totalRounded }));
     }, [formData.qty, formData.unitValue]);
 
@@ -2709,7 +2721,7 @@ const ScrapEditModal = ({ scrap, users, lines, models, categories, statusOptions
     // 2. Auto-Calculate Total
     useEffect(() => {
         const total = (formData.qty || 0) * (formData.unitValue || 0);
-        const totalRounded = Math.ceil(total * 100) / 100;
+        const totalRounded = safeRound(total);
         setFormData(prev => ({ ...prev, totalValue: totalRounded }));
     }, [formData.qty, formData.unitValue]);
 

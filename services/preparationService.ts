@@ -3,7 +3,7 @@ import { apiFetch } from './networkConfig';
 import { PreparationLog } from '../types';
 
 export const getPreparationLogs = async (): Promise<PreparationLog[]> => {
-    return await apiFetch('/preparation-logs');
+    return await apiFetch('/preparation-logs', { useCache: true });
 };
 
 export const savePreparationLog = async (log: PreparationLog): Promise<void> => {

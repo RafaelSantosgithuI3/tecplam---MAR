@@ -9,7 +9,14 @@ import { ArrowLeft, Search, Download, Eye, X, Edit3, Trash2, Plus, Save } from '
 import jsQR from 'jsqr';
 
 export const AuditModule = ({ currentUser, onBack, users, lines }: any) => {
-    const [tab, setTab] = useState<'LEADER_HISTORY' | 'MAINTENANCE_HISTORY' | 'LEADER_EDITOR' | 'MAINTENANCE_EDITOR' | 'LEADERS' | 'LINES' | 'MAINTENANCE_MATRIX'>('LEADER_HISTORY');
+    const AUDIT_ACTIVE_TAB_KEY = 'activeTab_AuditModule';
+    const [tab, setTab] = useState<'LEADER_HISTORY' | 'MAINTENANCE_HISTORY' | 'LEADER_EDITOR' | 'MAINTENANCE_EDITOR' | 'LEADERS' | 'LINES' | 'MAINTENANCE_MATRIX'>(() => {
+        const saved = sessionStorage.getItem(AUDIT_ACTIVE_TAB_KEY);
+        const allowed = ['LEADER_HISTORY', 'MAINTENANCE_HISTORY', 'LEADER_EDITOR', 'MAINTENANCE_EDITOR', 'LEADERS', 'LINES', 'MAINTENANCE_MATRIX'];
+        return allowed.includes(saved || '')
+            ? saved as 'LEADER_HISTORY' | 'MAINTENANCE_HISTORY' | 'LEADER_EDITOR' | 'MAINTENANCE_EDITOR' | 'LEADERS' | 'LINES' | 'MAINTENANCE_MATRIX'
+            : 'LEADER_HISTORY';
+    });
     const [logs, setLogs] = useState<ChecklistLog[]>([]);
 
     // Filters
@@ -32,6 +39,11 @@ export const AuditModule = ({ currentUser, onBack, users, lines }: any) => {
     useEffect(() => {
         loadData();
     }, [tab, dateFilter, shiftFilter, weekFilter]);
+
+    useEffect(() => {
+        sessionStorage.setItem(AUDIT_ACTIVE_TAB_KEY, tab);
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+    }, [tab]);
 
     const loadData = async () => {
         if (tab.includes('HISTORY')) {

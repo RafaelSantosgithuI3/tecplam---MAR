@@ -36,8 +36,13 @@ type IQCTab = 'MONITORING' | 'BATCH_PROCESS' | 'HISTORY_SENT' | 'DASHBOARD' | 'B
 
 export const IQCModule = ({ currentUser, onBack, hasTabAccess }: { currentUser: User, onBack: () => void, hasTabAccess?: (m: string, t: string) => boolean }) => {
     const allTabs: IQCTab[] = ['MONITORING', 'BATCH_PROCESS', 'HISTORY_SENT', 'DASHBOARD', 'BOX_MOUNT', 'BOX_IDENTIFIED', 'CONSULTA', 'MATERIALS'];
+    const IQC_ACTIVE_TAB_KEY = 'activeTab_IQCModule';
     
     const determineInitialTab = (): IQCTab => {
+        const saved = sessionStorage.getItem(IQC_ACTIVE_TAB_KEY) as IQCTab | null;
+        if (saved && allTabs.includes(saved) && (!hasTabAccess || hasTabAccess('IQC', saved))) {
+            return saved;
+        }
         if (!hasTabAccess) return 'MONITORING';
         const allowed = allTabs.find(t => hasTabAccess('IQC', t));
         return allowed || 'MONITORING';
@@ -52,7 +57,7 @@ export const IQCModule = ({ currentUser, onBack, hasTabAccess }: { currentUser: 
 
     const loadData = async () => {
         const [s, u, l, m, mats] = await Promise.all([
-            getScraps(),
+            getScraps(true),
             getAllUsers(),
             getLines(),
             getModels(),
@@ -69,8 +74,13 @@ export const IQCModule = ({ currentUser, onBack, hasTabAccess }: { currentUser: 
         loadData();
     }, []);
 
+    useEffect(() => {
+        sessionStorage.setItem(IQC_ACTIVE_TAB_KEY, activeTab);
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+    }, [activeTab]);
+
     const refreshData = async () => {
-        const s = await getScraps();
+        const s = await getScraps(true);
         setScraps(s);
     };
 
@@ -696,6 +706,10 @@ const HistorySentTab = ({ scraps, users, onRefresh }: { scraps: ScrapData[], use
         return g;
     }, [filteredScraps, groupBy]);
 
+    const filteredTotalValue = useMemo(() => {
+        return filteredScraps.reduce((acc, s) => acc + Number(s.totalValue || 0), 0);
+    }, [filteredScraps]);
+
     return (
         <div className="space-y-4">
             <Card>
@@ -715,6 +729,12 @@ const HistorySentTab = ({ scraps, users, onRefresh }: { scraps: ScrapData[], use
                         <option value="BOX">Agrupar por Caixa</option>
                     </select>
                 </div>
+                {filters.item !== 'ALL' && (
+                    <div className="mt-3 inline-flex items-center gap-2 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg px-3 py-2 text-sm">
+                        <span className="font-semibold text-blue-700 dark:text-blue-300">Total filtrado por item:</span>
+                        <span className="font-mono font-bold text-blue-800 dark:text-blue-200">{formatCurrency(filteredTotalValue)}</span>
+                    </div>
+                )}
             </Card>
             
             {Object.keys(groups).length === 0 && <p className="text-center text-slate-500 py-10">Nenhum envio registrado.</p>}
@@ -823,6 +843,9 @@ const HistorySentTab = ({ scraps, users, onRefresh }: { scraps: ScrapData[], use
 const HistoryGroupCard = ({ nf, items, users, groupBy = 'NF', isExpanded, onToggle, onRefresh, onClickPreview, onClickScrap }: { nf: string, items: ScrapData[], users: User[], groupBy?: 'NF' | 'BOX', isExpanded?: boolean, onToggle?: () => void, onRefresh?: () => void, onClickPreview?: () => void, onClickScrap?: (s: ScrapData) => void }) => {
     const [itemFilter, setItemFilter] = useState('');
 
+    const filteredItems = items.filter(i => !itemFilter || (i.code || '').toLowerCase().includes(itemFilter.toLowerCase()));
+    const totalFiltrado = filteredItems.reduce((acc, curr) => acc + Number(curr.totalValue || 0), 0);
+
     const totalValue = items.reduce((acc, s) => acc + (s.totalValue || 0), 0);
     const sentDate = items[0].sentAt ? new Date(items[0].sentAt).toLocaleDateString() : '-';
     const sentByMatricula = items[0].sentBy;
@@ -925,13 +948,18 @@ const HistoryGroupCard = ({ nf, items, users, groupBy = 'NF', isExpanded, onTogg
                         </div>
 
                         <div className="mb-4">
-                            <input
-                                type="text"
-                                placeholder="Filtrar por código..."
-                                className="w-full bg-slate-50 dark:bg-zinc-950 border border-slate-200 dark:border-zinc-800 rounded-lg px-3 py-2 text-sm"
-                                value={itemFilter}
-                                onChange={e => setItemFilter(e.target.value)}
-                            />
+                            <div className="flex items-center gap-3 mb-2">
+                                <input
+                                    type="text"
+                                    placeholder="Filtrar por código..."
+                                    className="flex-1 bg-slate-50 dark:bg-zinc-950 border border-slate-200 dark:border-zinc-800 rounded-lg px-3 py-2 text-sm"
+                                    value={itemFilter}
+                                    onChange={e => setItemFilter(e.target.value)}
+                                />
+                                <span className="flex-none bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 text-xs font-bold px-3 py-2 rounded-lg whitespace-nowrap border border-blue-200 dark:border-blue-700">
+                                    {filteredItems.length} item(ns) &bull; {formatCurrency(totalFiltrado)}
+                                </span>
+                            </div>
                         </div>
 
                         <div className="w-full overflow-x-auto pb-4 mb-4 touch-pan-x border border-gray-200 dark:border-zinc-800 rounded-xl">
@@ -947,7 +975,7 @@ const HistoryGroupCard = ({ nf, items, users, groupBy = 'NF', isExpanded, onTogg
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    {items.filter(i => !itemFilter || (i.code || '').toLowerCase().includes(itemFilter.toLowerCase())).map(i => (
+                                    {filteredItems.map(i => (
                                         <tr key={i.id} className="border-b border-slate-100 dark:border-zinc-800 last:border-0 hover:bg-blue-50/50 dark:hover:bg-blue-900/10 cursor-pointer transition-colors" onClick={(e) => { e.stopPropagation(); if (onClickScrap) onClickScrap(i); }}>
                                             <td className="p-2 text-slate-700 dark:text-zinc-300">{i.item}</td>
                                             <td className="p-2 text-slate-700 dark:text-zinc-300">{i.model}</td>

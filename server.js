@@ -30,6 +30,12 @@ enableWAL();
 
 let SCRAP_CACHE = null; // In-Memory Cache for Scraps
 
+const normalizeMoney = (value) => {
+    const num = Number(value);
+    if (!Number.isFinite(num)) return 0;
+    return Math.round((num + Number.EPSILON) * 100) / 100;
+};
+
 const loadScrapCache = async () => {
     console.log("🔄 Carregando Scraps para a RAM...");
     try {
@@ -1007,7 +1013,8 @@ app.delete('/api/boxes/:boxId/scraps/:scrapId', async (req, res) => {
 
 app.get('/api/scraps', async (req, res) => {
     try {
-        if (!SCRAP_CACHE) {
+        const shouldRefresh = req.query.refresh === '1';
+        if (!SCRAP_CACHE || shouldRefresh) {
             await loadScrapCache();
         }
         res.json(SCRAP_CACHE);
@@ -1070,6 +1077,9 @@ app.post('/api/scraps', async (req, res) => {
             plantToSave = rest.plant;
         }
 
+        const unitValue = normalizeMoney(rest.unitValue);
+        const totalValue = normalizeMoney(rest.totalValue);
+
         const newScrap = await prisma.scrapLog.create({
             data: {
                 userId: rest.userId,
@@ -1085,8 +1095,8 @@ app.post('/api/scraps', async (req, res) => {
                 status: rest.status,
                 code: rest.code,
                 description: rest.description,
-                unitValue: Number(rest.unitValue) || 0,
-                totalValue: Number(rest.totalValue) || 0,
+                unitValue,
+                totalValue,
                 usedModel: rest.usedModel,
                 responsible: rest.responsible,
                 station: rest.station,
@@ -1162,8 +1172,8 @@ app.post('/api/scraps/batch-create', async (req, res) => {
                         status: s.status,
                         code: s.code,
                         description: s.description,
-                        unitValue: Number(s.unitValue) || 0,
-                        totalValue: Number(s.unitValue) || 0, // qty=1, logo totalValue = unitValue
+                        unitValue: normalizeMoney(s.unitValue),
+                        totalValue: normalizeMoney(s.unitValue), // qty=1, logo totalValue = unitValue
                         usedModel: s.usedModel,
                         responsible: s.responsible,
                         station: s.station,
@@ -1214,8 +1224,8 @@ app.put('/api/scraps/:id', async (req, res) => {
     if (updates.status !== undefined) dataToUpdate.status = updates.status;
     if (updates.code !== undefined) dataToUpdate.code = updates.code;
     if (updates.description !== undefined) dataToUpdate.description = updates.description;
-    if (updates.unitValue !== undefined) dataToUpdate.unitValue = Number(updates.unitValue);
-    if (updates.totalValue !== undefined) dataToUpdate.totalValue = Number(updates.totalValue);
+    if (updates.unitValue !== undefined) dataToUpdate.unitValue = normalizeMoney(updates.unitValue);
+    if (updates.totalValue !== undefined) dataToUpdate.totalValue = normalizeMoney(updates.totalValue);
     if (updates.usedModel !== undefined) dataToUpdate.usedModel = updates.usedModel;
     if (updates.responsible !== undefined) dataToUpdate.responsible = updates.responsible;
     if (updates.station !== undefined) dataToUpdate.station = updates.station;
@@ -1232,7 +1242,7 @@ app.put('/api/scraps/:id', async (req, res) => {
 
     // Handle snake_case inputs if coming from raw JSON manually
     if (updates.leader_name !== undefined) dataToUpdate.leaderName = updates.leader_name;
-    if (updates.total_value !== undefined) dataToUpdate.totalValue = Number(updates.total_value);
+    if (updates.total_value !== undefined) dataToUpdate.totalValue = normalizeMoney(updates.total_value);
 
     // If nothing to update, return early
     // EXCEPTION: If we are saving from Edit Modal, we might want to force update even if no fields changed, 
@@ -1366,7 +1376,7 @@ app.post('/api/materials/bulk', async (req, res) => {
                         description: m.description,
                         item: m.item,
                         plant: m.plant,
-                        price: m.price
+                        price: normalizeMoney(m.price)
                     },
                     create: {
                         code: String(m.code),
@@ -1374,7 +1384,7 @@ app.post('/api/materials/bulk', async (req, res) => {
                         description: m.description,
                         item: m.item,
                         plant: m.plant,
-                        price: m.price
+                        price: normalizeMoney(m.price)
                     }
                 });
             }

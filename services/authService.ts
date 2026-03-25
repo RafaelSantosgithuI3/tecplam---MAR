@@ -81,7 +81,7 @@ export const recoverPassword = async (matricula: string, name: string, role: str
 
 export const getAllUsers = async (): Promise<User[]> => {
     try {
-        return await apiFetch('/users');
+        return await apiFetch('/users', { useCache: true });
     } catch (e) {
         return [];
     }

@@ -21,7 +21,12 @@ type Tab = 'LINES' | 'ROLES' | 'MODELS' | 'STATIONS' | 'STATIONS_LAYOUT' | 'MATE
 
 export const ManagementModule: React.FC<ManagementModuleProps> = ({ onBack, hasTabAccess }) => {
     const allTabs: Tab[] = ['LINES', 'ROLES', 'MODELS', 'STATIONS', 'STATIONS_LAYOUT', 'MATERIALS', 'DESLIGAMENTO'];
+    const MANAGEMENT_ACTIVE_TAB_KEY = 'activeTab_ManagementModule';
     const determineInitialTab = (): Tab => {
+        const saved = sessionStorage.getItem(MANAGEMENT_ACTIVE_TAB_KEY) as Tab | null;
+        if (saved && allTabs.includes(saved) && (!hasTabAccess || hasTabAccess('MANAGEMENT', saved))) {
+            return saved;
+        }
         if (!hasTabAccess) return 'LINES';
         const allowed = allTabs.find(t => hasTabAccess('MANAGEMENT', t));
         return allowed || 'LINES';
@@ -68,6 +73,11 @@ export const ManagementModule: React.FC<ManagementModuleProps> = ({ onBack, hasT
         loadData();
     }, [tab]);
 
+    useEffect(() => {
+        sessionStorage.setItem(MANAGEMENT_ACTIVE_TAB_KEY, tab);
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+    }, [tab]);
+
     const loadData = async () => {
         if (tab === 'LINES') setLines(await getLines());
         if (tab === 'ROLES') setRoles(await getRoles());
@@ -89,8 +99,8 @@ export const ManagementModule: React.FC<ManagementModuleProps> = ({ onBack, hasT
         if (tab === 'DESLIGAMENTO') {
             try {
                 const [emps, users] = await Promise.all([
-                    apiFetch('/employees'),
-                    apiFetch('/users')
+                    apiFetch('/employees', { useCache: true }),
+                    apiFetch('/users', { useCache: true })
                 ]);
 
                 const employeesData = Array.isArray(emps) ? emps : [];

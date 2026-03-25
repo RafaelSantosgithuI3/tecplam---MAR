@@ -1,9 +1,10 @@
 import { ScrapData } from '../types';
 import { apiFetch } from './networkConfig';
 
-export const getScraps = async (): Promise<ScrapData[]> => {
+export const getScraps = async (forceRefresh = false): Promise<ScrapData[]> => {
     try {
-        return await apiFetch('/scraps');
+        const endpoint = forceRefresh ? '/scraps?refresh=1' : '/scraps';
+        return await apiFetch(endpoint, { useCache: !forceRefresh });
     } catch (e) {
         console.error("Erro ao buscar scraps", e);
         return [];
@@ -72,7 +73,7 @@ export const checkDuplicateScrap = async (qrCode: string, code?: string, qty?: n
 
 export const getMaterials = async (): Promise<import('../types').Material[]> => {
     try {
-        return await apiFetch('/materials');
+        return await apiFetch('/materials', { useCache: true });
     } catch (e) {
         console.error("Erro ao buscar materiais", e);
         return [];

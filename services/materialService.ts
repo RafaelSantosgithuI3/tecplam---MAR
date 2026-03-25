@@ -3,7 +3,7 @@ import { Material } from '../types';
 
 export const getMaterials = async (): Promise<Material[]> => {
     try {
-        return await apiFetch('/materials');
+        return await apiFetch('/materials', { useCache: true });
     } catch (e) {
         console.error("Erro ao buscar materiais", e);
         return [];
