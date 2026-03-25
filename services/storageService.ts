@@ -216,7 +216,7 @@ export const saveLog = async (log: ChecklistLog) => {
 };
 
 export const getLogs = async (): Promise<ChecklistLog[]> => {
-    try { return await apiFetch('/logs', { useCache: true }); } catch (e) { console.error("Erro ao buscar logs", e); return []; }
+    try { return await apiFetch('/logs'); } catch (e) { console.error("Erro ao buscar logs", e); return []; }
 };
 
 export const getTodayLogForUser = async (matricula: string): Promise<ChecklistLog | undefined> => {
@@ -247,7 +247,7 @@ export const getMissingLeadersForToday = async (allUsers: User[]): Promise<User[
 
 export const getLineStops = async (): Promise<ChecklistLog[]> => {
     try {
-        return await apiFetch('/line-stops', { useCache: true });
+        return await apiFetch('/line-stops');
     } catch (e) {
         console.error("Erro ao buscar paradas", e);
         return [];
@@ -273,7 +273,7 @@ export const saveMeeting = async (meeting: MeetingLog) => {
 }
 
 export const getMeetings = async (): Promise<MeetingLog[]> => {
-    try { return await apiFetch('/meetings', { useCache: true }); } catch (e) { console.error("Erro ao buscar atas", e); return []; }
+    try { return await apiFetch('/meetings'); } catch (e) { console.error("Erro ao buscar atas", e); return []; }
 }
 
 // --- MAINTENANCE ITEMS ---

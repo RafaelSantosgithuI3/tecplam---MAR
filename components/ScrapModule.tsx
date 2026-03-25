@@ -104,7 +104,7 @@ export const ScrapModule: React.FC<ScrapModuleProps> = ({ currentUser, onBack, i
         const l = await getLines();
         setLines(l.map(x => x.name));
 
-        const scrapData = await getScraps(true);
+        const scrapData = await getScraps();
         setScraps(scrapData);
 
         const mats = await getMaterials();
@@ -121,7 +121,7 @@ export const ScrapModule: React.FC<ScrapModuleProps> = ({ currentUser, onBack, i
     }, [activeTab]);
 
     const refreshScraps = async () => {
-        const s = await getScraps(true);
+        const s = await getScraps();
         setScraps(s);
     }
 

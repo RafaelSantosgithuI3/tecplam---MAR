@@ -1,10 +1,9 @@
 import { ScrapData } from '../types';
 import { apiFetch } from './networkConfig';
 
-export const getScraps = async (forceRefresh = false): Promise<ScrapData[]> => {
+export const getScraps = async (_forceRefresh = false): Promise<ScrapData[]> => {
     try {
-        const endpoint = forceRefresh ? '/scraps?refresh=1' : '/scraps';
-        return await apiFetch(endpoint, { useCache: !forceRefresh });
+        return await apiFetch('/scraps');
     } catch (e) {
         console.error("Erro ao buscar scraps", e);
         return [];

@@ -57,7 +57,7 @@ export const IQCModule = ({ currentUser, onBack, hasTabAccess }: { currentUser: 
 
     const loadData = async () => {
         const [s, u, l, m, mats] = await Promise.all([
-            getScraps(true),
+            getScraps(),
             getAllUsers(),
             getLines(),
             getModels(),
@@ -80,7 +80,7 @@ export const IQCModule = ({ currentUser, onBack, hasTabAccess }: { currentUser: 
     }, [activeTab]);
 
     const refreshData = async () => {
-        const s = await getScraps(true);
+        const s = await getScraps();
         setScraps(s);
     };
 

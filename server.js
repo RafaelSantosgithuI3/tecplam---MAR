@@ -268,14 +268,15 @@ app.post('/api/admin/reset-password', async (req, res) => {
 
 app.get('/api/logs', async (req, res) => {
     try {
+        const limit = Math.min(parseInt(req.query.limit, 10) || 100, 100);
         const [liderLogs, maintLogs] = await Promise.all([
             prisma.log.findMany({
                 orderBy: { date: 'desc' },
-                take: 500
+                take: limit
             }),
             prisma.maintenanceLog.findMany({
                 orderBy: { date: 'desc' },
-                take: 500
+                take: limit
             })
         ]);
 
@@ -414,9 +415,10 @@ app.post('/api/config/items', async (req, res) => {
 
 app.get('/api/line-stops', async (req, res) => {
     try {
+        const limit = Math.min(parseInt(req.query.limit, 10) || 100, 100);
         const stops = await prisma.lineStop.findMany({
             orderBy: { date: 'desc' },
-            take: 500
+            take: limit
         });
 
         res.json(stops.map(r => {
@@ -735,8 +737,12 @@ app.delete('/api/notices/:id', async (req, res) => {
 
 app.get('/api/meetings', async (req, res) => {
     try {
+        const limit = Math.min(parseInt(req.query.limit, 10) || 100, 100);
+        const offset = Math.max(parseInt(req.query.skip, 10) || 0, 0);
         const rawMeetings = await prisma.meeting.findMany({
-            orderBy: { date: 'desc' }
+            orderBy: { date: 'desc' },
+            take: limit,
+            skip: offset
         });
         // MAP: Parse participants JSON string to Array
         const formattedMeetings = rawMeetings.map(m => ({
@@ -1013,8 +1019,7 @@ app.delete('/api/boxes/:boxId/scraps/:scrapId', async (req, res) => {
 
 app.get('/api/scraps', async (req, res) => {
     try {
-        const shouldRefresh = req.query.refresh === '1';
-        if (!SCRAP_CACHE || shouldRefresh) {
+        if (!SCRAP_CACHE) {
             await loadScrapCache();
         }
         res.json(SCRAP_CACHE);
@@ -1952,113 +1957,6 @@ app.post('/api/employees/:matricula/workstation-slots', async (req, res) => {
 console.log("🚀 Iniciando servidor...");
 // Warm-up Cache before listening matches user request "Chame essa função assim que o servidor iniciar (antes do app.listen)"
 loadScrapCache().then(() => {
-    // ==========================================
-    // ROTAS WMS (ScrapBox)
-    // ==========================================
-
-    app.get('/api/boxes', async (req, res) => {
-        try {
-            const boxes = await prisma.scrapBox.findMany({
-                include: { scraps: true },
-                orderBy: { id: 'desc' }
-            });
-            res.json(boxes);
-        } catch (e) {
-            res.status(500).json({ error: "Erro ao buscar caixas: " + e.message });
-        }
-    });
-
-    app.post('/api/boxes', async (req, res) => {
-        try {
-            const { type, plant } = req.body;
-            if (!type) return res.status(400).json({ error: "Tipo de caixa é obrigatório." });
-
-            const newBox = await prisma.scrapBox.create({
-                data: { type, plant, status: 'OPEN' }
-            });
-            res.json(newBox);
-        } catch (e) {
-            res.status(500).json({ error: "Erro ao criar caixa: " + e.message });
-        }
-    });
-
-    app.put('/api/boxes/:id', async (req, res) => {
-        try {
-            const { status, nfNumber } = req.body;
-            const boxId = parseInt(req.params.id);
-
-            const data = {};
-            if (status) data.status = status;
-            if (nfNumber) data.nfNumber = nfNumber;
-            if (status === 'IDENTIFIED') data.closedAt = new Date();
-            // Reversão: ao voltar para OPEN, limpar closedAt e nfNumber
-            if (status === 'OPEN') { data.closedAt = null; data.nfNumber = null; }
-
-            const updatedBox = await prisma.scrapBox.update({
-                where: { id: boxId },
-                data
-            });
-            res.json(updatedBox);
-        } catch (e) {
-            res.status(500).json({ error: "Erro ao atualizar caixa: " + e.message });
-        }
-    });
-
-    app.delete('/api/boxes/:id', async (req, res) => {
-        try {
-            const boxId = parseInt(req.params.id);
-            // Desvincular scraps antes de excluir
-            await prisma.scrapLog.updateMany({ where: { boxId }, data: { boxId: null } });
-            await prisma.scrapBox.delete({ where: { id: boxId } });
-            res.json({ success: true });
-        } catch (e) {
-            res.status(500).json({ error: "Erro ao excluir caixa: " + e.message });
-        }
-    });
-
-    app.post('/api/boxes/:id/scraps', async (req, res) => {
-        try {
-            const { qrCode } = req.body;
-            const boxId = parseInt(req.params.id);
-
-            if (!qrCode) return res.status(400).json({ error: "QR Code não fornecido." });
-
-            const scrap = await prisma.scrapLog.findFirst({
-                where: { qrCode: qrCode, situation: 'PENDING', boxId: null } // Ensure not sent and not boxed
-            });
-
-            if (!scrap) {
-                return res.status(404).json({ error: "Scrap não encontrado, já vinculado a outra caixa ou já enviado." });
-            }
-
-            const box = await prisma.scrapBox.findUnique({ where: { id: boxId } });
-
-            // Validar categoria/tipo
-            const itemUpper = (scrap.item || '').toUpperCase();
-            if (box.type !== 'MIUDEZA(S)' && box.type !== 'MIUDEZAS') {
-                let typeMatch = box.type.replace('BATERIA RMA', 'BATERIA').replace('BATERIA SCRAP', 'BATERIA');
-                if (!itemUpper.includes(typeMatch)) {
-                    return res.status(400).json({ error: `Scrap não pertence ao tipo da caixa (${box.type}). Categoria lida: ${scrap.item}` });
-                }
-            }
-
-            const updatedScrap = await prisma.scrapLog.update({
-                where: { id: scrap.id },
-                data: { boxId }
-            });
-
-            // Update RAM cache
-            if (global.SCRAP_CACHE) {
-                const index = global.SCRAP_CACHE.findIndex(s => s.id === scrap.id);
-                if (index !== -1) global.SCRAP_CACHE[index] = { ...global.SCRAP_CACHE[index], boxId };
-            }
-
-            res.json({ success: true, scrap: updatedScrap });
-        } catch (e) {
-            res.status(500).json({ error: "Erro ao vincular scrap: " + e.message });
-        }
-    });
-
     app.use(express.static(distPath, {
         setHeaders: setCustomCacheControl
     }));

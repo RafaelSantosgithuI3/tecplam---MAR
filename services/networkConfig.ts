@@ -12,10 +12,15 @@ export const isServerConfigured = (): boolean => true;
 
 const API_CACHE_PREFIX = 'api_cache_';
 const DEFAULT_CACHE_TTL = 300000;
+const HEAVY_CACHE_BLOCKLIST = ['/logs', '/meetings', '/scraps', '/line-stops'];
 
 type ApiFetchOptions = RequestInit & {
     useCache?: boolean;
     cacheTTL?: number;
+};
+
+const isHeavyEndpoint = (endpoint: string): boolean => {
+    return HEAVY_CACHE_BLOCKLIST.some((heavyRoute) => endpoint.includes(heavyRoute));
 };
 
 export const clearApiCache = () => {
@@ -46,7 +51,7 @@ export const apiFetch = async (endpoint: string, options: ApiFetchOptions = {}) 
     const url = `${baseUrl}/api${safeEndpoint}`;
     const method = (requestOptions.method || 'GET').toUpperCase();
     const isGetRequest = method === 'GET';
-    const shouldUseCache = isGetRequest && useCache;
+    const shouldUseCache = isGetRequest && useCache && !isHeavyEndpoint(safeEndpoint);
     const cacheKey = `${API_CACHE_PREFIX}${safeEndpoint}`;
 
     if (shouldUseCache) {

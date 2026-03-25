@@ -871,7 +871,7 @@ const App = () => {
                     );
                     setPendingLineStopsCount(visibleStops.length);
 
-                    const allScraps = await getScraps(true);
+                    const allScraps = await getScraps();
                     const myPending = allScraps.filter(s => s.leaderName === currentUser?.name && !s.countermeasure && isCriticalItem(s.item));
                     setPendingScrapCount(myPending.length);
                 } catch (e) { console.error(e); }
@@ -2645,6 +2645,25 @@ const App = () => {
                 </div>
             </Layout>
         );
+    }
+
+    // --- PROTEÇÃO DE MÓDULOS (GUARD CLAUSE) ---
+    const publicViews: ViewState[] = ['LOGIN', 'REGISTER', 'RECOVER', 'SETUP'];
+
+    if (isLoading && !currentUser) {
+        return (
+            <Layout variant="auth" onToggleTheme={toggleTheme} isDark={isDark}>
+                <div className="flex flex-col items-center justify-center min-h-screen">
+                    <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-500 mb-4"></div>
+                    <p className="text-slate-500 dark:text-zinc-400">A carregar o sistema...</p>
+                </div>
+            </Layout>
+        );
+    }
+
+    if (!currentUser && !publicViews.includes(view)) {
+        setView('LOGIN');
+        return null;
     }
 
     // --- PREPARATION MODULE ---
