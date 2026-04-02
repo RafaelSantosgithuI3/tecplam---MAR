@@ -54,9 +54,10 @@ const loadScrapCache = async () => {
 
 const PORT = 3000;
 const SALT_ROUNDS = 10;
+const apiCompression = compression({ threshold: 0 });
 
 // Middleware
-app.use(compression()); // OTIMIZAÇÃO 2: Compressão Gzip (Reduz tráfego de rede)
+app.use('/api', apiCompression); // Garante compressão mesmo para payloads JSON pequenos nas rotas de API.
 app.use(cors());
 app.use(bodyParser.json({ limit: '50mb' }));
 app.use(bodyParser.urlencoded({ limit: '50mb', extended: true }));

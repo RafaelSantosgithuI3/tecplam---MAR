@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useTransition } from 'react';
 // Vou restaurar a linha de importação completa:
 import {
     LayoutDashboard, AlertTriangle, FileText, CheckCircle2,
@@ -88,6 +88,7 @@ export const ScrapModule: React.FC<ScrapModuleProps> = ({ currentUser, onBack, i
     const [stations, setStations] = useState<string[]>([]);
     const [lines, setLines] = useState<string[]>([]);
     const [materials, setMaterials] = useState<Material[]>([]);
+    const [, startTransition] = useTransition();
 
     useEffect(() => {
         if (initialTab) setActiveTab(initialTab);
@@ -96,19 +97,21 @@ export const ScrapModule: React.FC<ScrapModuleProps> = ({ currentUser, onBack, i
     // Load Initial Data
     const loadData = async () => {
         const u = await authService.getAllUsers();
-        setUsers(u);
         const m = await getModels();
-        setModels(m);
         const s = await getStations();
-        setStations(s);
         const l = await getLines();
-        setLines(l.map(x => x.name));
 
         const scrapData = await getScraps();
-        setScraps(scrapData);
 
         const mats = await getMaterials();
-        setMaterials(mats);
+        startTransition(() => {
+            setUsers(u);
+            setModels(m);
+            setStations(s);
+            setLines(l.map(x => x.name));
+            setScraps(scrapData);
+            setMaterials(mats);
+        });
     };
 
     useEffect(() => {
@@ -122,7 +125,9 @@ export const ScrapModule: React.FC<ScrapModuleProps> = ({ currentUser, onBack, i
 
     const refreshScraps = async () => {
         const s = await getScraps();
-        setScraps(s);
+        startTransition(() => {
+            setScraps(s);
+        });
     }
 
     const isLeader = currentUser.role.toLowerCase().includes('líder') || currentUser.role.toLowerCase().includes('supervisor');

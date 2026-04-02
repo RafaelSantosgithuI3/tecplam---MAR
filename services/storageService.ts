@@ -1,7 +1,15 @@
 // @ts-nocheck
 import { ChecklistItem, ChecklistLog, User, MeetingLog, Permission, ConfigItem, LineStopData, ConfigModel } from '../types';
 import { CHECKLIST_ITEMS } from '../constants';
-import { apiFetch, isServerConfigured } from './networkConfig';
+import { apiFetch, clearApiCache, isServerConfigured } from './networkConfig';
+
+const fetchUncachedCollection = async <T>(endpoint: string): Promise<T> => {
+    return apiFetch(endpoint, { useCache: false });
+};
+
+export const invalidateApiCollectionsCache = async () => {
+    await clearApiCache();
+};
 
 // --- TIMEZONE UTIL ---
 export const getManausDate = (): Date => {
@@ -216,7 +224,7 @@ export const saveLog = async (log: ChecklistLog) => {
 };
 
 export const getLogs = async (): Promise<ChecklistLog[]> => {
-    try { return await apiFetch('/logs'); } catch (e) { console.error("Erro ao buscar logs", e); return []; }
+    try { return await fetchUncachedCollection<ChecklistLog[]>('/logs'); } catch (e) { console.error("Erro ao buscar logs", e); return []; }
 };
 
 export const getTodayLogForUser = async (matricula: string): Promise<ChecklistLog | undefined> => {
@@ -247,7 +255,7 @@ export const getMissingLeadersForToday = async (allUsers: User[]): Promise<User[
 
 export const getLineStops = async (): Promise<ChecklistLog[]> => {
     try {
-        return await apiFetch('/line-stops');
+        return await fetchUncachedCollection<ChecklistLog[]>('/line-stops');
     } catch (e) {
         console.error("Erro ao buscar paradas", e);
         return [];
@@ -273,7 +281,7 @@ export const saveMeeting = async (meeting: MeetingLog) => {
 }
 
 export const getMeetings = async (): Promise<MeetingLog[]> => {
-    try { return await apiFetch('/meetings'); } catch (e) { console.error("Erro ao buscar atas", e); return []; }
+    try { return await fetchUncachedCollection<MeetingLog[]>('/meetings'); } catch (e) { console.error("Erro ao buscar atas", e); return []; }
 }
 
 // --- MAINTENANCE ITEMS ---

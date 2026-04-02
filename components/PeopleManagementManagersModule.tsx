@@ -1226,7 +1226,7 @@ export const PeopleManagementManagersModule: React.FC<Props> = ({ onBack, curren
                                             <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-2 mb-3">
                                                 <h4 className="text-base font-bold text-slate-900 dark:text-zinc-100">{postoName}</h4>
                                                 <span className="text-xs font-semibold px-3 py-1 rounded-full bg-cyan-100 text-cyan-700 dark:bg-cyan-900/30 dark:text-cyan-300">
-                                                    Slots: {filledSlots}/{peopleNeeded} Disponíveis
+                                                    Vagas: {filledSlots}/{peopleNeeded} Disponíveis
                                                 </span>
                                             </div>
                                             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">

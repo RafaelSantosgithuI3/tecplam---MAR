@@ -1479,7 +1479,7 @@ export const exportEspelhoScrapTemplate = async (scraps: any[], nfNumber: string
 
 // ... existing exports ...
 
-export const downloadPreparationExcel = async (logs: PreparationLog[], filters: { date: string, shift: string }) => {
+export const getPreparationExcelBuffer = async (logs: PreparationLog[], filters: { date: string, shift: string }): Promise<ArrayBuffer> => {
     const workbook = new ExcelJS.Workbook();
     try {
         const response = await fetch('/template_preparacao.xlsx');
@@ -1492,10 +1492,9 @@ export const downloadPreparationExcel = async (logs: PreparationLog[], filters: 
         }
     } catch (e) {
         // Create basic structure if template fails
-        const sheet = workbook.addWorksheet('Preparacao');
+        workbook.addWorksheet('Preparacao');
         // Basic fallback headers would go here if needed, but assuming template exists.
-        alert("Erro: Template 'template_preparacao.xlsx' não encontrado na pasta public.");
-        return;
+        throw new Error("Erro: Template 'template_preparacao.xlsx' não encontrado na pasta public.");
     }
 
     const sheet = workbook.worksheets[0];
@@ -1653,7 +1652,11 @@ export const downloadPreparationExcel = async (logs: PreparationLog[], filters: 
     }
 
 
-    const buffer = await workbook.xlsx.writeBuffer();
+    return await workbook.xlsx.writeBuffer() as ArrayBuffer;
+};
+
+export const downloadPreparationExcel = async (logs: PreparationLog[], filters: { date: string, shift: string }) => {
+    const buffer = await getPreparationExcelBuffer(logs, filters);
     const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
     saveAs(blob, `Relatorio_Preparacao_${filters.date}.xlsx`);
 }

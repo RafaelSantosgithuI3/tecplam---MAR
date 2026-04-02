@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useTransition } from 'react';
 import { Card } from './Card';
 import { Button } from './Button';
 import { Input } from './Input';
@@ -54,6 +54,7 @@ export const IQCModule = ({ currentUser, onBack, hasTabAccess }: { currentUser: 
     const [lines, setLines] = useState<string[]>([]);
     const [models, setModels] = useState<string[]>([]);
     const [materials, setMaterials] = useState<Material[]>([]);
+    const [, startTransition] = useTransition();
 
     const loadData = async () => {
         const [s, u, l, m, mats] = await Promise.all([
@@ -63,11 +64,13 @@ export const IQCModule = ({ currentUser, onBack, hasTabAccess }: { currentUser: 
             getModels(),
             getMaterials()
         ]);
-        setScraps(s);
-        setUsers(u);
-        setLines(l.map(x => x.name));
-        setModels(m);
-        setMaterials(mats);
+        startTransition(() => {
+            setScraps(s);
+            setUsers(u);
+            setLines(l.map(x => x.name));
+            setModels(m);
+            setMaterials(mats);
+        });
     };
 
     useEffect(() => {
@@ -81,11 +84,16 @@ export const IQCModule = ({ currentUser, onBack, hasTabAccess }: { currentUser: 
 
     const refreshData = async () => {
         const s = await getScraps();
-        setScraps(s);
+        startTransition(() => {
+            setScraps(s);
+        });
     };
 
     const refreshMaterials = async () => {
-        setMaterials(await getMaterials());
+        const nextMaterials = await getMaterials();
+        startTransition(() => {
+            setMaterials(nextMaterials);
+        });
     };
 
     return (
@@ -842,6 +850,7 @@ const HistorySentTab = ({ scraps, users, onRefresh }: { scraps: ScrapData[], use
 
 const HistoryGroupCard = ({ nf, items, users, groupBy = 'NF', isExpanded, onToggle, onRefresh, onClickPreview, onClickScrap }: { nf: string, items: ScrapData[], users: User[], groupBy?: 'NF' | 'BOX', isExpanded?: boolean, onToggle?: () => void, onRefresh?: () => void, onClickPreview?: () => void, onClickScrap?: (s: ScrapData) => void }) => {
     const [itemFilter, setItemFilter] = useState('');
+    const [, startTransition] = useTransition();
 
     const filteredItems = items.filter(i => !itemFilter || (i.code || '').toLowerCase().includes(itemFilter.toLowerCase()));
     const totalFiltrado = filteredItems.reduce((acc, curr) => acc + Number(curr.totalValue || 0), 0);
@@ -954,7 +963,12 @@ const HistoryGroupCard = ({ nf, items, users, groupBy = 'NF', isExpanded, onTogg
                                     placeholder="Filtrar por código..."
                                     className="flex-1 bg-slate-50 dark:bg-zinc-950 border border-slate-200 dark:border-zinc-800 rounded-lg px-3 py-2 text-sm"
                                     value={itemFilter}
-                                    onChange={e => setItemFilter(e.target.value)}
+                                    onChange={e => {
+                                        const nextValue = e.target.value;
+                                        startTransition(() => {
+                                            setItemFilter(nextValue);
+                                        });
+                                    }}
                                 />
                                 <span className="flex-none bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 text-xs font-bold px-3 py-2 rounded-lg whitespace-nowrap border border-blue-200 dark:border-blue-700">
                                     {filteredItems.length} item(ns) &bull; {formatCurrency(totalFiltrado)}

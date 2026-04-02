@@ -6,8 +6,9 @@ import { Button } from './Button';
 import { Input } from './Input';
 import { Download, Save, Eye, Plus, ArrowLeft, Table, FileText } from 'lucide-react';
 import { getPreparationLogs, savePreparationLog } from '../services/preparationService';
-import { downloadPreparationExcel } from '../services/excelService';
+import { downloadPreparationExcel, getPreparationExcelBuffer } from '../services/excelService';
 import { getLines, getModelsFull } from '../services/storageService';
+import { ExcelFidelityPreview } from './ExcelFidelityPreview';
 
 interface PreparationModuleProps {
     currentUser: User;
@@ -69,6 +70,7 @@ export const PreparationModule: React.FC<PreparationModuleProps> = ({ currentUse
     // Filter State for View
     const [filterDate, setFilterDate] = useState(getProductionDate());
     const [filterShift, setFilterShift] = useState('ALL'); // '1', '2', 'ALL'
+    const [previewBuffer, setPreviewBuffer] = useState<ArrayBuffer | null>(null);
 
     useEffect(() => {
         loadData();
@@ -110,13 +112,27 @@ export const PreparationModule: React.FC<PreparationModuleProps> = ({ currentUse
         }
     };
 
-    const handleExport = () => {
-        const filtered = logs.filter(l => {
+    const getFilteredLogsForExcel = () => {
+        return logs.filter(l => {
             if (l.date !== filterDate) return false;
             if (filterShift !== 'ALL' && !l.shift.includes(filterShift)) return false;
             return true;
         });
+    };
+
+    const handleExport = () => {
+        const filtered = getFilteredLogsForExcel();
         downloadPreparationExcel(filtered, { date: filterDate, shift: filterShift });
+    };
+
+    const handlePreview = async () => {
+        const filtered = getFilteredLogsForExcel();
+        try {
+            const buffer = await getPreparationExcelBuffer(filtered, { date: filterDate, shift: filterShift });
+            setPreviewBuffer(buffer);
+        } catch (e: any) {
+            alert(e?.message || 'Erro ao gerar preview da planilha.');
+        }
     };
 
     const filteredLogs = logs.filter(l => {
@@ -300,7 +316,10 @@ export const PreparationModule: React.FC<PreparationModuleProps> = ({ currentUse
                                 <option value="2">2º Turno</option>
                             </select>
                         </div>
-                        <Button onClick={handleExport}><Download size={16} /> Exportar Excel</Button>
+                        <div className="flex gap-2">
+                            <Button onClick={handlePreview} variant="secondary"><Eye size={16} /> Preview</Button>
+                            <Button onClick={handleExport}><Download size={16} /> Exportar Excel</Button>
+                        </div>
                     </div>
 
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -380,6 +399,14 @@ export const PreparationModule: React.FC<PreparationModuleProps> = ({ currentUse
                         })}
                     </div>
                 </div>
+            )}
+
+            {previewBuffer && (
+                <ExcelFidelityPreview
+                    buffer={previewBuffer}
+                    onClose={() => setPreviewBuffer(null)}
+                    title="Preview do Relatório de Preparação"
+                />
             )}
         </div>
     );
