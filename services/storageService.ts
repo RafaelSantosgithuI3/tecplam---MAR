@@ -1,5 +1,5 @@
 // @ts-nocheck
-import { ChecklistItem, ChecklistLog, User, MeetingLog, Permission, ConfigItem, LineStopData, ConfigModel } from '../types';
+import { ChecklistItem, ChecklistLog, User, MeetingLog, Permission, ConfigItem, LineStopData, ConfigModel, ScrapData } from '../types';
 import { CHECKLIST_ITEMS } from '../constants';
 import { apiFetch, clearApiCache, isServerConfigured, getServerUrl } from './networkConfig';
 
@@ -11,7 +11,7 @@ export const invalidateApiCollectionsCache = async () => {
     await clearApiCache();
 };
 
-type HeavyCollectionKey = 'logs' | 'meetings' | 'line-stops';
+type HeavyCollectionKey = 'logs' | 'meetings' | 'line-stops' | 'scraps';
 
 const HEAVY_CACHE_DB_NAME = 'tecplam-heavy-collections';
 const HEAVY_CACHE_DB_VERSION = 1;
@@ -209,7 +209,7 @@ const connectToSyncStream = () => {
 
             if (!payload?.collection) return;
 
-            if (payload.collection === 'logs' || payload.collection === 'meetings' || payload.collection === 'line-stops') {
+            if (payload.collection === 'logs' || payload.collection === 'meetings' || payload.collection === 'line-stops' || payload.collection === 'scraps') {
                 runInBackground(async () => {
                     const snapshot = await applyHeavyCacheDelta(
                         payload.collection as HeavyCollectionKey,
@@ -295,7 +295,8 @@ export const hydrateHeavyCollectionsInBackground = () => {
         await Promise.allSettled([
             fetchUncachedCollection<ChecklistLog[]>('/logs').then(data => writeHeavyCache('logs', data)),
             fetchUncachedCollection<MeetingLog[]>('/meetings').then(data => writeHeavyCache('meetings', data)),
-            fetchUncachedCollection<ChecklistLog[]>('/line-stops').then(data => writeHeavyCache('line-stops', data))
+            fetchUncachedCollection<ChecklistLog[]>('/line-stops').then(data => writeHeavyCache('line-stops', data)),
+            fetchUncachedCollection<ScrapData[]>('/scraps').then(data => writeHeavyCache('scraps', data))
         ]);
     });
 };

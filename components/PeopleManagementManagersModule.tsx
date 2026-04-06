@@ -20,6 +20,17 @@ type Tab = 'CADASTRO' | 'CONSULTA' | 'PRESENCA' | 'LAYOUT' | 'LUVAS' | 'EDICAO';
 
 export const PeopleManagementManagersModule: React.FC<Props> = ({ onBack, currentUser, hasTabAccess }) => {
     const PEOPLE_MANAGEMENT_MANAGERS_ACTIVE_TAB_KEY = 'activeTab_PeopleManagementManagersModule';
+    const sortByLocale = <T,>(items: T[], getValue: (item: T) => unknown) => {
+        return [...(Array.isArray(items) ? items : [])].sort((a, b) => String(getValue(a) ?? '').localeCompare(String(getValue(b) ?? '')));
+    };
+    const isLeadershipRole = (role: unknown) => {
+        const roleUp = String(role || '').toUpperCase();
+        return roleUp.includes('LÍDER')
+            || roleUp.includes('LIDER')
+            || roleUp.includes('COORDENADOR')
+            || roleUp.includes('SUPERVISOR')
+            || roleUp.includes('TECNICO DE PROCESSO');
+    };
     const getLayoutRolePriority = (role: string) => {
         const normalizedRole = (role || '').toLowerCase();
         if (normalizedRole.includes('desmonte')) return 0;
@@ -75,7 +86,10 @@ export const PeopleManagementManagersModule: React.FC<Props> = ({ onBack, curren
             ]);
 
             if (Array.isArray(usersList)) {
-                const liderList = usersList.filter((u: User) => u.role && (u.role.toLowerCase().includes('lider') || u.role.toLowerCase().includes('líder') || u.role.toLowerCase().includes('supervisor')));
+                const liderList = sortByLocale(
+                    usersList.filter((u: User) => isLeadershipRole(u?.role)),
+                    (u: User) => (u as any)?.fullName || u?.name
+                );
                 setLeaders(liderList);
             }
             if (Array.isArray(empList)) {

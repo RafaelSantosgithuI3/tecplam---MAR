@@ -19,6 +19,17 @@ type Tab = 'CADASTRO' | 'CONSULTA' | 'PRESENCA' | 'LAYOUT' | 'LUVAS' | 'EDICAO';
 
 export const PeopleManagementModule = ({ onBack, currentUser, hasTabAccess }: PeopleManagementModuleProps) => {
     const PEOPLE_MANAGEMENT_ACTIVE_TAB_KEY = 'activeTab_PeopleManagementModule';
+    const sortByLocale = <T,>(items: T[], getValue: (item: T) => unknown) => {
+        return [...(Array.isArray(items) ? items : [])].sort((a, b) => String(getValue(a) ?? '').localeCompare(String(getValue(b) ?? '')));
+    };
+    const isLeadershipRole = (role: unknown) => {
+        const roleUp = String(role || '').toUpperCase();
+        return roleUp.includes('LÍDER')
+            || roleUp.includes('LIDER')
+            || roleUp.includes('COORDENADOR')
+            || roleUp.includes('SUPERVISOR')
+            || roleUp.includes('TECNICO DE PROCESSO');
+    };
     const getLayoutRolePriority = (role: string) => {
         const normalizedRole = (role || '').toLowerCase();
         if (normalizedRole.includes('desmonte')) return 0;
@@ -93,22 +104,27 @@ export const PeopleManagementModule = ({ onBack, currentUser, hasTabAccess }: Pe
         try {
             const users = await apiFetch('/users', { useCache: true });
             if (Array.isArray(users)) {
-                setLeaders(users.filter(u => u.role && (u.role.toLowerCase().includes('lider') || u.role.toLowerCase().includes('líder') || u.role.toLowerCase().includes('supervisor'))));
+                setLeaders(
+                    sortByLocale(
+                        users.filter(u => isLeadershipRole(u?.role)),
+                        (u: any) => u?.fullName || u?.name
+                    )
+                );
             }
             const emp = await apiFetch(`/employees?superiorId=${currentUser.matricula}`, { useCache: true });
-            if (Array.isArray(emp)) setEmployees(emp);
+            if (Array.isArray(emp)) setEmployees(sortByLocale(emp, (employee: any) => employee?.fullName));
 
             const mods = await apiFetch('/config/models', { useCache: true });
-            if (Array.isArray(mods)) setModels(mods);
+            if (Array.isArray(mods)) setModels(sortByLocale(mods, (model: any) => model?.name));
 
             const wks = await apiFetch('/workstations', { useCache: true });
-            if (Array.isArray(wks)) setWorkstations(wks);
+            if (Array.isArray(wks)) setWorkstations(sortByLocale(wks, (workstation: any) => workstation?.name));
 
             const unifiedList = await apiFetch('/config/models/unified', { useCache: true });
-            if (Array.isArray(unifiedList)) setUnifiedModels(unifiedList);
+            if (Array.isArray(unifiedList)) setUnifiedModels(sortByLocale(unifiedList, (item: any) => item?.name || item?.modelName || item?.model || item));
 
             const fetchedRoles = await apiFetch('/config/roles', { useCache: true });
-            if (Array.isArray(fetchedRoles)) setConfigRoles(fetchedRoles);
+            if (Array.isArray(fetchedRoles)) setConfigRoles(sortByLocale(fetchedRoles, (role: any) => role?.name || role?.id));
         } catch (e) {
             console.error('Erro ao carregar dados base', e);
         }
@@ -1250,7 +1266,7 @@ export const PeopleManagementModule = ({ onBack, currentUser, hasTabAccess }: Pe
                                 <label className="text-sm font-medium text-slate-700 dark:text-zinc-300">Posto</label>
                                 <select className="bg-slate-50 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 p-2 rounded outline-none focus:ring-2 focus:ring-cyan-500" value={alocStation} onChange={e => setAlocStation(e.target.value)}>
                                     <option value="">Selecione Posto</option>
-                                    {workstations.filter(w => w.modelName === alocModel).map(w => <option key={w.id} value={w.name}>{w.name}</option>)}
+                                    {workstations.filter(w => w.modelName === alocModel).sort((a, b) => String(a?.name || '').localeCompare(String(b?.name || ''))).map(w => <option key={w.id} value={w.name}>{w.name}</option>)}
                                 </select>
                             </div>
                         </div>

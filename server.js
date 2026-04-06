@@ -126,11 +126,15 @@ const sortCacheItems = (collection, items = []) => {
             return list.sort((a, b) => safeDateValue(b.sentAt || b.createdAt || b.date) - safeDateValue(a.sentAt || a.createdAt || a.date));
         case CACHE_KEYS.NOTICES:
             return list.sort((a, b) => safeDateValue(b.createdAt) - safeDateValue(a.createdAt));
+        case CACHE_KEYS.USERS:
+            return list.sort((a, b) => String(a?.name || '').localeCompare(String(b?.name || '')));
+        case CACHE_KEYS.EMPLOYEES:
+            return list.sort((a, b) => String(a?.fullName || '').localeCompare(String(b?.fullName || '')));
         case CACHE_KEYS.ROLES:
         case CACHE_KEYS.LINES:
         case CACHE_KEYS.MODELS:
         case CACHE_KEYS.STATIONS:
-            return list.sort((a, b) => String(a.name || '').localeCompare(String(b.name || '')));
+            return list.sort((a, b) => String(a?.name || '').localeCompare(String(b?.name || '')));
         default:
             return list;
     }

@@ -8,6 +8,15 @@ import { exportLogToExcel, downloadShiftExcel } from '../services/excelService';
 import { ArrowLeft, Search, Download, Eye, X, Edit3, Trash2, Plus, Save } from 'lucide-react';
 import jsQR from 'jsqr';
 
+const isLeadershipRole = (role: unknown) => {
+    const roleUp = String(role || '').toUpperCase();
+    return roleUp.includes('LÍDER')
+        || roleUp.includes('LIDER')
+        || roleUp.includes('COORDENADOR')
+        || roleUp.includes('SUPERVISOR')
+        || roleUp.includes('TECNICO DE PROCESSO');
+};
+
 export const AuditModule = ({ currentUser, onBack, users, lines }: any) => {
     const AUDIT_ACTIVE_TAB_KEY = 'activeTab_AuditModule';
     const [tab, setTab] = useState<'LEADER_HISTORY' | 'MAINTENANCE_HISTORY' | 'LEADER_EDITOR' | 'MAINTENANCE_EDITOR' | 'LEADERS' | 'LINES' | 'MAINTENANCE_MATRIX'>(() => {
@@ -73,7 +82,7 @@ export const AuditModule = ({ currentUser, onBack, users, lines }: any) => {
             });
 
             if (tab === 'LEADERS') {
-                const targets = users.filter((u: User) => u.role.includes('Líder') || u.role.includes('Supervisor'));
+                const targets = [...users.filter((u: User) => isLeadershipRole(u?.role))].sort((a: User, b: User) => String((a as any)?.fullName || a?.name || '').localeCompare(String((b as any)?.fullName || b?.name || '')));
                 const m: LeaderStatus[] = targets.map((u: User) => {
                     const statuses = dates.map(d => {
                         const found = rawLogs.find(l => l.userId === u.matricula && l.date.startsWith(d) && (!l.type || l.type === 'PRODUCTION'));

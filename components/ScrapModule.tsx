@@ -41,6 +41,21 @@ const formatDateDisplay = (dateString: string | Date | undefined): string => {
     return ds;
 };
 
+const isLeadershipRole = (role: unknown): boolean => {
+    const roleUp = String(role || '').toUpperCase();
+    return roleUp.includes('LÍDER')
+        || roleUp.includes('LIDER')
+        || roleUp.includes('COORDENADOR')
+        || roleUp.includes('SUPERVISOR')
+        || roleUp.includes('TECNICO DE PROCESSO');
+};
+
+const sortUsersByDisplayName = (items: User[] = []): User[] => {
+    return [...(Array.isArray(items) ? items : [])].sort((a, b) =>
+        String((a as any)?.fullName || a?.name || '').localeCompare(String((b as any)?.fullName || b?.name || ''))
+    );
+};
+
 export const getSafeDateFallback = (dateStr?: string | null): string => {
     if (!dateStr) return getManausDate().toISOString().split('T')[0];
     const parsed = new Date(dateStr);
@@ -247,8 +262,14 @@ export const ScrapModule: React.FC<ScrapModuleProps> = ({ currentUser, onBack, i
         const unsubscribe = subscribeToSyncStream((event: any) => {
             if (event?.collection !== 'scraps') return;
 
+            const sanitizedItems = Array.isArray(event?.items)
+                ? event.items
+                : event?.items && typeof event.items === 'object'
+                    ? Object.values(event.items)
+                    : [];
+
             startTransition(() => {
-                setScraps((current) => applyScrapSyncDelta(current, event.action, event.items || [], event.ids || []));
+                setScraps((current) => applyScrapSyncDelta(current, event.action, sanitizedItems as ScrapData[], event.ids || []));
             });
         });
 
@@ -269,7 +290,7 @@ export const ScrapModule: React.FC<ScrapModuleProps> = ({ currentUser, onBack, i
         });
     }
 
-    const isLeader = currentUser.role.toLowerCase().includes('líder') || currentUser.role.toLowerCase().includes('supervisor');
+    const isLeader = isLeadershipRole(currentUser.role);
     const isAdmin = currentUser.isAdmin || currentUser.role.toLowerCase().includes('admin') || currentUser.role.toLowerCase().includes('gerente');
 
     const canEditDelete = useMemo(() => {
@@ -743,12 +764,9 @@ const ScrapForm = ({ users, models, stations, lines, materials, onSuccess, curre
 
     const normalizeStr = (s: string) => (s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
     const pqcUsers = users.filter((u: User) => u.status !== 'INATIVO' && normalizeStr(u.role).includes('pqc'));
-    const leaderUsers = users.filter((u: User) => u.status !== 'INATIVO' && (
-        normalizeStr(u.role).includes('lider') ||
-        normalizeStr(u.role).includes('supervisor') ||
-        normalizeStr(u.role).includes('coordenador') ||
-        normalizeStr(u.role).includes('tecnico de processo')
-    ));
+    const leaderUsers = sortUsersByDisplayName(
+        users.filter((u: User) => u.status !== 'INATIVO' && isLeadershipRole(u.role))
+    );
 
     return (
         <Card className="max-w-6xl mx-auto bg-white/50 dark:bg-zinc-900/50 border-slate-200 dark:border-zinc-800 shadow-sm">
@@ -1244,7 +1262,7 @@ export const ScrapOperational = ({ scraps, users, lines, models, isLoading = fal
         leader: '',
         line: '',
         model: '',
-        period: 'MONTH', // DAY, WEEK, MONTH, YEAR, ALL
+        period: 'ALL', // DAY, WEEK, MONTH, YEAR, ALL
         specificDate: '', // For DAY
         specificWeek: '', // For WEEK
         specificMonth: '', // For MONTH
@@ -1295,10 +1313,10 @@ export const ScrapOperational = ({ scraps, users, lines, models, isLoading = fal
         return res.sort((a, b) => (parseScrapDate(b.date)?.getTime() || 0) - (parseScrapDate(a.date)?.getTime() || 0));
     }, [reactiveScraps, filters]);
 
-    const leadersOnly = safeUsers.filter((u: User) => {
-        const r = (u.role || '').toLowerCase();
-        return r.includes('líder') || r.includes('coordenador') || r.includes('supervisor');
-    });
+    const leadersOnly = useMemo(
+        () => sortUsersByDisplayName(safeUsers.filter((u: User) => isLeadershipRole(u.role))),
+        [safeUsers]
+    );
 
     if ((isLoading || isHydrating) && reactiveScraps.length === 0) {
         return <LoadingSpinner label="Sincronizando monitoramento..." />;
@@ -1416,7 +1434,7 @@ export const ScrapOperational = ({ scraps, users, lines, models, isLoading = fal
 
 export const ScrapManagementAdvanced = ({ scraps, users, isLoading = false, isHydrating = false }: any) => {
     const [filters, setFilters] = useState({
-        period: 'MONTH', // DAY, WEEK, MONTH, YEAR, ALL
+        period: 'ALL', // DAY, WEEK, MONTH, YEAR, ALL
         specificDate: '',
         specificWeek: '',
         specificMonth: '',
@@ -1427,9 +1445,11 @@ export const ScrapManagementAdvanced = ({ scraps, users, isLoading = false, isHy
     });
     const [showChartsModal, setShowChartsModal] = useState(false);
     const [chartFilters, setChartFilters] = useState({
-        period: 'MONTH', specificDate: '', specificWeek: '', specificMonth: '', specificYear: '',
-        shift: 'ALL', leaderName: 'ALL', model: 'ALL'
+        period: 'ALL', specificDate: '', specificWeek: '', specificMonth: '', specificYear: '',
+        shift: 'ALL', leaderName: 'ALL', model: 'ALL', startDate: '', endDate: ''
     });
+    const [startDate, setStartDate] = useState('');
+    const [endDate, setEndDate] = useState('');
     const [chartDrilldown, setChartDrilldown] = useState<{ label: string; scraps: ScrapData[] } | null>(null);
 
     const [selectedRanking, setSelectedRanking] = useState<{ type: string, name: string, items: ScrapData[] } | null>(null);
@@ -1450,8 +1470,47 @@ export const ScrapManagementAdvanced = ({ scraps, users, isLoading = false, isHy
             modelSource = modelSource.filter(s => s.leaderName === filters.leaderName);
         }
 
-        return Array.from(new Set(modelSource.map(s => s.model).filter(Boolean))).sort();
+        return Array.from(new Set(modelSource.map(s => s.model).filter(Boolean))).sort((a, b) => String(a).localeCompare(String(b)));
     }, [reactiveScraps, filters.shift, filters.leaderName]);
+
+    const formatRangeDate = (date: Date) => {
+        const year = date.getFullYear();
+        const month = String(date.getMonth() + 1).padStart(2, '0');
+        const day = String(date.getDate()).padStart(2, '0');
+        return `${year}-${month}-${day}`;
+    };
+
+    const applyQuickRange = (preset: 'CURRENT_WEEK' | 'CURRENT_MONTH' | 'LAST_7_DAYS' | 'CLEAR') => {
+        if (preset === 'CLEAR') {
+            setStartDate('');
+            setEndDate('');
+            return;
+        }
+
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        let rangeStart = new Date(today);
+
+        if (preset === 'CURRENT_WEEK') {
+            const dayIndex = (today.getDay() + 6) % 7;
+            rangeStart.setDate(today.getDate() - dayIndex);
+        } else if (preset === 'CURRENT_MONTH') {
+            rangeStart = new Date(today.getFullYear(), today.getMonth(), 1);
+        } else if (preset === 'LAST_7_DAYS') {
+            rangeStart.setDate(today.getDate() - 6);
+        }
+
+        setStartDate(formatRangeDate(rangeStart));
+        setEndDate(formatRangeDate(today));
+        setFilters(prev => ({
+            ...prev,
+            period: 'ALL',
+            specificDate: '',
+            specificWeek: '',
+            specificMonth: '',
+            specificYear: ''
+        }));
+    };
 
     const filtered = useMemo(() => {
         let res = [...reactiveScraps];
@@ -1494,8 +1553,26 @@ export const ScrapManagementAdvanced = ({ scraps, users, isLoading = false, isHy
             res = res.filter(s => s.model === filters.model);
         }
 
+        const parsedStart = startDate ? parseScrapDate(startDate) : null;
+        const parsedEnd = endDate ? parseScrapDate(endDate) : null;
+        const startTime = parsedStart ? new Date(parsedStart).setHours(0, 0, 0, 0) : null;
+        const endTime = parsedEnd ? new Date(parsedEnd).setHours(23, 59, 59, 999) : null;
+        const minTime = startTime !== null && endTime !== null ? Math.min(startTime, endTime) : startTime;
+        const maxTime = startTime !== null && endTime !== null ? Math.max(startTime, endTime) : endTime;
+
+        if (minTime !== null || maxTime !== null) {
+            res = res.filter((item) => {
+                const itemDate = parseScrapDate(item?.date || '');
+                if (!itemDate) return false;
+                const itemTime = itemDate.getTime();
+                if (minTime !== null && itemTime < minTime) return false;
+                if (maxTime !== null && itemTime > maxTime) return false;
+                return true;
+            });
+        }
+
         return res;
-    }, [reactiveScraps, filters]);
+    }, [reactiveScraps, filters, startDate, endDate]);
 
     const baseFiltered = useMemo(() => {
         let res = [...reactiveScraps];
@@ -1542,6 +1619,25 @@ export const ScrapManagementAdvanced = ({ scraps, users, isLoading = false, isHy
         if (chartFilters.shift !== 'ALL') res = res.filter(s => String(s.shift ?? '') === chartFilters.shift);
         if (chartFilters.leaderName !== 'ALL') res = res.filter(s => s.leaderName === chartFilters.leaderName);
         if (chartFilters.model !== 'ALL') res = res.filter(s => s.model === chartFilters.model);
+
+        const parsedStart = chartFilters.startDate ? parseScrapDate(chartFilters.startDate) : null;
+        const parsedEnd = chartFilters.endDate ? parseScrapDate(chartFilters.endDate) : null;
+        const startTime = parsedStart ? new Date(parsedStart).setHours(0, 0, 0, 0) : null;
+        const endTime = parsedEnd ? new Date(parsedEnd).setHours(23, 59, 59, 999) : null;
+        const minTime = startTime !== null && endTime !== null ? Math.min(startTime, endTime) : startTime;
+        const maxTime = startTime !== null && endTime !== null ? Math.max(startTime, endTime) : endTime;
+
+        if (minTime !== null || maxTime !== null) {
+            res = res.filter((item) => {
+                const itemDate = parseScrapDate(item?.date || '');
+                if (!itemDate) return false;
+                const itemTime = itemDate.getTime();
+                if (minTime !== null && itemTime < minTime) return false;
+                if (maxTime !== null && itemTime > maxTime) return false;
+                return true;
+            });
+        }
+
         return res;
     }, [reactiveScraps, chartFilters]);
 
@@ -1550,14 +1646,33 @@ export const ScrapManagementAdvanced = ({ scraps, users, isLoading = false, isHy
         if (chartFilters.shift !== 'ALL') res = res.filter(s => String(s.shift ?? '') === chartFilters.shift);
         if (chartFilters.leaderName !== 'ALL') res = res.filter(s => s.leaderName === chartFilters.leaderName);
         if (chartFilters.model !== 'ALL') res = res.filter(s => s.model === chartFilters.model);
+
+        const parsedStart = chartFilters.startDate ? parseScrapDate(chartFilters.startDate) : null;
+        const parsedEnd = chartFilters.endDate ? parseScrapDate(chartFilters.endDate) : null;
+        const startTime = parsedStart ? new Date(parsedStart).setHours(0, 0, 0, 0) : null;
+        const endTime = parsedEnd ? new Date(parsedEnd).setHours(23, 59, 59, 999) : null;
+        const minTime = startTime !== null && endTime !== null ? Math.min(startTime, endTime) : startTime;
+        const maxTime = startTime !== null && endTime !== null ? Math.max(startTime, endTime) : endTime;
+
+        if (minTime !== null || maxTime !== null) {
+            res = res.filter((item) => {
+                const itemDate = parseScrapDate(item?.date || '');
+                if (!itemDate) return false;
+                const itemTime = itemDate.getTime();
+                if (minTime !== null && itemTime < minTime) return false;
+                if (maxTime !== null && itemTime > maxTime) return false;
+                return true;
+            });
+        }
+
         return res;
-    }, [reactiveScraps, chartFilters.shift, chartFilters.leaderName, chartFilters.model]);
+    }, [reactiveScraps, chartFilters.shift, chartFilters.leaderName, chartFilters.model, chartFilters.startDate, chartFilters.endDate]);
 
     const chartAvailableModels = useMemo(() => {
         let src = [...reactiveScraps];
         if (chartFilters.shift !== 'ALL') src = src.filter(s => String(s.shift ?? '') === chartFilters.shift);
         if (chartFilters.leaderName !== 'ALL') src = src.filter(s => s.leaderName === chartFilters.leaderName);
-        return Array.from(new Set(src.map(s => s.model).filter(Boolean))).sort();
+        return Array.from(new Set(src.map(s => s.model).filter(Boolean))).sort((a, b) => String(a).localeCompare(String(b)));
     }, [reactiveScraps, chartFilters.shift, chartFilters.leaderName]);
 
     const rankings = useMemo(() => {
@@ -1634,7 +1749,32 @@ export const ScrapManagementAdvanced = ({ scraps, users, isLoading = false, isHy
                         {filters.period === 'WEEK' && <Input type="week" value={filters.specificWeek} onChange={e => setFilters({ ...filters, specificWeek: e.target.value })} className="w-auto max-w-[160px]" />}
                         {filters.period === 'MONTH' && <Input type="month" value={filters.specificMonth} onChange={e => setFilters({ ...filters, specificMonth: e.target.value })} className="w-auto max-w-[160px]" />}
                         {filters.period === 'YEAR' && <Input type="number" placeholder="Ano (Ex: 2024)" value={filters.specificYear} onChange={e => setFilters({ ...filters, specificYear: e.target.value })} className="w-auto max-w-[160px]" />}
-                        <Button variant="primary" onClick={() => { setChartFilters({...filters}); setShowChartsModal(true); }} size="sm" className="flex items-center gap-2 whitespace-nowrap">
+
+                        <div className="flex flex-wrap items-center gap-2 rounded-lg border border-slate-200 dark:border-zinc-800 bg-slate-50 dark:bg-zinc-950 p-2">
+                            <span className="text-xs font-semibold uppercase text-slate-500 dark:text-zinc-400">De</span>
+                            <input
+                                type="date"
+                                className="bg-white dark:bg-zinc-900 border border-slate-300 dark:border-zinc-800 p-2 rounded text-sm text-slate-900 dark:text-zinc-100 outline-none focus:ring-2 focus:ring-blue-600"
+                                value={startDate}
+                                onChange={e => setStartDate(e.target.value)}
+                            />
+                            <span className="text-xs font-semibold uppercase text-slate-500 dark:text-zinc-400">Até</span>
+                            <input
+                                type="date"
+                                className="bg-white dark:bg-zinc-900 border border-slate-300 dark:border-zinc-800 p-2 rounded text-sm text-slate-900 dark:text-zinc-100 outline-none focus:ring-2 focus:ring-blue-600"
+                                value={endDate}
+                                onChange={e => setEndDate(e.target.value)}
+                            />
+                        </div>
+
+                        <div className="flex flex-wrap items-center gap-2">
+                            <Button variant="ghost" size="sm" onClick={() => applyQuickRange('CURRENT_WEEK')}>Semana Atual</Button>
+                            <Button variant="ghost" size="sm" onClick={() => applyQuickRange('CURRENT_MONTH')}>Mês Atual</Button>
+                            <Button variant="ghost" size="sm" onClick={() => applyQuickRange('LAST_7_DAYS')}>Últimos 7 Dias</Button>
+                            <Button variant="ghost" size="sm" onClick={() => applyQuickRange('CLEAR')}>Limpar</Button>
+                        </div>
+
+                        <Button variant="primary" onClick={() => { setChartFilters({ ...chartFilters, ...filters, startDate, endDate }); setShowChartsModal(true); }} size="sm" className="flex items-center gap-2 whitespace-nowrap">
                             <BarChart3 size={16} />
                             Visualizar Gráficos
                         </Button>
@@ -1812,7 +1952,7 @@ export const ScrapManagementAdvanced = ({ scraps, users, isLoading = false, isHy
                                         </select>
                                         <select className="bg-white dark:bg-zinc-900 border border-slate-300 dark:border-zinc-800 p-2 rounded text-sm text-slate-900 dark:text-zinc-100 outline-none focus:ring-2 focus:ring-blue-600" onChange={e => setChartFilters({ ...chartFilters, leaderName: e.target.value, model: 'ALL' })} value={chartFilters.leaderName}>
                                             <option value="ALL">Líder: Todos</option>
-                                            {safeUsers.filter((u: User) => u.role.toLowerCase().includes('líder') || u.role.toLowerCase().includes('supervisor') || u.role.toLowerCase().includes('coordenador')).map((u: User) => (
+                                            {sortUsersByDisplayName(safeUsers.filter((u: User) => isLeadershipRole(u.role))).map((u: User) => (
                                                 <option key={u.matricula} value={u.name}>{u.name}</option>
                                             ))}
                                         </select>
@@ -2764,7 +2904,7 @@ const ScrapEditDelete = ({ scraps, users, lines, models, onUpdate, categories, s
                 <div className="grid grid-cols-1 md:grid-cols-6 gap-4">
                     <select className="bg-white dark:bg-zinc-950 border border-slate-300 dark:border-zinc-800 p-2 rounded text-sm outline-none" onChange={e => setFilters({ ...filters, leader: e.target.value })} value={filters.leader}>
                         <option value="">Todos Líderes</option>
-                        {users.filter((u: User) => u.role.includes('Líder') || u.role.includes('Supervisor')).map((u: User) => <option key={u.matricula} value={u.name}>{u.name}</option>)}
+                        {sortUsersByDisplayName(users.filter((u: User) => isLeadershipRole(u.role))).map((u: User) => <option key={u.matricula} value={u.name}>{u.name}</option>)}
                     </select>
                     <select className="bg-white dark:bg-zinc-950 border border-slate-300 dark:border-zinc-800 p-2 rounded text-sm outline-none" onChange={e => setFilters({ ...filters, line: e.target.value })} value={filters.line}>
                         <option value="">Todas Linhas</option>
@@ -2776,7 +2916,7 @@ const ScrapEditDelete = ({ scraps, users, lines, models, onUpdate, categories, s
                     </select>
                     <select className="bg-white dark:bg-zinc-950 border border-slate-300 dark:border-zinc-800 p-2 rounded text-sm outline-none" onChange={e => setFilters({ ...filters, item: e.target.value })} value={filters.item}>
                         <option value="">Todos Itens</option>
-                        {Array.from(new Set(filterScraps.map((s: ScrapData) => s.item).filter(Boolean))).sort().map((item: string) => <option key={item} value={item}>{item}</option>)}
+                        {Array.from(new Set(filterScraps.map((s: ScrapData) => s.item).filter(Boolean))).sort((a, b) => String(a).localeCompare(String(b))).map((item: string) => <option key={item} value={item}>{item}</option>)}
                     </select>
                     <div className="flex gap-1 items-end">
                         <Input label="" placeholder="QR Code" value={filters.qrCode} onChange={e => setFilters({ ...filters, qrCode: e.target.value })} onKeyDown={e => e.key === 'Enter' && setFilters({ ...filters, qrCode: e.currentTarget.value })} className="text-sm flex-1" />
@@ -3021,7 +3161,7 @@ const ScrapEditModal = ({ scrap, users, lines, models, categories, statusOptions
                                 disabled={readOnlyMode}
                             >
                                 <option value="" disabled>Selecione...</option>
-                                {users.filter((u: User) => u.role.includes('Líder') || u.role.includes('Supervisor')).map((u: User) => (
+                                {sortUsersByDisplayName(users.filter((u: User) => isLeadershipRole(u.role))).map((u: User) => (
                                     <option key={u.matricula} value={u.name}>{u.name}</option>
                                 ))}
                             </select>
@@ -3265,7 +3405,7 @@ const NewAdvancedDashboard = ({ scraps, users, isLoading = false, isHydrating = 
             modelsSource = modelsSource.filter(s => s.leaderName === filters.leader);
         }
         const uniqueModels = Array.from(new Set(modelsSource.map(s => s.model).filter(Boolean)));
-        return uniqueModels.sort();
+        return uniqueModels.sort((a, b) => String(a).localeCompare(String(b)));
     }, [reactiveScraps, filters.leader]);
 
     const filtered = useMemo(() => {
@@ -3390,7 +3530,7 @@ const NewAdvancedDashboard = ({ scraps, users, isLoading = false, isHydrating = 
 
                         <select className="bg-slate-50 dark:bg-zinc-950 border border-slate-300 dark:border-zinc-800 p-2 rounded text-sm outline-none" value={filters.leader} onChange={e => setFilters({ ...filters, leader: e.target.value })}>
                             <option value="ALL">Todos os Líderes</option>
-                            {safeUsers.filter((u: User) => u.role.toLowerCase().includes('líder') || u.role.toLowerCase().includes('supervisor')).map((u: User) => (
+                            {sortUsersByDisplayName(safeUsers.filter((u: User) => isLeadershipRole(u.role))).map((u: User) => (
                                 <option key={u.matricula} value={u.name}>{u.name}</option>
                             ))}
                         </select>

@@ -13,7 +13,7 @@ import {
     getScraps, batchProcessScraps, updateScrap
 } from '../services/scrapService';
 import { getAllUsers } from '../services/authService';
-import { getLines, getModels, getWeekNumber } from '../services/storageService';
+import { getLines, getModels, getWeekNumber, subscribeToSyncStream } from '../services/storageService';
 import { exportEspelhoScrapTemplate, exportExecutiveReport, exportIQCEnvioTemplate } from '../services/excelService';
 import { getMaterials } from '../services/materialService';
 import { MaterialsManager } from './MaterialsManager';
@@ -77,17 +77,55 @@ const parseDashboardDate = (value: unknown): Date | null => {
 const normalizeDashboardScraps = (scraps: ScrapData[] = []): ScrapData[] => {
     if (!Array.isArray(scraps)) return [];
 
-    return scraps.map((scrap) => ({
-        ...scrap,
-        date: normalizeDashboardDateKey(scrap?.date),
-        shift: String(scrap?.shift ?? '').trim(),
-        qty: normalizeMetric(scrap?.qty),
-        totalValue: normalizeMetric(scrap?.totalValue),
-        line: String(scrap?.line ?? ''),
-        model: String(scrap?.model ?? ''),
-        item: String(scrap?.item ?? ''),
-        leaderName: String(scrap?.leaderName ?? ''),
-    }));
+    return scraps
+        .filter((scrap) => !!scrap && typeof scrap === 'object')
+        .map((scrap) => {
+            const safeScrap = (scrap ?? {}) as Partial<ScrapData>;
+            return {
+                ...safeScrap,
+                date: normalizeDashboardDateKey(safeScrap?.date || ''),
+                shift: String(safeScrap?.shift ?? '').trim(),
+                qty: normalizeMetric(safeScrap?.qty),
+                totalValue: normalizeMetric(safeScrap?.totalValue),
+                unitValue: normalizeMetric(safeScrap?.unitValue),
+                line: String(safeScrap?.line ?? ''),
+                model: String(safeScrap?.model ?? ''),
+                item: String(safeScrap?.item ?? ''),
+                leaderName: String(safeScrap?.leaderName ?? ''),
+            } as ScrapData;
+        });
+};
+
+const resolveDashboardScrapKey = (scrap: Partial<ScrapData> | null | undefined): string => {
+    if (scrap?.id !== undefined && scrap?.id !== null && String(scrap.id).trim()) {
+        return String(scrap.id);
+    }
+    return [
+        normalizeDashboardDateKey(scrap?.date || ''),
+        String(scrap?.code ?? ''),
+        String(scrap?.model ?? ''),
+        String(scrap?.item ?? ''),
+        String(scrap?.leaderName ?? '')
+    ].join('|');
+};
+
+const applyDashboardSyncDelta = (current: ScrapData[], action?: string, items: any[] = [], ids: string[] = []): ScrapData[] => {
+    const currentItems = normalizeDashboardScraps(current);
+    const nextItems = normalizeDashboardScraps(items as ScrapData[]);
+
+    if (action === 'replace') {
+        return nextItems;
+    }
+
+    if (action === 'remove') {
+        const idSet = new Set((ids || []).map(String));
+        return currentItems.filter((item) => !idSet.has(String(item?.id)) && !idSet.has(resolveDashboardScrapKey(item)));
+    }
+
+    const byId = new Map<string, ScrapData>();
+    currentItems.forEach((item) => byId.set(resolveDashboardScrapKey(item), item));
+    nextItems.forEach((item) => byId.set(resolveDashboardScrapKey(item), item));
+    return Array.from(byId.values());
 };
 
 const LoadingSpinner = ({ label = 'Carregando dados...' }: { label?: string }) => (
@@ -151,6 +189,24 @@ export const IQCModule = ({ currentUser, onBack, hasTabAccess }: { currentUser: 
     }, []);
 
     useEffect(() => {
+        const unsubscribe = subscribeToSyncStream((event: any) => {
+            if (event?.collection !== 'scraps') return;
+
+            const itemsArray = Array.isArray(event?.items)
+                ? event.items
+                : Object.values(event?.items || {});
+
+            startTransition(() => {
+                setScraps((current) => applyDashboardSyncDelta(current, event?.action, itemsArray, event?.ids || []));
+            });
+        });
+
+        return () => {
+            unsubscribe?.();
+        };
+    }, []);
+
+    useEffect(() => {
         sessionStorage.setItem(IQC_ACTIVE_TAB_KEY, activeTab);
         window.scrollTo({ top: 0, behavior: 'smooth' });
     }, [activeTab]);
@@ -168,6 +224,10 @@ export const IQCModule = ({ currentUser, onBack, hasTabAccess }: { currentUser: 
             setMaterials(nextMaterials);
         });
     };
+
+    if ((isLoading || isHydrating) && scraps.length === 0) {
+        return <LoadingSpinner label="Carregando dados IQC..." />;
+    }
 
     return (
         <div className="min-h-screen bg-slate-50 dark:bg-zinc-950 text-slate-900 dark:text-zinc-100 p-4 md:p-8 space-y-6">
@@ -277,7 +337,7 @@ const ExecutiveDashboard = ({ scraps, users, isLoading = false, isHydrating = fa
     const reactiveScraps = useMemo(() => normalizeDashboardScraps(Array.isArray(scraps) ? scraps : []), [scraps]);
 
     const [filters, setFilters] = useState({
-        period: 'MONTH',
+        period: 'ALL',
         plant: 'ALL',
         shift: 'ALL',
         status: 'ALL', // SENT, PENDING
@@ -288,34 +348,34 @@ const ExecutiveDashboard = ({ scraps, users, isLoading = false, isHydrating = fa
     });
 
     const filtered = useMemo(() => {
-        let res = [...reactiveScraps];
+        let res = [...reactiveScraps].filter(Boolean);
 
-        if (filters.period === 'DAY' && filters.specificDate) res = res.filter(s => normalizeDashboardDateKey(s.date) === filters.specificDate);
+        if (filters.period === 'DAY' && filters.specificDate) res = res.filter(item => normalizeDashboardDateKey(item?.date || '') === filters.specificDate);
         else if (filters.period === 'WEEK' && filters.specificWeek) {
             const [y, w] = filters.specificWeek.split('-W').map(Number);
-            res = res.filter(s => {
-                const sd = parseDashboardDate(s.date);
+            res = res.filter(item => {
+                const sd = parseDashboardDate(item?.date || '');
                 if (!sd) return false;
                 const normalizedDate = new Date(sd.getFullYear(), sd.getMonth(), sd.getDate());
                 return getWeekNumber(normalizedDate) === w && sd.getFullYear() === y;
             });
         }
-        else if (filters.period === 'MONTH' && filters.specificMonth) res = res.filter(s => normalizeDashboardDateKey(s.date).startsWith(filters.specificMonth));
-        else if (filters.period === 'YEAR' && filters.specificYear) res = res.filter(s => normalizeDashboardDateKey(s.date).startsWith(filters.specificYear));
+        else if (filters.period === 'MONTH' && filters.specificMonth) res = res.filter(item => normalizeDashboardDateKey(item?.date || '').startsWith(filters.specificMonth));
+        else if (filters.period === 'YEAR' && filters.specificYear) res = res.filter(item => normalizeDashboardDateKey(item?.date || '').startsWith(filters.specificYear));
 
-        if (filters.plant !== 'ALL') res = res.filter(s => s.plant === filters.plant);
-        if (filters.shift !== 'ALL') res = res.filter(s => String(s.shift ?? '') === filters.shift);
+        if (filters.plant !== 'ALL') res = res.filter(item => item?.plant === filters.plant);
+        if (filters.shift !== 'ALL') res = res.filter(item => String(item?.shift ?? '') === filters.shift);
         if (filters.status !== 'ALL') {
-            if (filters.status === 'SENT') res = res.filter(s => s.situation === 'SENT');
-            else res = res.filter(s => s.situation !== 'SENT');
+            if (filters.status === 'SENT') res = res.filter(item => item?.situation === 'SENT');
+            else res = res.filter(item => item?.situation !== 'SENT');
         }
 
         return res;
     }, [reactiveScraps, filters]);
 
     const stats = useMemo(() => {
-        const totalVal = filtered.reduce((acc, s) => acc + normalizeMetric(s.totalValue), 0);
-        const totalQty = filtered.reduce((acc, s) => acc + normalizeMetric(s.qty), 0);
+        const totalVal = filtered.reduce((acc, item) => acc + (Number(item?.totalValue) || 0), 0);
+        const totalQty = filtered.reduce((acc, item) => acc + (Number(item?.qty) || 0), 0);
 
         const specificItems = ['FRONT', 'REAR', 'OCTA', 'CAMERA', 'BATERIA RMA', 'BATERIA SCRAP', 'PLACA'];
         const byCategory: Record<string, number> = {};
@@ -325,9 +385,10 @@ const ExecutiveDashboard = ({ scraps, users, isLoading = false, isHydrating = fa
         specificItems.forEach(k => byCategory[k] = 0);
         byCategory['MIUDEZAS'] = 0;
 
-        filtered.forEach(s => {
-            const val = normalizeMetric(s.totalValue);
-            const itemUpper = String(s.item || '').toUpperCase();
+        filtered.forEach(item => {
+            const safeItem = item ?? ({} as ScrapData);
+            const val = Number(safeItem?.totalValue) || 0;
+            const itemUpper = String(safeItem?.item || '').toUpperCase();
 
             let catKey = 'MIUDEZAS';
             if (itemUpper.includes('PLACA')) {
@@ -339,8 +400,8 @@ const ExecutiveDashboard = ({ scraps, users, isLoading = false, isHydrating = fa
                 if (found) catKey = found;
             }
 
-            const modelKey = s.model || 'Não informado';
-            const lineKey = s.line || 'Não informada';
+            const modelKey = safeItem?.model || 'Não informado';
+            const lineKey = safeItem?.line || 'Não informada';
             byCategory[catKey] = (byCategory[catKey] || 0) + val;
             byModel[modelKey] = (byModel[modelKey] || 0) + val;
             byLine[lineKey] = (byLine[lineKey] || 0) + val;
@@ -671,7 +732,7 @@ const BatchProcessTab = ({ scraps, onProcess, currentUser, lines, models, users 
 
                     <select className="bg-slate-50 dark:bg-zinc-950 border border-slate-300 dark:border-zinc-800 p-2 rounded text-sm outline-none w-auto flex-none" value={filters.item} onChange={e => setFilters({ ...filters, item: e.target.value })}>
                         <option value="ALL">Todos Itens</option>
-                        {Array.from(new Set(pendingScraps.map(s => s.item).filter(Boolean))).sort().map(item => <option key={item} value={item}>{item}</option>)}
+                        {Array.from(new Set(pendingScraps.map(s => s.item).filter(Boolean))).sort((a, b) => String(a).localeCompare(String(b))).map(item => <option key={item} value={item}>{item}</option>)}
                     </select>
 
                     <div className="flex-1 min-w-[200px] max-w-sm">
@@ -783,8 +844,8 @@ const HistorySentTab = ({ scraps, users, onRefresh }: { scraps: ScrapData[], use
     
     const sentScraps = useMemo(() => scraps.filter(s => s.situation === 'SENT'), [scraps]);
     
-    const uniqueItems = useMemo(() => Array.from(new Set(sentScraps.map(s => s.item).filter(Boolean))).sort(), [sentScraps]);
-    const uniqueModels = useMemo(() => Array.from(new Set(sentScraps.map(s => s.model).filter(Boolean))).sort(), [sentScraps]);
+    const uniqueItems = useMemo(() => Array.from(new Set(sentScraps.map(s => s.item).filter(Boolean))).sort((a, b) => String(a).localeCompare(String(b))), [sentScraps]);
+    const uniqueModels = useMemo(() => Array.from(new Set(sentScraps.map(s => s.model).filter(Boolean))).sort((a, b) => String(a).localeCompare(String(b))), [sentScraps]);
     
     const filteredScraps = useMemo(() => {
         let res = [...sentScraps];
