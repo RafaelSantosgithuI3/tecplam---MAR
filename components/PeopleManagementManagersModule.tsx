@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { Button } from './Button';
 import { Card } from './Card';
 import { Input } from './Input';
-import { Shield, Plus, Search, User as UserIcon, List, ArrowLeft, CheckCircle, Clock, Save, Download, HandMetal, Scan, X, Upload } from 'lucide-react';
+import { Shield, Plus, Search, User as UserIcon, List, ArrowLeft, CheckCircle, Clock, Save, Download, HandMetal, Scan, X, Upload, Hand } from 'lucide-react';
 import { apiFetch } from '../services/networkConfig';
 import { QRStreamReader } from './QRStreamReader';
 import { exportLeaderLayout, exportModelLayout, exportGloveControl, exportEmployeeTemplate, exportEmployeeListForManagers } from '../services/excelService';
@@ -886,7 +886,7 @@ export const PeopleManagementManagersModule: React.FC<Props> = ({ onBack, curren
                                                     .map((log: any, i: number) => (
                                                         <li key={i} className="flex justify-between items-center p-3 bg-white dark:bg-zinc-900 rounded-xl border border-slate-200 dark:border-zinc-800 shadow-sm">
                                                             <div className="flex flex-col gap-0.5">
-                                                                <span className="font-bold text-slate-700 dark:text-zinc-200">{new Date(log.date).toLocaleDateString('pt-BR')}</span>
+                                                                <span className="font-bold text-slate-700 dark:text-zinc-200">{formatAttendanceDisplayDate(log.date)}</span>
                                                                 <span className="text-[10px] uppercase text-slate-400">Por: {log.loggedById}</span>
                                                             </div>
                                                             <span className={`px-3 py-1 text-[10px] uppercase font-black tracking-wider rounded-lg ${log.type === 'FALTA' ? 'bg-red-50 text-red-600 dark:bg-red-900/20 dark:text-red-400 border border-red-100 dark:border-red-900/30' :
@@ -960,12 +960,18 @@ export const PeopleManagementManagersModule: React.FC<Props> = ({ onBack, curren
         return `${year}-${month}-${day}`;
     };
 
+    const formatAttendanceDisplayDate = (value: unknown) => {
+        const normalized = normalizeAttendanceDate(value);
+        if (!normalized) return '-';
+        const [year, month, day] = normalized.split('-');
+        if (!year || !month || !day) return normalized;
+        return `${day}/${month}/${year}`;
+    };
+
     const filteredAttendanceLogs = useMemo(() => {
         const attendanceEmployees = employees.filter((employee: any) => isActiveEmployee(employee));
-        const rawStartDate = normalizeAttendanceDate(startDate);
-        const rawEndDate = normalizeAttendanceDate(endDate);
-        const rangeStart = rawStartDate && rawEndDate && rawStartDate > rawEndDate ? rawEndDate : rawStartDate;
-        const rangeEnd = rawStartDate && rawEndDate && rawStartDate > rawEndDate ? rawStartDate : rawEndDate;
+        const normalizedStartDate = String(startDate || '').trim();
+        const normalizedEndDate = String(endDate || '').trim();
 
         return attendanceEmployees
             .flatMap((employee: any) =>
@@ -979,11 +985,13 @@ export const PeopleManagementManagersModule: React.FC<Props> = ({ onBack, curren
             )
             .filter((log: any) => ['FALTA', 'ATRASO', 'ATESTADO'].includes(String(log?.type || '').toUpperCase()))
             .filter((log: any) => {
-                const logDate = normalizeAttendanceDate(log?.date);
-                return Boolean(logDate) && (!rangeStart || logDate >= rangeStart) && (!rangeEnd || logDate <= rangeEnd);
+                const logDate = String(log?.date || '').substring(0, 10);
+                const isAfterStart = !normalizedStartDate || logDate >= normalizedStartDate;
+                const isBeforeEnd = !normalizedEndDate || logDate <= normalizedEndDate;
+                return Boolean(logDate) && isAfterStart && isBeforeEnd;
             })
             .filter((log: any) => attendanceShiftFilter === 'ALL' || log.shift === attendanceShiftFilter)
-            .sort((a: any, b: any) => new Date(b.date).getTime() - new Date(a.date).getTime());
+            .sort((a: any, b: any) => String(b.date || '').localeCompare(String(a.date || '')));
     }, [employees, startDate, endDate, attendanceShiftFilter]);
 
     const handleSearchSubordinado = () => {
@@ -999,7 +1007,15 @@ export const PeopleManagementManagersModule: React.FC<Props> = ({ onBack, curren
     const handleSaveAttendance = async () => {
         if (!attSelectedEmployee) return;
         try {
-            const dateString = normalizeAttendanceDate(new Date());
+            const now = new Date();
+            const selectedShift = String(attSelectedEmployee?.shift || '').toUpperCase();
+            const isSecondShift = ['2T', '2º TURNO', '2O TURNO', 'SEGUNDO TURNO'].includes(selectedShift);
+
+            if (isSecondShift && now.getHours() >= 0 && now.getHours() <= 5) {
+                now.setDate(now.getDate() - 1);
+            }
+
+            const dateString = normalizeAttendanceDate(now);
             const existingLog = (Array.isArray(attSelectedEmployee?.attendanceLogs) ? attSelectedEmployee.attendanceLogs : [])
                 .find((log: any) => normalizeAttendanceDate(log?.date) === dateString);
 
@@ -1055,7 +1071,7 @@ export const PeopleManagementManagersModule: React.FC<Props> = ({ onBack, curren
                                 type="date"
                                 className="bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 rounded-xl px-4 py-2.5 text-slate-900 dark:text-zinc-100 text-sm focus:outline-none focus:ring-2 focus:ring-cyan-500/20 focus:border-cyan-500"
                                 value={startDate}
-                                onChange={e => setStartDate(e.target.value)}
+                                onChange={e => setStartDate(e.target.value || '')}
                             />
                         </div>
                         <div className="flex flex-col gap-1">
@@ -1064,7 +1080,7 @@ export const PeopleManagementManagersModule: React.FC<Props> = ({ onBack, curren
                                 type="date"
                                 className="bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 rounded-xl px-4 py-2.5 text-slate-900 dark:text-zinc-100 text-sm focus:outline-none focus:ring-2 focus:ring-cyan-500/20 focus:border-cyan-500"
                                 value={endDate}
-                                onChange={e => setEndDate(e.target.value)}
+                                onChange={e => setEndDate(e.target.value || '')}
                             />
                         </div>
                     </div>
@@ -1122,7 +1138,7 @@ export const PeopleManagementManagersModule: React.FC<Props> = ({ onBack, curren
                                             <td className="p-3 text-slate-700 dark:text-zinc-300">{log.shift}</td>
                                             <td className="p-3 text-slate-700 dark:text-zinc-300">{log.role}</td>
                                             <td className="p-3 text-slate-700 dark:text-zinc-300">{log.type}</td>
-                                            <td className="p-3 text-slate-700 dark:text-zinc-300">{new Date(log.date).toLocaleDateString('pt-BR')}</td>
+                                            <td className="p-3 text-slate-700 dark:text-zinc-300">{formatAttendanceDisplayDate(log.date)}</td>
                                             <td className="p-3 text-slate-700 dark:text-zinc-300">{log.type === 'ATRASO' ? formatDelayMinutes(log.delayMinutes) : '-'}</td>
                                         </tr>
                                     ))}
@@ -1945,7 +1961,7 @@ export const PeopleManagementManagersModule: React.FC<Props> = ({ onBack, curren
                     {(!hasTabAccess || hasTabAccess('PEOPLE_MANAGEMENT_MANAGERS', 'EDICAO')) && <Button variant={tab === 'EDICAO' ? 'primary' : 'secondary'} onClick={() => { setEditQuery(''); setEditFound(false); setTab('EDICAO'); }}><Save size={16} /> Edição</Button>}
                     {(!hasTabAccess || hasTabAccess('PEOPLE_MANAGEMENT_MANAGERS', 'PRESENCA')) && <Button variant={tab === 'PRESENCA' ? 'primary' : 'secondary'} onClick={() => setTab('PRESENCA')}><Clock size={16} /> Controle de Presença</Button>}
                     {(!hasTabAccess || hasTabAccess('PEOPLE_MANAGEMENT_MANAGERS', 'LAYOUT')) && <Button variant={tab === 'LAYOUT' ? 'primary' : 'secondary'} onClick={() => setTab('LAYOUT')}><List size={16} /> Layout de Linha</Button>}
-                    {(!hasTabAccess || hasTabAccess('PEOPLE_MANAGEMENT_MANAGERS', 'LUVAS')) && <Button variant={tab === 'LUVAS' ? 'primary' : 'secondary'} onClick={() => setTab('LUVAS')}><HandMetal size={16} /> Controle de Luvas</Button>}
+                    {(!hasTabAccess || hasTabAccess('PEOPLE_MANAGEMENT_MANAGERS', 'LUVAS')) && <Button variant={tab === 'LUVAS' ? 'primary' : 'secondary'} onClick={() => setTab('LUVAS')}><Hand size={16} /> Controle de Luvas</Button>}
                 </div>
             </header>
 
