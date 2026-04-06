@@ -14,7 +14,7 @@ import { QRStreamReader } from './QRStreamReader';
 import { User, ScrapData, Material } from '../types';
 import {
     getModels, getLines, getStations,
-    getManausDate, getWeekNumber
+    getManausDate, getWeekNumber, subscribeToSyncStream
 } from '../services/storageService';
 import {
     getScraps, saveScrap, updateScrap, deleteScrap, getMaterials, saveMaterials,
@@ -115,6 +115,55 @@ const normalizeScrapCollection = (scraps: ScrapData[] = []): ScrapData[] => {
     }));
 };
 
+const sortScrapCollection = (scraps: ScrapData[] = []): ScrapData[] => {
+    return [...scraps].sort((a, b) => {
+        const left = parseScrapDate(b?.date)?.getTime() || 0;
+        const right = parseScrapDate(a?.date)?.getTime() || 0;
+        if (left !== right) return left - right;
+        return normalizeScrapNumber(b?.id) - normalizeScrapNumber(a?.id);
+    });
+};
+
+const resolveScrapIdentity = (scrap: Partial<ScrapData> | null | undefined): string => {
+    if (scrap?.id !== undefined && scrap?.id !== null && String(scrap.id).trim()) {
+        return String(scrap.id);
+    }
+    if (scrap?.qrCode) return `qr:${scrap.qrCode}`;
+    return [
+        normalizeScrapDateKey(scrap?.date),
+        String(scrap?.leaderName ?? ''),
+        String(scrap?.model ?? ''),
+        String(scrap?.item ?? ''),
+        String(scrap?.code ?? '')
+    ].join('|');
+};
+
+const applyScrapSyncDelta = (current: ScrapData[], action?: string, items: ScrapData[] = [], ids: string[] = []) => {
+    const normalizedCurrent = normalizeScrapCollection(current);
+    const normalizedItems = normalizeScrapCollection(items);
+
+    if (action === 'replace') {
+        return sortScrapCollection(normalizedItems);
+    }
+
+    if (action === 'remove') {
+        const removeIds = new Set((ids || []).map(String));
+        return sortScrapCollection(
+            normalizedCurrent.filter((scrap) => !removeIds.has(String(scrap.id)) && !removeIds.has(resolveScrapIdentity(scrap)))
+        );
+    }
+
+    const byId = new Map<string, ScrapData>();
+    normalizedCurrent.forEach((scrap) => {
+        byId.set(resolveScrapIdentity(scrap), scrap);
+    });
+    normalizedItems.forEach((scrap) => {
+        byId.set(resolveScrapIdentity(scrap), scrap);
+    });
+
+    return sortScrapCollection(Array.from(byId.values()));
+};
+
 const LoadingSpinner = ({ label = 'Carregando dados...' }: { label?: string }) => (
     <div className="flex items-center justify-center py-16">
         <div className="flex items-center gap-3 rounded-xl border border-slate-200 dark:border-zinc-800 bg-white/80 dark:bg-zinc-900/80 px-4 py-3 text-sm text-slate-600 dark:text-zinc-300 shadow-sm">
@@ -182,7 +231,7 @@ export const ScrapModule: React.FC<ScrapModuleProps> = ({ currentUser, onBack, i
                 setModels(Array.isArray(m) ? m : []);
                 setStations(Array.isArray(s) ? s : []);
                 setLines(Array.isArray(l) ? l.map(x => x.name) : []);
-                setScraps(normalizeScrapCollection(Array.isArray(scrapData) ? scrapData : []));
+                setScraps(sortScrapCollection(normalizeScrapCollection(Array.isArray(scrapData) ? scrapData : [])));
                 setMaterials(Array.isArray(mats) ? mats : []);
             });
         } finally {
@@ -195,6 +244,20 @@ export const ScrapModule: React.FC<ScrapModuleProps> = ({ currentUser, onBack, i
     }, []);
 
     useEffect(() => {
+        const unsubscribe = subscribeToSyncStream((event: any) => {
+            if (event?.collection !== 'scraps') return;
+
+            startTransition(() => {
+                setScraps((current) => applyScrapSyncDelta(current, event.action, event.items || [], event.ids || []));
+            });
+        });
+
+        return () => {
+            unsubscribe?.();
+        };
+    }, []);
+
+    useEffect(() => {
         sessionStorage.setItem(SCRAP_ACTIVE_TAB_KEY, activeTab);
         window.scrollTo({ top: 0, behavior: 'smooth' });
     }, [activeTab]);
@@ -202,7 +265,7 @@ export const ScrapModule: React.FC<ScrapModuleProps> = ({ currentUser, onBack, i
     const refreshScraps = async () => {
         const s = await getScraps();
         startTransition(() => {
-            setScraps(normalizeScrapCollection(Array.isArray(s) ? s : []));
+            setScraps(sortScrapCollection(normalizeScrapCollection(Array.isArray(s) ? s : [])));
         });
     }
 
@@ -225,6 +288,8 @@ export const ScrapModule: React.FC<ScrapModuleProps> = ({ currentUser, onBack, i
 
         return currentUser.isAdmin || allowedKeywords.some(keyword => role.includes(keyword));
     }, [currentUser]);
+
+    const shouldBlockContent = (isLoading || isHydrating) && scraps.length === 0;
 
     return (
         <div className="min-h-screen bg-gray-50 dark:bg-zinc-950 text-gray-900 dark:text-zinc-100 p-4 md:p-8 space-y-6 transition-colors duration-200">
@@ -298,68 +363,74 @@ export const ScrapModule: React.FC<ScrapModuleProps> = ({ currentUser, onBack, i
 
             {/* CONTENT */}
             <div className="mt-6">
-                {activeTab === 'FORM' && (
-                    <ScrapForm
-                        users={users}
-                        models={models}
-                        stations={stations}
-                        lines={lines}
-                        materials={materials}
-                        onSuccess={refreshScraps}
-                        currentUser={currentUser}
-                    />
-                )}
-                {activeTab === 'PENDING' && (
-                    <ScrapPending
-                        scraps={scraps}
-                        currentUser={currentUser}
-                        onUpdate={refreshScraps}
-                        users={users}
-                        lines={lines}
-                        models={models}
-                        categories={SCRAP_ITEMS}
-                        statusOptions={SCRAP_STATUS}
-                        rootCauseOptions={CAUSA_RAIZ_OPTIONS}
-                        materials={materials}
-                        stations={stations}
-                    />
-                )}
-                {activeTab === 'HISTORY' && (
-                    <ScrapHistory scraps={scraps} currentUser={currentUser} users={users} />
-                )}
-                {activeTab === 'OPERATIONAL' && (
-                    <ScrapOperational
-                        scraps={scraps}
-                        users={users}
-                        lines={lines}
-                        models={models}
-                        isLoading={isLoading}
-                        isHydrating={isHydrating}
-                    />
-                )}
-                {activeTab === 'EDIT_DELETE' && (
-                    <ScrapEditDelete
-                        scraps={scraps}
-                        users={users}
-                        lines={lines}
-                        models={models}
-                        onUpdate={refreshScraps}
-                        categories={SCRAP_ITEMS}
-                        statusOptions={SCRAP_STATUS}
-                        rootCauseOptions={CAUSA_RAIZ_OPTIONS}
-                        materials={materials}
-                        stations={stations}
-                        currentUser={currentUser}
-                    />
-                )}
-                {activeTab === 'MANAGEMENT_ADVANCED' && (
-                    <ScrapManagementAdvanced scraps={scraps} users={users} isLoading={isLoading} isHydrating={isHydrating} />
-                )}
-                {activeTab === 'NEW_ADVANCED' && (
-                    <NewAdvancedDashboard scraps={scraps} users={users} isLoading={isLoading} isHydrating={isHydrating} />
-                )}
-                {activeTab === 'CONSULTA' && (
-                    <ScrapConsulta scraps={scraps} users={users} />
+                {shouldBlockContent ? (
+                    <LoadingSpinner label="Carregando Scraps..." />
+                ) : (
+                    <>
+                        {activeTab === 'FORM' && (
+                            <ScrapForm
+                                users={users}
+                                models={models}
+                                stations={stations}
+                                lines={lines}
+                                materials={materials}
+                                onSuccess={refreshScraps}
+                                currentUser={currentUser}
+                            />
+                        )}
+                        {activeTab === 'PENDING' && (
+                            <ScrapPending
+                                scraps={scraps}
+                                currentUser={currentUser}
+                                onUpdate={refreshScraps}
+                                users={users}
+                                lines={lines}
+                                models={models}
+                                categories={SCRAP_ITEMS}
+                                statusOptions={SCRAP_STATUS}
+                                rootCauseOptions={CAUSA_RAIZ_OPTIONS}
+                                materials={materials}
+                                stations={stations}
+                            />
+                        )}
+                        {activeTab === 'HISTORY' && (
+                            <ScrapHistory scraps={scraps} currentUser={currentUser} users={users} />
+                        )}
+                        {activeTab === 'OPERATIONAL' && (
+                            <ScrapOperational
+                                scraps={scraps}
+                                users={users}
+                                lines={lines}
+                                models={models}
+                                isLoading={isLoading}
+                                isHydrating={isHydrating}
+                            />
+                        )}
+                        {activeTab === 'EDIT_DELETE' && (
+                            <ScrapEditDelete
+                                scraps={scraps}
+                                users={users}
+                                lines={lines}
+                                models={models}
+                                onUpdate={refreshScraps}
+                                categories={SCRAP_ITEMS}
+                                statusOptions={SCRAP_STATUS}
+                                rootCauseOptions={CAUSA_RAIZ_OPTIONS}
+                                materials={materials}
+                                stations={stations}
+                                currentUser={currentUser}
+                            />
+                        )}
+                        {activeTab === 'MANAGEMENT_ADVANCED' && (
+                            <ScrapManagementAdvanced scraps={scraps} users={users} isLoading={isLoading} isHydrating={isHydrating} />
+                        )}
+                        {activeTab === 'NEW_ADVANCED' && (
+                            <NewAdvancedDashboard scraps={scraps} users={users} isLoading={isLoading} isHydrating={isHydrating} />
+                        )}
+                        {activeTab === 'CONSULTA' && (
+                            <ScrapConsulta scraps={scraps} users={users} />
+                        )}
+                    </>
                 )}
             </div>
         </div>
@@ -1272,11 +1343,11 @@ export const ScrapOperational = ({ scraps, users, lines, models, isLoading = fal
                     </select>
                     <select className="bg-white dark:bg-zinc-950 border border-slate-300 dark:border-zinc-800 p-2 rounded text-sm text-slate-900 dark:text-zinc-300 outline-none focus:ring-2 focus:ring-blue-600/50" onChange={e => setFilters({ ...filters, line: e.target.value })} value={filters.line}>
                         <option value="">Todas Linhas</option>
-                        {lines.map((l: string) => <option key={l} value={l}>{l}</option>)}
+                        {safeLines.map((l: string) => <option key={l} value={l}>{l}</option>)}
                     </select>
                     <select className="bg-white dark:bg-zinc-950 border border-slate-300 dark:border-zinc-800 p-2 rounded text-sm text-slate-900 dark:text-zinc-300 outline-none focus:ring-2 focus:ring-blue-600/50" onChange={e => setFilters({ ...filters, model: e.target.value })} value={filters.model}>
                         <option value="">Todos Modelos</option>
-                        {models.map((m: string) => <option key={m} value={m}>{m}</option>)}
+                        {safeModels.map((m: string) => <option key={m} value={m}>{m}</option>)}
                     </select>
                     <select className="bg-white dark:bg-zinc-950 border border-slate-300 dark:border-zinc-800 p-2 rounded text-sm text-slate-900 dark:text-zinc-300 outline-none focus:ring-2 focus:ring-blue-600/50" onChange={e => setFilters({ ...filters, shift: e.target.value })} value={filters.shift}>
                         <option value="">Todos Turnos</option>
@@ -1574,7 +1645,7 @@ export const ScrapManagementAdvanced = ({ scraps, users, isLoading = false, isHy
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <Card className="bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-900/50 p-6">
                     <h3 className="text-blue-600 dark:text-blue-400 font-bold uppercase text-xs">Total Filtrado (Gestão)</h3>
-                    <p className="text-3xl font-bold mt-2 !text-slate-900 dark:!text-zinc-100">{formatCurrency(filtered.reduce((a, b) => a + (b.totalValue || 0), 0))}</p>
+                    <p className="text-3xl font-bold mt-2 !text-slate-900 dark:!text-zinc-100">{formatCurrency(filtered.reduce((a, b) => a + normalizeScrapNumber(b.totalValue), 0))}</p>
                 </Card>
                 <Card className="bg-white dark:bg-zinc-900 border-slate-200 dark:border-zinc-800 p-6 flex flex-col justify-center items-center cursor-pointer hover:bg-slate-50 dark:hover:bg-zinc-800 shadow-sm" onClick={() => exportExecutiveReport(filtered)}>
                     <Download size={32} className="text-green-600 dark:text-green-500 mb-2" />
@@ -1767,8 +1838,8 @@ export const ScrapManagementAdvanced = ({ scraps, users, isLoading = false, isHy
                                 <div>
                                     <h4 className="font-bold text-lg text-slate-900 dark:text-white mb-4">Comparativo Turnos</h4>
                                     {(() => {
-                                        const shift1Total = chartFiltered.filter(s => s.shift === '1').reduce((acc, s) => acc + (s.totalValue || 0), 0);
-                                        const shift2Total = chartFiltered.filter(s => s.shift === '2').reduce((acc, s) => acc + (s.totalValue || 0), 0);
+                                        const shift1Total = chartFiltered.filter(s => s.shift === '1').reduce((acc, s) => acc + normalizeScrapNumber(s.totalValue), 0);
+                                        const shift2Total = chartFiltered.filter(s => s.shift === '2').reduce((acc, s) => acc + normalizeScrapNumber(s.totalValue), 0);
                                         const totalValue = shift1Total + shift2Total;
                                         const maxShiftValRaw = Math.max(Number(shift1Total) || 0, Number(shift2Total) || 0);
                                         const safeMaxShift = maxShiftValRaw > 0 ? maxShiftValRaw : 1;
@@ -1824,15 +1895,16 @@ export const ScrapManagementAdvanced = ({ scraps, users, isLoading = false, isHy
                                     {(() => {
                                         const byItem: Record<string, { value: number; qty: number; codes: Set<string>; models: Set<string> }> = {};
                                         chartFiltered.forEach(s => {
-                                            if (!byItem[s.item]) {
-                                                byItem[s.item] = { value: 0, qty: 0, codes: new Set(), models: new Set() };
+                                            const itemKey = String(s.item || 'NÃO INFORMADO');
+                                            if (!byItem[itemKey]) {
+                                                byItem[itemKey] = { value: 0, qty: 0, codes: new Set(), models: new Set() };
                                             }
-                                            byItem[s.item].value += s.totalValue || 0;
-                                            byItem[s.item].qty += s.qty || 0;
-                                            if (s.code) byItem[s.item].codes.add(s.code);
-                                            if (s.model) byItem[s.item].models.add(s.model);
+                                            byItem[itemKey].value += normalizeScrapNumber(s.totalValue);
+                                            byItem[itemKey].qty += normalizeScrapNumber(s.qty);
+                                            if (s.code) byItem[itemKey].codes.add(s.code);
+                                            if (s.model) byItem[itemKey].models.add(s.model);
                                         });
-                                        const totalValue = chartFiltered.reduce((acc, s) => acc + (s.totalValue || 0), 0);
+                                        const totalValue = chartFiltered.reduce((acc, s) => acc + normalizeScrapNumber(s.totalValue), 0);
                                             const itemValuesArray = Object.values(byItem).map(v => Number(v.value) || 0);
                                             const maxItemValueRaw = Math.max(...itemValuesArray);
                                             const safeMaxItems = maxItemValueRaw > 0 ? maxItemValueRaw : 1;
@@ -1923,15 +1995,15 @@ export const ScrapManagementAdvanced = ({ scraps, users, isLoading = false, isHy
                                     </tr>
                                 </thead>
                                 <tbody className="divide-y divide-slate-100 dark:divide-zinc-800">
-                                    {chartDrilldown.scraps.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()).map((s, i) => (
+                                    {chartDrilldown.scraps.sort((a, b) => (parseScrapDate(b.date)?.getTime() || 0) - (parseScrapDate(a.date)?.getTime() || 0)).map((s, i) => (
                                         <tr key={i} className="hover:bg-slate-50 dark:hover:bg-zinc-800 cursor-pointer" onClick={() => setDetailModal({ isOpen: true, scrap: s })}>
-                                            <td className="px-4 py-2.5 font-mono text-slate-600 dark:text-zinc-400">{s.date}</td>
+                                            <td className="px-4 py-2.5 font-mono text-slate-600 dark:text-zinc-400">{normalizeScrapDateKey(s.date)}</td>
                                             <td className="px-4 py-2.5 text-slate-800 dark:text-zinc-200 max-w-[160px] truncate">{s.item}</td>
                                             <td className="px-4 py-2.5 font-mono text-slate-600 dark:text-zinc-400">{s.code}</td>
                                             <td className="px-4 py-2.5 text-slate-600 dark:text-zinc-400">{s.model}</td>
                                             <td className="px-4 py-2.5 text-slate-600 dark:text-zinc-400">{s.leaderName}</td>
-                                            <td className="px-4 py-2.5 text-right font-bold text-slate-800 dark:text-zinc-200">{s.qty}</td>
-                                            <td className="px-4 py-2.5 text-right font-bold text-slate-800 dark:text-zinc-200">{formatCurrency(s.totalValue || 0)}</td>
+                                            <td className="px-4 py-2.5 text-right font-bold text-slate-800 dark:text-zinc-200">{normalizeScrapNumber(s.qty)}</td>
+                                            <td className="px-4 py-2.5 text-right font-bold text-slate-800 dark:text-zinc-200">{formatCurrency(normalizeScrapNumber(s.totalValue))}</td>
                                         </tr>
                                     ))}
                                 </tbody>
@@ -1942,7 +2014,7 @@ export const ScrapManagementAdvanced = ({ scraps, users, isLoading = false, isHy
                         </div>
                         <div className="p-4 border-t border-slate-200 dark:border-zinc-800 flex justify-between items-center shrink-0">
                             <span className="text-xs text-slate-500">{chartDrilldown.scraps.length} registros</span>
-                            <span className="font-bold text-slate-800 dark:text-zinc-200">Total: {formatCurrency(chartDrilldown.scraps.reduce((a, s) => a + (s.totalValue || 0), 0))}</span>
+                            <span className="font-bold text-slate-800 dark:text-zinc-200">Total: {formatCurrency(chartDrilldown.scraps.reduce((a, s) => a + normalizeScrapNumber(s.totalValue), 0))}</span>
                         </div>
                     </div>
                 </div>
@@ -1960,12 +2032,13 @@ const DayAnalysisChart = ({ filtered, baseScraps, specificDate }: { filtered: Sc
     const daysInMonth = new Date(targetYear, targetMonth, 0).getDate();
     const targetMonthPrefix = `${targetYear}-${String(targetMonth).padStart(2, '0')}`;
 
-    const monthSource = (baseScraps.length ? baseScraps : filtered).filter(s => s.date.startsWith(targetMonthPrefix));
+    const monthSource = (baseScraps.length ? baseScraps : filtered).filter(s => normalizeScrapDateKey(s.date).startsWith(targetMonthPrefix));
     const dayData: Record<number, number> = {};
     monthSource.forEach(s => {
-        const date = new Date(s.date);
+        const date = parseScrapDate(s.date);
+        if (!date) return;
         const day = date.getDate();
-        dayData[day] = (dayData[day] || 0) + (s.totalValue || 0);
+        dayData[day] = (dayData[day] || 0) + normalizeScrapNumber(s.totalValue);
     });
     const dayValues = Array.from({ length: daysInMonth }).map((_, idx) => dayData[idx + 1] || 0);
     const maxValue = Math.max(...dayValues, 1);
@@ -2054,8 +2127,8 @@ const WeekAnalysisChart = ({ filtered, baseScraps, specificWeek }: { filtered: S
             date,
             key,
             value: filtered
-                .filter(s => s.date === key)
-                .reduce((acc, s) => acc + (s.totalValue || 0), 0)
+                .filter(s => normalizeScrapDateKey(s.date) === key)
+                .reduce((acc, s) => acc + normalizeScrapNumber(s.totalValue), 0)
         };
     });
 
@@ -2070,10 +2143,11 @@ const WeekAnalysisChart = ({ filtered, baseScraps, specificWeek }: { filtered: S
     const historyData = historyWeeks.map((week) => {
         const value = baseScraps
             .filter(s => {
-                const date = new Date(s.date);
+                const date = parseScrapDate(s.date);
+                if (!date) return false;
                 return date.getFullYear() === selectedYear && getWeekNumber(date) === week;
             })
-            .reduce((acc, s) => acc + (s.totalValue || 0), 0);
+            .reduce((acc, s) => acc + normalizeScrapNumber(s.totalValue), 0);
         return { week, value };
     });
 
@@ -2184,15 +2258,17 @@ const MonthAnalysisChart = ({ filtered, baseScraps, specificMonth }: { filtered:
     const selectedYear = specificMonth?.split('-')[0] || String(new Date().getFullYear());
     
     filtered.forEach(s => {
-        const date = new Date(s.date);
+        const date = parseScrapDate(s.date);
+        if (!date) return;
         const week = getWeekNumber(date);
-        weekData[week] = (weekData[week] || 0) + (s.totalValue || 0);
+        weekData[week] = (weekData[week] || 0) + normalizeScrapNumber(s.totalValue);
     });
 
-    baseScraps.filter(s => s.date.startsWith(selectedYear)).forEach(s => {
-        const date = new Date(s.date);
+    baseScraps.filter(s => normalizeScrapDateKey(s.date).startsWith(selectedYear)).forEach(s => {
+        const date = parseScrapDate(s.date);
+        if (!date) return;
         const month = date.getMonth();
-        monthData[month] = (monthData[month] || 0) + (s.totalValue || 0);
+        monthData[month] = (monthData[month] || 0) + normalizeScrapNumber(s.totalValue);
     });
 
     const uniqueMonthWeeks = Object.keys(weekData).map(Number).sort((a, b) => a - b);
@@ -2318,15 +2394,17 @@ const YearAnalysisChart = ({ filtered, baseScraps, specificYear }: { filtered: S
     const yearData: Record<number, number> = {};
     
     filtered.forEach(s => {
-        const date = new Date(s.date);
+        const date = parseScrapDate(s.date);
+        if (!date) return;
         const month = date.getMonth();
-        monthData[month] = (monthData[month] || 0) + (s.totalValue || 0);
+        monthData[month] = (monthData[month] || 0) + normalizeScrapNumber(s.totalValue);
     });
 
     baseScraps.forEach(s => {
-        const date = new Date(s.date);
+        const date = parseScrapDate(s.date);
+        if (!date) return;
         const year = date.getFullYear();
-        yearData[year] = (yearData[year] || 0) + (s.totalValue || 0);
+        yearData[year] = (yearData[year] || 0) + normalizeScrapNumber(s.totalValue);
     });
 
     const monthValues = Object.values(monthData).map(v => Number(v) || 0);
