@@ -18,6 +18,14 @@ interface PreparationModuleProps {
 
 type Tab = 'LAUNCH' | 'VIEW';
 
+const isOperationalUserActive = (user: Partial<User> | null | undefined): boolean => {
+    const status = String((user as any)?.status || '').trim().toUpperCase();
+    if (status === 'DESLIGADO' || status === 'INATIVO') return false;
+    if ((user as any)?.isActive === false) return false;
+    if (status === 'ATIVO' || (user as any)?.isActive === true) return true;
+    return !status;
+};
+
 export const PreparationModule: React.FC<PreparationModuleProps> = ({ currentUser, onBack, hasTabAccess }) => {
     const allTabs: Tab[] = ['LAUNCH', 'VIEW'];
     const PREPARATION_ACTIVE_TAB_KEY = 'activeTab_PreparationModule';
@@ -53,8 +61,8 @@ export const PreparationModule: React.FC<PreparationModuleProps> = ({ currentUse
 
     const initialForm: Partial<PreparationLog> = {
         date: getProductionDate(),
-        responsible: currentUser.name,
-        shift: currentUser.shift || '',
+        responsible: isOperationalUserActive(currentUser) ? currentUser.name : '',
+        shift: isOperationalUserActive(currentUser) ? currentUser.shift || '' : '',
         line: '',
         model: '',
         sku: '',

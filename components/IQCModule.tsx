@@ -137,23 +137,262 @@ const LoadingSpinner = ({ label = 'Carregando dados...' }: { label?: string }) =
     </div>
 );
 
+const INITIAL_IQC_RENDER_LIMIT = 50;
+const MAX_FILTER_OPTIONS = 50;
+const FILTER_INPUT_DEBOUNCE_MS = 250;
+
+const getLimitedSortedOptions = (values: Array<unknown> = [], limit = MAX_FILTER_OPTIONS): string[] => {
+    return Array.from(new Set(values.map((value) => String(value ?? '').trim()).filter(Boolean)))
+        .sort((a, b) => a.localeCompare(b))
+        .slice(0, limit);
+};
+
+const useDebouncedText = (value: string, delay = FILTER_INPUT_DEBOUNCE_MS) => {
+    const [debouncedValue, setDebouncedValue] = useState(value);
+
+    useEffect(() => {
+        const timeoutId = globalThis.setTimeout(() => setDebouncedValue(value), delay);
+        return () => globalThis.clearTimeout(timeoutId);
+    }, [value, delay]);
+
+    return debouncedValue;
+};
+
+const useStagedHeaderReady = (enabled: boolean) => {
+    const [isReady, setIsReady] = useState(false);
+
+    useEffect(() => {
+        if (!enabled) {
+            setIsReady(false);
+            return;
+        }
+
+        if (typeof window === 'undefined') {
+            setIsReady(true);
+            return;
+        }
+
+        setIsReady(false);
+        const rafId = window.requestAnimationFrame(() => {
+            globalThis.setTimeout(() => setIsReady(true), 0);
+        });
+
+        return () => window.cancelAnimationFrame(rafId);
+    }, [enabled]);
+
+    return isReady;
+};
+
+const useDeferredUIReady = (enabled: boolean, delay = 50) => {
+    const [isUIReady, setIsUIReady] = useState(false);
+
+    useEffect(() => {
+        if (!enabled) {
+            setIsUIReady(false);
+            return;
+        }
+
+        if (typeof window === 'undefined') {
+            setIsUIReady(true);
+            return;
+        }
+
+        setIsUIReady(false);
+        let rafId: number | null = null;
+        let timerId: ReturnType<typeof setTimeout> | null = null;
+
+        const revealContent = () => {
+            timerId = globalThis.setTimeout(() => setIsUIReady(true), delay);
+        };
+
+        if ('requestAnimationFrame' in window) {
+            rafId = window.requestAnimationFrame(revealContent);
+        } else {
+            revealContent();
+        }
+
+        return () => {
+            if (rafId !== null) window.cancelAnimationFrame(rafId);
+            if (timerId !== null) globalThis.clearTimeout(timerId);
+        };
+    }, [enabled, delay]);
+
+    return isUIReady;
+};
+
+type AsyncDashboardStats = {
+    totalVal: number;
+    totalQty: number;
+    category: Array<[string, number]>;
+    model: Array<[string, number]>;
+    line: Array<[string, number]>;
+};
+
+const EMPTY_DASHBOARD_STATS: AsyncDashboardStats = {
+    totalVal: 0,
+    totalQty: 0,
+    category: [],
+    model: [],
+    line: []
+};
+
+const DASHBOARD_SKELETON_ROWS = [0, 1, 2, 3];
+
+const getDashboardCategoryKey = (itemName: unknown): string => {
+    const specificItems = ['FRONT', 'REAR', 'OCTA', 'CAMERA', 'BATERIA RMA', 'BATERIA SCRAP', 'PLACA'];
+    const itemUpper = String(itemName || '').toUpperCase();
+
+    if (itemUpper.includes('PLACA')) return 'PLACA';
+    if (itemUpper.includes('CAMERA')) return 'CAMERA';
+
+    const found = specificItems.find((item) => itemUpper.includes(item) && item !== 'CAMERA' && item !== 'PLACA');
+    return found || 'MIUDEZAS';
+};
+
+const matchesTextFilter = (value: unknown, query: string) => {
+    const normalizedQuery = String(query || '').trim().toLowerCase();
+    if (!normalizedQuery) return true;
+    return String(value || '').toLowerCase().includes(normalizedQuery);
+};
+
+const scheduleDashboardMacrotask = (work: () => void) => {
+    if (typeof window === 'undefined') {
+        work();
+        return () => undefined;
+    }
+
+    let cancelled = false;
+    let handle: number | ReturnType<typeof setTimeout> | null = null;
+
+    const run = () => {
+        if (!cancelled) work();
+    };
+
+    if ('requestIdleCallback' in window) {
+        handle = (window as any).requestIdleCallback(run, { timeout: 120 }) as number;
+    } else {
+        handle = globalThis.setTimeout(run, 0);
+    }
+
+    return () => {
+        cancelled = true;
+        if (handle === null) return;
+
+        if ('cancelIdleCallback' in window) {
+            (window as any).cancelIdleCallback(handle as number);
+        } else {
+            globalThis.clearTimeout(handle as ReturnType<typeof setTimeout>);
+        }
+    };
+};
+
+const calculateExecutiveDashboardData = (
+    scraps: ScrapData[],
+    filters: {
+        period: string;
+        plant: string;
+        shift: string;
+        status: string;
+        specificDate: string;
+        specificWeek: string;
+        specificMonth: string;
+        specificYear: string;
+    }
+) => {
+    let filtered = [...scraps].filter(Boolean);
+
+    if (filters.period === 'DAY' && filters.specificDate) filtered = filtered.filter(item => normalizeDashboardDateKey(item?.date || '') === filters.specificDate);
+    else if (filters.period === 'WEEK' && filters.specificWeek) {
+        const [y, w] = filters.specificWeek.split('-W').map(Number);
+        filtered = filtered.filter(item => {
+            const sd = parseDashboardDate(item?.date || '');
+            if (!sd) return false;
+            const normalizedDate = new Date(sd.getFullYear(), sd.getMonth(), sd.getDate());
+            return getWeekNumber(normalizedDate) === w && sd.getFullYear() === y;
+        });
+    }
+    else if (filters.period === 'MONTH' && filters.specificMonth) filtered = filtered.filter(item => normalizeDashboardDateKey(item?.date || '').startsWith(filters.specificMonth));
+    else if (filters.period === 'YEAR' && filters.specificYear) filtered = filtered.filter(item => normalizeDashboardDateKey(item?.date || '').startsWith(filters.specificYear));
+
+    if (filters.plant !== 'ALL') filtered = filtered.filter(item => item?.plant === filters.plant);
+    if (filters.shift !== 'ALL') filtered = filtered.filter(item => String(item?.shift ?? '') === filters.shift);
+    if (filters.status !== 'ALL') {
+        if (filters.status === 'SENT') filtered = filtered.filter(item => item?.situation === 'SENT');
+        else filtered = filtered.filter(item => item?.situation !== 'SENT');
+    }
+
+    let totalVal = 0;
+    let totalQty = 0;
+    const byCategory: Record<string, number> = {
+        FRONT: 0,
+        REAR: 0,
+        OCTA: 0,
+        CAMERA: 0,
+        'BATERIA RMA': 0,
+        'BATERIA SCRAP': 0,
+        PLACA: 0,
+        MIUDEZAS: 0
+    };
+    const byModel: Record<string, number> = {};
+    const byLine: Record<string, number> = {};
+
+    filtered.forEach((item) => {
+        const safeItem = item ?? ({} as ScrapData);
+        const val = normalizeMetric(safeItem?.totalValue);
+        const qty = normalizeMetric(safeItem?.qty);
+        const modelKey = safeItem?.model || 'Não informado';
+        const lineKey = safeItem?.line || 'Não informada';
+        const categoryKey = getDashboardCategoryKey(safeItem?.item);
+
+        totalVal += val;
+        totalQty += qty;
+        byCategory[categoryKey] = (byCategory[categoryKey] || 0) + val;
+        byModel[modelKey] = (byModel[modelKey] || 0) + val;
+        byLine[lineKey] = (byLine[lineKey] || 0) + val;
+    });
+
+    return {
+        filtered,
+        stats: {
+            totalVal,
+            totalQty,
+            category: Object.entries(byCategory).sort((a, b) => b[1] - a[1]),
+            model: Object.entries(byModel).sort((a, b) => b[1] - a[1]).slice(0, 10),
+            line: Object.entries(byLine).sort((a, b) => b[1] - a[1])
+        } as AsyncDashboardStats
+    };
+};
+
 type IQCTab = 'MONITORING' | 'BATCH_PROCESS' | 'HISTORY_SENT' | 'DASHBOARD' | 'BOX_MOUNT' | 'BOX_IDENTIFIED' | 'CONSULTA' | 'MATERIALS';
 
-export const IQCModule = ({ currentUser, onBack, hasTabAccess }: { currentUser: User, onBack: () => void, hasTabAccess?: (m: string, t: string) => boolean }) => {
+export const IQCModule = ({ currentUser, onBack, hasTabAccess, initialTab }: { currentUser: User, onBack: () => void, hasTabAccess?: (m: string, t: string) => boolean, initialTab?: IQCTab }) => {
     const allTabs: IQCTab[] = ['MONITORING', 'BATCH_PROCESS', 'HISTORY_SENT', 'DASHBOARD', 'BOX_MOUNT', 'BOX_IDENTIFIED', 'CONSULTA', 'MATERIALS'];
-    const IQC_ACTIVE_TAB_KEY = 'activeTab_IQCModule';
+    const IQC_ACTIVE_TAB_KEY = 'iqc_active_tab';
     
-    const determineInitialTab = (): IQCTab => {
-        const saved = sessionStorage.getItem(IQC_ACTIVE_TAB_KEY) as IQCTab | null;
-        if (saved && allTabs.includes(saved) && (!hasTabAccess || hasTabAccess('IQC', saved))) {
-            return saved;
+    const getDefaultTab = (): IQCTab => {
+        if (initialTab && allTabs.includes(initialTab) && (!hasTabAccess || hasTabAccess('IQC', initialTab))) {
+            return initialTab;
         }
+
+        const lightweightTabs: IQCTab[] = ['MONITORING', 'BATCH_PROCESS', 'HISTORY_SENT', 'CONSULTA', 'MATERIALS'];
+        const preferred = lightweightTabs.find((tab) => !hasTabAccess || hasTabAccess('IQC', tab));
+        if (preferred) return preferred;
         if (!hasTabAccess) return 'MONITORING';
-        const allowed = allTabs.find(t => hasTabAccess('IQC', t));
+        const allowed = allTabs.find((tab) => hasTabAccess('IQC', tab));
         return allowed || 'MONITORING';
     };
 
-    const [activeTab, setActiveTab] = useState<IQCTab>(determineInitialTab());
+    const [activeTab, setActiveTab] = useState<IQCTab>(() => {
+        const persistedTab = typeof window !== 'undefined'
+            ? window.sessionStorage.getItem(IQC_ACTIVE_TAB_KEY)
+            : null;
+
+        if (persistedTab && allTabs.includes(persistedTab as IQCTab) && (!hasTabAccess || hasTabAccess('IQC', persistedTab))) {
+            return persistedTab as IQCTab;
+        }
+
+        return getDefaultTab();
+    });
     const [scraps, setScraps] = useState<ScrapData[]>([]);
     const [users, setUsers] = useState<User[]>([]);
     const [lines, setLines] = useState<string[]>([]);
@@ -161,6 +400,45 @@ export const IQCModule = ({ currentUser, onBack, hasTabAccess }: { currentUser: 
     const [materials, setMaterials] = useState<Material[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [isHydrating, startTransition] = useTransition();
+    const pendingHydrationRef = React.useRef<number | ReturnType<typeof setTimeout> | null>(null);
+
+    const cancelPendingHydration = useCallback(() => {
+        if (pendingHydrationRef.current === null || typeof window === 'undefined') return;
+        if ('cancelIdleCallback' in window) {
+            (window as any).cancelIdleCallback(pendingHydrationRef.current as number);
+        } else {
+            globalThis.clearTimeout(pendingHydrationRef.current as ReturnType<typeof setTimeout>);
+        }
+        pendingHydrationRef.current = null;
+    }, []);
+
+    const hydrateScrapsInChunks = useCallback((nextScraps: ScrapData[]) => {
+        const normalizedScraps = normalizeDashboardScraps(Array.isArray(nextScraps) ? nextScraps : []);
+        const initialChunk = normalizedScraps.slice(0, INITIAL_IQC_RENDER_LIMIT);
+
+        startTransition(() => {
+            setScraps(initialChunk);
+        });
+
+        cancelPendingHydration();
+
+        if (normalizedScraps.length <= INITIAL_IQC_RENDER_LIMIT || typeof window === 'undefined') {
+            return;
+        }
+
+        const flushAllScraps = () => {
+            startTransition(() => {
+                setScraps(normalizedScraps);
+            });
+            pendingHydrationRef.current = null;
+        };
+
+        if ('requestIdleCallback' in window) {
+            pendingHydrationRef.current = (window as any).requestIdleCallback(flushAllScraps, { timeout: 120 }) as number;
+        } else {
+            pendingHydrationRef.current = globalThis.setTimeout(flushAllScraps, 0);
+        }
+    }, [cancelPendingHydration, startTransition]);
 
     const loadData = async () => {
         setIsLoading(true);
@@ -173,12 +451,12 @@ export const IQCModule = ({ currentUser, onBack, hasTabAccess }: { currentUser: 
                 getMaterials()
             ]);
             startTransition(() => {
-                setScraps(normalizeDashboardScraps(Array.isArray(s) ? s : []));
                 setUsers(Array.isArray(u) ? u : []);
                 setLines(Array.isArray(l) ? l.map(x => x.name) : []);
                 setModels(Array.isArray(m) ? m : []);
                 setMaterials(Array.isArray(mats) ? mats : []);
             });
+            hydrateScrapsInChunks(Array.isArray(s) ? s : []);
         } finally {
             setIsLoading(false);
         }
@@ -186,7 +464,10 @@ export const IQCModule = ({ currentUser, onBack, hasTabAccess }: { currentUser: 
 
     useEffect(() => {
         loadData();
-    }, []);
+        return () => {
+            cancelPendingHydration();
+        };
+    }, [cancelPendingHydration, hydrateScrapsInChunks]);
 
     useEffect(() => {
         const unsubscribe = subscribeToSyncStream((event: any) => {
@@ -208,14 +489,15 @@ export const IQCModule = ({ currentUser, onBack, hasTabAccess }: { currentUser: 
 
     useEffect(() => {
         sessionStorage.setItem(IQC_ACTIVE_TAB_KEY, activeTab);
+    }, [activeTab]);
+
+    useEffect(() => {
         window.scrollTo({ top: 0, behavior: 'smooth' });
     }, [activeTab]);
 
     const refreshData = async () => {
         const s = await getScraps();
-        startTransition(() => {
-            setScraps(normalizeDashboardScraps(Array.isArray(s) ? s : []));
-        });
+        hydrateScrapsInChunks(Array.isArray(s) ? s : []);
     };
 
     const refreshMaterials = async () => {
@@ -224,10 +506,6 @@ export const IQCModule = ({ currentUser, onBack, hasTabAccess }: { currentUser: 
             setMaterials(nextMaterials);
         });
     };
-
-    if ((isLoading || isHydrating) && scraps.length === 0) {
-        return <LoadingSpinner label="Carregando dados IQC..." />;
-    }
 
     return (
         <div className="min-h-screen bg-slate-50 dark:bg-zinc-950 text-slate-900 dark:text-zinc-100 p-4 md:p-8 space-y-6">
@@ -335,9 +613,11 @@ const ExecutiveDashboard = ({ scraps, users, isLoading = false, isHydrating = fa
     const [detailModal, setDetailModal] = useState({ isOpen: false, scrap: null as ScrapData | null });
     const openDetailModal = (scrap: ScrapData) => setDetailModal({ isOpen: true, scrap });
     const reactiveScraps = useMemo(() => normalizeDashboardScraps(Array.isArray(scraps) ? scraps : []), [scraps]);
+    const isUIReady = useDeferredUIReady(!(isLoading || isHydrating));
+    const isHeaderReady = useStagedHeaderReady(isUIReady);
 
     const [filters, setFilters] = useState({
-        period: 'ALL',
+        period: 'MONTH',
         plant: 'ALL',
         shift: 'ALL',
         status: 'ALL', // SENT, PENDING
@@ -347,78 +627,29 @@ const ExecutiveDashboard = ({ scraps, users, isLoading = false, isHydrating = fa
         specificYear: ''
     });
 
-    const filtered = useMemo(() => {
-        let res = [...reactiveScraps].filter(Boolean);
+    const [dashboardData, setDashboardData] = useState<{ filtered: ScrapData[]; stats: AsyncDashboardStats }>({
+        filtered: [],
+        stats: EMPTY_DASHBOARD_STATS
+    });
+    const [isMetricsLoading, setIsMetricsLoading] = useState(true);
 
-        if (filters.period === 'DAY' && filters.specificDate) res = res.filter(item => normalizeDashboardDateKey(item?.date || '') === filters.specificDate);
-        else if (filters.period === 'WEEK' && filters.specificWeek) {
-            const [y, w] = filters.specificWeek.split('-W').map(Number);
-            res = res.filter(item => {
-                const sd = parseDashboardDate(item?.date || '');
-                if (!sd) return false;
-                const normalizedDate = new Date(sd.getFullYear(), sd.getMonth(), sd.getDate());
-                return getWeekNumber(normalizedDate) === w && sd.getFullYear() === y;
-            });
-        }
-        else if (filters.period === 'MONTH' && filters.specificMonth) res = res.filter(item => normalizeDashboardDateKey(item?.date || '').startsWith(filters.specificMonth));
-        else if (filters.period === 'YEAR' && filters.specificYear) res = res.filter(item => normalizeDashboardDateKey(item?.date || '').startsWith(filters.specificYear));
-
-        if (filters.plant !== 'ALL') res = res.filter(item => item?.plant === filters.plant);
-        if (filters.shift !== 'ALL') res = res.filter(item => String(item?.shift ?? '') === filters.shift);
-        if (filters.status !== 'ALL') {
-            if (filters.status === 'SENT') res = res.filter(item => item?.situation === 'SENT');
-            else res = res.filter(item => item?.situation !== 'SENT');
+    useEffect(() => {
+        if (!isUIReady) {
+            setDashboardData({ filtered: [], stats: EMPTY_DASHBOARD_STATS });
+            setIsMetricsLoading(true);
+            return;
         }
 
-        return res;
-    }, [reactiveScraps, filters]);
-
-    const stats = useMemo(() => {
-        const totalVal = filtered.reduce((acc, item) => acc + (Number(item?.totalValue) || 0), 0);
-        const totalQty = filtered.reduce((acc, item) => acc + (Number(item?.qty) || 0), 0);
-
-        const specificItems = ['FRONT', 'REAR', 'OCTA', 'CAMERA', 'BATERIA RMA', 'BATERIA SCRAP', 'PLACA'];
-        const byCategory: Record<string, number> = {};
-        const byModel: Record<string, number> = {};
-        const byLine: Record<string, number> = {};
-
-        specificItems.forEach(k => byCategory[k] = 0);
-        byCategory['MIUDEZAS'] = 0;
-
-        filtered.forEach(item => {
-            const safeItem = item ?? ({} as ScrapData);
-            const val = Number(safeItem?.totalValue) || 0;
-            const itemUpper = String(safeItem?.item || '').toUpperCase();
-
-            let catKey = 'MIUDEZAS';
-            if (itemUpper.includes('PLACA')) {
-                catKey = 'PLACA';
-            } else if (itemUpper.includes('CAMERA')) {
-                catKey = 'CAMERA';
-            } else {
-                const found = specificItems.find(i => itemUpper.includes(i) && i !== 'CAMERA' && i !== 'PLACA');
-                if (found) catKey = found;
-            }
-
-            const modelKey = safeItem?.model || 'Não informado';
-            const lineKey = safeItem?.line || 'Não informada';
-            byCategory[catKey] = (byCategory[catKey] || 0) + val;
-            byModel[modelKey] = (byModel[modelKey] || 0) + val;
-            byLine[lineKey] = (byLine[lineKey] || 0) + val;
+        setIsMetricsLoading(true);
+        return scheduleDashboardMacrotask(() => {
+            const next = calculateExecutiveDashboardData(reactiveScraps, filters);
+            setDashboardData(next);
+            setIsMetricsLoading(false);
         });
+    }, [reactiveScraps, filters, isUIReady]);
 
-        return {
-            totalVal,
-            totalQty,
-            category: Object.entries(byCategory).sort((a, b) => b[1] - a[1]),
-            model: Object.entries(byModel).sort((a, b) => b[1] - a[1]).slice(0, 10),
-            line: Object.entries(byLine).sort((a, b) => b[1] - a[1])
-        };
-    }, [filtered]);
-
-    if ((isLoading || isHydrating) && reactiveScraps.length === 0) {
-        return <LoadingSpinner label="Sincronizando dashboard IQC..." />;
-    }
+    const filtered = dashboardData.filtered;
+    const stats = dashboardData.stats;
 
     const handleDashboardExport = async () => {
         if (filters.status === 'SENT') {
@@ -436,7 +667,7 @@ const ExecutiveDashboard = ({ scraps, users, isLoading = false, isHydrating = fa
                     <h3 className="font-bold text-lg">Indicadores Detalhados</h3>
                     <div className="flex flex-wrap gap-2 items-center">
                         <div className="flex flex-wrap items-center gap-2 w-full md:w-auto">
-                            <select className="bg-slate-50 dark:bg-zinc-950 border border-slate-300 dark:border-zinc-800 p-2 rounded text-sm outline-none w-full md:w-auto" onChange={e => setFilters({ ...filters, period: e.target.value })} value={filters.period}>
+                            <select className="bg-slate-50 dark:bg-zinc-950 border border-slate-300 dark:border-zinc-800 p-2 rounded text-sm outline-none w-full md:w-auto" onChange={e => setFilters({ ...filters, period: e.target.value })} value={filters.period} disabled={!isHeaderReady}>
                                 <option value="ALL">Todo Período</option>
                                 <option value="DAY">Dia</option>
                                 <option value="WEEK">Semana</option>
@@ -449,60 +680,65 @@ const ExecutiveDashboard = ({ scraps, users, isLoading = false, isHydrating = fa
                             {filters.period === 'YEAR' && <Input type="number" placeholder="2026" value={filters.specificYear} onChange={e => setFilters({ ...filters, specificYear: e.target.value })} className="w-full md:w-24" />}
                         </div>
 
-                        <select className="bg-slate-50 dark:bg-zinc-950 border border-slate-300 dark:border-zinc-800 p-2 rounded text-sm outline-none" value={filters.plant} onChange={e => setFilters({ ...filters, plant: e.target.value })}>
+                        <select className="bg-slate-50 dark:bg-zinc-950 border border-slate-300 dark:border-zinc-800 p-2 rounded text-sm outline-none" value={filters.plant} onChange={e => setFilters({ ...filters, plant: e.target.value })} disabled={!isHeaderReady}>
                             <option value="ALL">Todas Plantas</option>
                             <option value="P81L">P81L</option>
                             <option value="P81M">P81M</option>
                             <option value="P81N">P81N</option>
                         </select>
-                        <select className="bg-slate-50 dark:bg-zinc-950 border border-slate-300 dark:border-zinc-800 p-2 rounded text-sm outline-none" value={filters.shift} onChange={e => setFilters({ ...filters, shift: e.target.value })}>
+                        <select className="bg-slate-50 dark:bg-zinc-950 border border-slate-300 dark:border-zinc-800 p-2 rounded text-sm outline-none" value={filters.shift} onChange={e => setFilters({ ...filters, shift: e.target.value })} disabled={!isHeaderReady}>
                             <option value="ALL">Todos Turnos</option>
                             <option value="1">1º Turno</option>
                             <option value="2">2º Turno</option>
                         </select>
-                        <select className="bg-slate-50 dark:bg-zinc-950 border border-slate-300 dark:border-zinc-800 p-2 rounded text-sm outline-none" value={filters.status} onChange={e => setFilters({ ...filters, status: e.target.value })}>
+                        <select className="bg-slate-50 dark:bg-zinc-950 border border-slate-300 dark:border-zinc-800 p-2 rounded text-sm outline-none" value={filters.status} onChange={e => setFilters({ ...filters, status: e.target.value })} disabled={!isHeaderReady}>
                             <option value="ALL">Status Envio</option>
                             <option value="PENDING">Pendentes</option>
                             <option value="SENT">Enviados</option>
                         </select>
 
-                        <Button onClick={handleDashboardExport} className="bg-green-600 hover:bg-green-700 text-white ml-2">
+                        <Button onClick={handleDashboardExport} className="bg-green-600 hover:bg-green-700 text-white ml-2" disabled={!isHeaderReady || isMetricsLoading}>
                             <Download size={18} /> Excel (Filtrado)
                         </Button>
                     </div>
                 </div>
             </Card>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <Card className="bg-blue-900 border-blue-800">
-                    <p className="text-blue-100 text-xs font-bold uppercase">Valor Total (Filtrado)</p>
-                    <p className="text-3xl font-bold mt-1 text-white">{formatCurrency(stats.totalVal)}</p>
-                </Card>
-                <Card className="bg-slate-900 border-slate-800">
-                    <p className="text-slate-300 text-xs font-bold uppercase">Quantidade (Filtrado)</p>
-                    <p className="text-3xl font-bold mt-1 text-white">{stats.totalQty} <span className="text-base font-normal text-slate-400">itens</span></p>
-                </Card>
-            </div>
+            {isUIReady ? (
+                <>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <Card className="bg-blue-900 border-blue-800 min-h-[108px]">
+                            <p className="text-blue-100 text-xs font-bold uppercase">Valor Total (Filtrado)</p>
+                            <div className="mt-1 flex h-10 items-center">
+                                {isMetricsLoading ? (
+                                    <div className="h-9 w-32 animate-pulse rounded-md bg-white/20" />
+                                ) : (
+                                    <p className="text-3xl font-bold text-white tabular-nums min-w-[8rem]">{formatCurrency(stats.totalVal)}</p>
+                                )}
+                            </div>
+                        </Card>
+                        <Card className="bg-slate-900 border-slate-800 min-h-[108px]">
+                            <p className="text-slate-300 text-xs font-bold uppercase">Quantidade (Filtrado)</p>
+                            <div className="mt-1 flex h-10 items-center">
+                                {isMetricsLoading ? (
+                                    <div className="h-9 w-32 animate-pulse rounded-md bg-white/10" />
+                                ) : (
+                                    <p className="text-3xl font-bold text-white tabular-nums min-w-[8rem]">{stats.totalQty} <span className="text-base font-normal text-slate-400">itens</span></p>
+                                )}
+                            </div>
+                        </Card>
+                    </div>
 
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                <Card>
+                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                <Card className="min-h-[320px]">
                     <h3 className="font-bold text-slate-900 dark:text-white mb-4 flex items-center gap-2"><LayoutDashboard size={16} className="text-purple-500" /> Por Categoria</h3>
-                    <div className="space-y-3">
-                        {stats.category.map(([name, val]) => (
+                    <div className="space-y-3 min-h-[240px]">
+                        {isMetricsLoading ? DASHBOARD_SKELETON_ROWS.map((row) => (
+                            <div key={`category-${row}`} className="h-10 animate-pulse rounded-lg bg-slate-100 dark:bg-zinc-800" />
+                        )) : stats.category.map(([name, val]) => (
                             <div key={name}>
                                 <div className="flex justify-between items-center text-sm cursor-pointer hover:bg-slate-100 hover:text-blue-500 dark:hover:bg-zinc-800 p-2 rounded transition-colors" onClick={() => {
-                                    const scrapsFiltrados = filtered.filter(s => {
-                                        const itemUpper = (s.item || '').toUpperCase();
-                                        const specificItems = ['FRONT', 'REAR', 'OCTA', 'CAMERA', 'BATERIA RMA', 'BATERIA SCRAP', 'PLACA'];
-                                        let catKey = 'MIUDEZAS';
-                                        if (itemUpper.includes('PLACA')) catKey = 'PLACA';
-                                        else if (itemUpper.includes('CAMERA')) catKey = 'CAMERA';
-                                        else {
-                                            const found = specificItems.find(i => itemUpper.includes(i) && i !== 'CAMERA' && i !== 'PLACA');
-                                            if (found) catKey = found;
-                                        }
-                                        return catKey === name;
-                                    });
+                                    const scrapsFiltrados = filtered.filter(s => getDashboardCategoryKey(s.item) === name);
                                     setGroupPreviewModal({ isOpen: true, type: 'category', key: name, scraps: scrapsFiltrados });
                                 }}>
                                     <span className={val > 0 ? 'text-slate-900 dark:text-zinc-100' : 'text-slate-400 dark:text-zinc-600'}>{name}</span>
@@ -512,10 +748,12 @@ const ExecutiveDashboard = ({ scraps, users, isLoading = false, isHydrating = fa
                         ))}
                     </div>
                 </Card>
-                <Card>
+                <Card className="min-h-[320px]">
                     <h3 className="font-bold text-slate-900 dark:text-white mb-4 flex items-center gap-2"><Truck size={16} className="text-blue-500" /> Top Modelos</h3>
-                    <div className="space-y-3">
-                        {stats.model.map(([name, val], i) => (
+                    <div className="space-y-3 min-h-[240px]">
+                        {isMetricsLoading ? DASHBOARD_SKELETON_ROWS.map((row) => (
+                            <div key={`model-${row}`} className="h-10 animate-pulse rounded-lg bg-slate-100 dark:bg-zinc-800" />
+                        )) : stats.model.map(([name, val], i) => (
                             <div key={name} className="flex justify-between items-center text-sm p-2 cursor-pointer hover:bg-slate-100 hover:text-blue-500 dark:hover:bg-zinc-800 rounded transition-colors" onClick={() => {
                                 const scrapsFiltrados = filtered.filter(s => s.model === name);
                                 setGroupPreviewModal({ isOpen: true, type: 'model', key: name, scraps: scrapsFiltrados });
@@ -526,10 +764,12 @@ const ExecutiveDashboard = ({ scraps, users, isLoading = false, isHydrating = fa
                         ))}
                     </div>
                 </Card>
-                <Card>
+                <Card className="min-h-[320px]">
                     <h3 className="font-bold text-slate-900 dark:text-white mb-4 flex items-center gap-2"><Filter size={16} className="text-green-500" /> Por Linha</h3>
-                    <div className="space-y-3">
-                        {stats.line.map(([name, val]) => (
+                    <div className="space-y-3 min-h-[240px]">
+                        {isMetricsLoading ? DASHBOARD_SKELETON_ROWS.map((row) => (
+                            <div key={`line-${row}`} className="h-10 animate-pulse rounded-lg bg-slate-100 dark:bg-zinc-800" />
+                        )) : stats.line.map(([name, val]) => (
                             <div key={name} className="flex justify-between items-center text-sm p-2 cursor-pointer hover:bg-slate-100 hover:text-blue-500 dark:hover:bg-zinc-800 rounded transition-colors" onClick={() => {
                                 const scrapsFiltrados = filtered.filter(s => s.line === name);
                                 setGroupPreviewModal({ isOpen: true, type: 'line', key: name, scraps: scrapsFiltrados });
@@ -576,16 +816,43 @@ const ExecutiveDashboard = ({ scraps, users, isLoading = false, isHydrating = fa
             )}
 
             <ScrapDetailModal isOpen={detailModal.isOpen} scrap={detailModal.scrap} users={users} onClose={() => setDetailModal({ isOpen: false, scrap: null })} />
+                </>
+            ) : (
+                <div className="space-y-6">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <Card className="bg-blue-900 border-blue-800 min-h-[108px]">
+                            <p className="text-blue-100 text-xs font-bold uppercase">Valor Total (Filtrado)</p>
+                            <div className="mt-1 h-9 w-32 animate-pulse rounded-md bg-white/20" />
+                        </Card>
+                        <Card className="bg-slate-900 border-slate-800 min-h-[108px]">
+                            <p className="text-slate-300 text-xs font-bold uppercase">Quantidade (Filtrado)</p>
+                            <div className="mt-1 h-9 w-32 animate-pulse rounded-md bg-white/10" />
+                        </Card>
+                    </div>
+                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                        {['Por Categoria', 'Top Modelos', 'Por Linha'].map((title) => (
+                            <Card key={title} className="min-h-[320px]">
+                                <h3 className="font-bold text-slate-900 dark:text-white mb-4">{title}</h3>
+                                <div className="space-y-3 min-h-[240px]">
+                                    {DASHBOARD_SKELETON_ROWS.map((row) => (
+                                        <div key={`${title}-${row}`} className="h-10 animate-pulse rounded-lg bg-slate-100 dark:bg-zinc-800" />
+                                    ))}
+                                </div>
+                            </Card>
+                        ))}
+                    </div>
+                </div>
+            )}
         </div>
     );
 };
 
 const BatchProcessTab = ({ scraps, onProcess, currentUser, lines, models, users }: { scraps: ScrapData[], onProcess: () => void, currentUser: User, lines: string[], models: string[], users: User[] }) => {
     const [filters, setFilters] = useState({
-        period: 'ALL',
+        period: 'MONTH',
         specificDate: '',
         specificWeek: '',
-        specificMonth: '',
+        specificMonth: new Date().toISOString().slice(0, 7),
         specificYear: '',
         shift: 'ALL',
         qrCode: '',
@@ -595,36 +862,64 @@ const BatchProcessTab = ({ scraps, onProcess, currentUser, lines, models, users 
     });
 
     const [selectedScrap, setSelectedScrap] = useState<ScrapData | null>(null);
+    const isUIReady = useDeferredUIReady(true);
+    const isHeaderReady = useStagedHeaderReady(isUIReady);
+    const [itemSearch, setItemSearch] = useState('');
+    const debouncedItemSearch = useDebouncedText(itemSearch);
+    const availableModels = useMemo(
+        () => Array.from(new Set(scraps.filter((item) => item.situation !== 'SENT').map((item) => item.model).filter(Boolean)))
+            .sort((a, b) => String(a).localeCompare(String(b))),
+        [scraps]
+    );
 
     const [selectedIds, setSelectedIds] = useState<number[]>([]);
     const [showModal, setShowModal] = useState(false);
     const [nfNumber, setNfNumber] = useState('');
     const [isProcessing, setIsProcessing] = useState(false);
+    const [pendingScraps, setPendingScraps] = useState<ScrapData[]>([]);
+    const [isListPreparing, setIsListPreparing] = useState(true);
 
-    const pendingScraps = useMemo(() => {
-        let res = scraps.filter(s => s.situation !== 'SENT');
+    useEffect(() => {
+        if (!isHeaderReady) return;
+        const nextItem = debouncedItemSearch.trim();
+        setFilters((prev) => ({ ...prev, item: nextItem || 'ALL' }));
+    }, [debouncedItemSearch, isHeaderReady]);
 
-        if (filters.period === 'DAY' && filters.specificDate) res = res.filter(s => s.date === filters.specificDate);
-        if (filters.period === 'WEEK' && filters.specificWeek) {
-            const [y, w] = filters.specificWeek.split('-W').map(Number);
-            res = res.filter(s => {
-                const sd = new Date(s.date);
-                const utcDate = new Date(sd.getUTCFullYear(), sd.getUTCMonth(), sd.getUTCDate());
-                const sw = getWeekNumber(utcDate);
-                return sw === w && sd.getFullYear() === y;
-            });
+    useEffect(() => {
+        if (!isUIReady) {
+            setPendingScraps([]);
+            setIsListPreparing(true);
+            return;
         }
-        if (filters.period === 'MONTH' && filters.specificMonth) res = res.filter(s => s.date.startsWith(filters.specificMonth));
-        if (filters.period === 'YEAR' && filters.specificYear) res = res.filter(s => s.date.startsWith(filters.specificYear));
 
-        if (filters.shift !== 'ALL') res = res.filter(s => String(s.shift) === filters.shift);
-        if (filters.qrCode) res = res.filter(s => (s.qrCode || '').toUpperCase().includes(filters.qrCode.toUpperCase()));
-        if (filters.model !== 'ALL') res = res.filter(s => s.model === filters.model);
-        if (filters.item !== 'ALL') res = res.filter(s => s.item === filters.item);
-        if (filters.code) res = res.filter(s => (s.code || '').toLowerCase().includes(filters.code.toLowerCase()));
+        setIsListPreparing(true);
+        return scheduleDashboardMacrotask(() => {
+            let res = scraps.filter(s => s.situation !== 'SENT');
 
-        return res.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-    }, [scraps, filters]);
+            if (filters.period === 'DAY' && filters.specificDate) res = res.filter(s => s.date === filters.specificDate);
+            if (filters.period === 'WEEK' && filters.specificWeek) {
+                const [y, w] = filters.specificWeek.split('-W').map(Number);
+                res = res.filter(s => {
+                    const sd = new Date(s.date);
+                    const utcDate = new Date(sd.getUTCFullYear(), sd.getUTCMonth(), sd.getUTCDate());
+                    const sw = getWeekNumber(utcDate);
+                    return sw === w && sd.getFullYear() === y;
+                });
+            }
+            if (filters.period === 'MONTH' && filters.specificMonth) res = res.filter(s => s.date.startsWith(filters.specificMonth));
+            if (filters.period === 'YEAR' && filters.specificYear) res = res.filter(s => s.date.startsWith(filters.specificYear));
+
+            if (filters.shift !== 'ALL') res = res.filter(s => String(s.shift) === filters.shift);
+            if (filters.qrCode) res = res.filter(s => matchesTextFilter(s.qrCode, filters.qrCode));
+            if (filters.model !== 'ALL') res = res.filter(s => matchesTextFilter(s.model, filters.model));
+            if (filters.item !== 'ALL') res = res.filter(s => matchesTextFilter(s.item, filters.item));
+            if (filters.code) res = res.filter(s => matchesTextFilter(s.code, filters.code));
+
+            res = res.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+            setPendingScraps(res);
+            setIsListPreparing(false);
+        });
+    }, [scraps, filters, isUIReady]);
 
     const handleSelect = useCallback((id: number) => {
         setSelectedIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
@@ -703,7 +998,7 @@ const BatchProcessTab = ({ scraps, onProcess, currentUser, lines, models, users 
         <div className="space-y-4">
             <Card>
                 <div className="flex flex-wrap items-end gap-3 w-full">
-                    <select className="bg-slate-50 dark:bg-zinc-950 border border-slate-300 dark:border-zinc-800 p-2 rounded text-sm outline-none w-auto flex-none" onChange={e => setFilters({ ...filters, period: e.target.value })} value={filters.period}>
+                    <select className="bg-slate-50 dark:bg-zinc-950 border border-slate-300 dark:border-zinc-800 p-2 rounded text-sm outline-none w-auto flex-none" onChange={e => setFilters({ ...filters, period: e.target.value })} value={filters.period} disabled={!isHeaderReady}>
                         <option value="ALL">Todos os Períodos</option>
                         <option value="DAY">Dia</option>
                         <option value="WEEK">Semana</option>
@@ -715,25 +1010,29 @@ const BatchProcessTab = ({ scraps, onProcess, currentUser, lines, models, users 
                     {filters.period === 'MONTH' && <Input type="month" value={filters.specificMonth} onChange={e => setFilters({ ...filters, specificMonth: e.target.value })} className="w-auto flex-none" />}
                     {filters.period === 'YEAR' && <Input type="number" placeholder="2026" value={filters.specificYear} onChange={e => setFilters({ ...filters, specificYear: e.target.value })} className="w-auto flex-none" />}
 
-                    <select className="bg-slate-50 dark:bg-zinc-950 border border-slate-300 dark:border-zinc-800 p-2 rounded text-sm outline-none w-auto flex-none" value={filters.shift} onChange={e => setFilters({ ...filters, shift: e.target.value })}>
+                    <select className="bg-slate-50 dark:bg-zinc-950 border border-slate-300 dark:border-zinc-800 p-2 rounded text-sm outline-none w-auto flex-none" value={filters.shift} onChange={e => setFilters({ ...filters, shift: e.target.value })} disabled={!isHeaderReady}>
                         <option value="ALL">Todos Turnos</option>
                         <option value="1">1º Turno</option>
                         <option value="2">2º Turno</option>
                     </select>
 
                     <div className="flex-1 min-w-[200px] max-w-sm">
-                        <Input placeholder="Buscar por QR Code..." value={filters.qrCode} onChange={e => setFilters({ ...filters, qrCode: e.target.value })} className="w-full" />
+                        <Input placeholder={isHeaderReady ? "Buscar por QR Code..." : "Preparando cabeçalho..."} value={filters.qrCode} onChange={e => setFilters({ ...filters, qrCode: e.target.value })} className="w-full" disabled={!isHeaderReady} />
                     </div>
 
-                    <select className="bg-slate-50 dark:bg-zinc-950 border border-slate-300 dark:border-zinc-800 p-2 rounded text-sm outline-none w-auto flex-none" value={filters.model} onChange={e => setFilters({ ...filters, model: e.target.value })}>
+                    <select className="bg-slate-50 dark:bg-zinc-950 border border-slate-300 dark:border-zinc-800 p-2 rounded text-sm outline-none w-auto flex-none" value={filters.model} onChange={e => setFilters({ ...filters, model: e.target.value })} disabled={!isHeaderReady}>
                         <option value="ALL">Todos Modelos</option>
-                        {models.map(m => <option key={m} value={m}>{m}</option>)}
+                        {availableModels.map((model) => <option key={model} value={model}>{model}</option>)}
                     </select>
 
-                    <select className="bg-slate-50 dark:bg-zinc-950 border border-slate-300 dark:border-zinc-800 p-2 rounded text-sm outline-none w-auto flex-none" value={filters.item} onChange={e => setFilters({ ...filters, item: e.target.value })}>
-                        <option value="ALL">Todos Itens</option>
-                        {Array.from(new Set(pendingScraps.map(s => s.item).filter(Boolean))).sort((a, b) => String(a).localeCompare(String(b))).map(item => <option key={item} value={item}>{item}</option>)}
-                    </select>
+                    <input
+                        type="text"
+                        className="bg-slate-50 dark:bg-zinc-950 border border-slate-300 dark:border-zinc-800 p-2 rounded text-sm outline-none w-auto flex-none min-h-[40px]"
+                        value={itemSearch}
+                        onChange={e => setItemSearch(e.target.value)}
+                        placeholder={isHeaderReady ? "Buscar item..." : "Carregando filtros..."}
+                        disabled={!isHeaderReady}
+                    />
 
                     <div className="flex-1 min-w-[200px] max-w-sm">
                         <input
@@ -742,6 +1041,7 @@ const BatchProcessTab = ({ scraps, onProcess, currentUser, lines, models, users 
                             className="bg-slate-50 dark:bg-zinc-950 border border-slate-300 dark:border-zinc-800 p-2 rounded text-sm outline-none w-full"
                             value={filters.code || ''}
                             onChange={e => setFilters({ ...filters, code: e.target.value })}
+                            disabled={!isHeaderReady}
                         />
                     </div>
 
@@ -751,8 +1051,10 @@ const BatchProcessTab = ({ scraps, onProcess, currentUser, lines, models, users 
                 </div>
             </Card>
 
-            <div className="w-full overflow-x-auto pb-4 mb-4 touch-pan-x border border-gray-200 dark:border-zinc-800 rounded-xl">
-                <div className="min-w-[980px]">
+            {isUIReady ? (
+                <>
+                    <div className="w-full overflow-x-auto pb-4 mb-4 touch-pan-x border border-gray-200 dark:border-zinc-800 rounded-xl min-h-[340px]">
+                        <div className="min-w-[980px]">
                     <div className="grid grid-cols-[44px_90px_1fr_1fr_1fr_1fr_80px_120px_90px_70px] items-center bg-slate-50 dark:bg-zinc-950 text-slate-500 dark:text-zinc-400 border-b border-slate-200 dark:border-zinc-800 text-sm font-medium px-2 h-12">
                         <div className="px-2">
                             <input type="checkbox" checked={selectedIds.length === pendingScraps.length && pendingScraps.length > 0} onChange={handleSelectAll} />
@@ -768,13 +1070,21 @@ const BatchProcessTab = ({ scraps, onProcess, currentUser, lines, models, users 
                         <div className="px-2 text-center">Ações</div>
                     </div>
 
-                    <List
-                        rowCount={pendingScraps.length}
-                        rowHeight={52}
-                        rowComponent={BatchProcessRow}
-                        rowProps={batchListData}
-                        style={{ height: Math.min(560, Math.max(56, pendingScraps.length * 52)), width: '100%' }}
-                    />
+                    {isListPreparing ? (
+                        <div className="space-y-2 p-4">
+                            {DASHBOARD_SKELETON_ROWS.map((row) => (
+                                <div key={`batch-${row}`} className="h-11 animate-pulse rounded-lg bg-slate-100 dark:bg-zinc-800" />
+                            ))}
+                        </div>
+                    ) : (
+                        <List
+                            rowCount={pendingScraps.length}
+                            rowHeight={52}
+                            rowComponent={BatchProcessRow}
+                            rowProps={batchListData}
+                            style={{ height: Math.min(560, Math.max(56, pendingScraps.length * 52)), width: '100%' }}
+                        />
+                    )}
                 </div>
             </div>
 
@@ -830,6 +1140,10 @@ const BatchProcessTab = ({ scraps, onProcess, currentUser, lines, models, users 
             )}
 
             <ScrapDetailModal isOpen={!!selectedScrap} scrap={selectedScrap} users={users} onClose={() => setSelectedScrap(null)} />
+                </>
+            ) : (
+                <LoadingSpinner label="Preparando baixa em lote..." />
+            )}
         </div>
     );
 };
@@ -841,52 +1155,71 @@ const HistorySentTab = ({ scraps, users, onRefresh }: { scraps: ScrapData[], use
     const [expandedGroups, setExpandedGroups] = useState<string[]>([]);
     const [previewBoxNf, setPreviewBoxNf] = useState<string | null>(null);
     const [selectedScrap, setSelectedScrap] = useState<ScrapData | null>(null);
-    
-    const sentScraps = useMemo(() => scraps.filter(s => s.situation === 'SENT'), [scraps]);
-    
-    const uniqueItems = useMemo(() => Array.from(new Set(sentScraps.map(s => s.item).filter(Boolean))).sort((a, b) => String(a).localeCompare(String(b))), [sentScraps]);
-    const uniqueModels = useMemo(() => Array.from(new Set(sentScraps.map(s => s.model).filter(Boolean))).sort((a, b) => String(a).localeCompare(String(b))), [sentScraps]);
-    
-    const filteredScraps = useMemo(() => {
-        let res = [...sentScraps];
-        if (filters.item !== 'ALL') res = res.filter(s => s.item === filters.item);
-        if (filters.model !== 'ALL') res = res.filter(s => s.model === filters.model);
-        if (filters.qrCode) {
-            const lowerQr = filters.qrCode.toLowerCase();
-            res = res.filter(s => (s.qrCode?.toLowerCase() || '').includes(lowerQr) || String(s.id).includes(lowerQr));
+    const isUIReady = useDeferredUIReady(true);
+    const isHeaderReady = useStagedHeaderReady(isUIReady);
+    const [itemSearch, setItemSearch] = useState('');
+    const debouncedItemSearch = useDebouncedText(itemSearch);
+    const availableModels = useMemo(
+        () => Array.from(new Set(scraps.filter((item) => item.situation === 'SENT').map((item) => item.model).filter(Boolean)))
+            .sort((a, b) => String(a).localeCompare(String(b))),
+        [scraps]
+    );
+    const [filteredScraps, setFilteredScraps] = useState<ScrapData[]>([]);
+    const [groups, setGroups] = useState<Record<string, ScrapData[]>>({});
+    const [filteredTotalValue, setFilteredTotalValue] = useState(0);
+    const [isHistoryPreparing, setIsHistoryPreparing] = useState(true);
+
+    useEffect(() => {
+        if (!isHeaderReady) return;
+        const nextItem = debouncedItemSearch.trim();
+        setFilters((prev) => ({ ...prev, item: nextItem || 'ALL' }));
+    }, [debouncedItemSearch, isHeaderReady]);
+
+    useEffect(() => {
+        if (!isUIReady) {
+            setFilteredScraps([]);
+            setGroups({});
+            setFilteredTotalValue(0);
+            setIsHistoryPreparing(true);
+            return;
         }
-        return res;
-    }, [sentScraps, filters]);
 
-    const groups = useMemo(() => {
-        const g: Record<string, ScrapData[]> = {};
-        filteredScraps.forEach(s => {
-            const key = groupBy === 'NF' ? (s.nfNumber || 'SEM_NF') : String(s.boxId || 'SEM_CAIXA');
-            if (!g[key]) g[key] = [];
-            g[key].push(s);
+        setIsHistoryPreparing(true);
+        return scheduleDashboardMacrotask(() => {
+            let result = scraps.filter(s => s.situation === 'SENT');
+            if (filters.item !== 'ALL') result = result.filter(s => matchesTextFilter(s.item, filters.item));
+            if (filters.model !== 'ALL') result = result.filter(s => matchesTextFilter(s.model, filters.model));
+            if (filters.qrCode) {
+                result = result.filter(s => matchesTextFilter(s.qrCode, filters.qrCode) || matchesTextFilter(String(s.id), filters.qrCode));
+            }
+
+            const grouped: Record<string, ScrapData[]> = {};
+            result.forEach(s => {
+                const key = groupBy === 'NF' ? (s.nfNumber || 'SEM_NF') : String(s.boxId || 'SEM_CAIXA');
+                if (!grouped[key]) grouped[key] = [];
+                grouped[key].push(s);
+            });
+
+            const total = result.reduce((acc, s) => acc + Number(s.totalValue || 0), 0);
+            setFilteredScraps(result);
+            setGroups(grouped);
+            setFilteredTotalValue(total);
+            setIsHistoryPreparing(false);
         });
-        return g;
-    }, [filteredScraps, groupBy]);
-
-    const filteredTotalValue = useMemo(() => {
-        return filteredScraps.reduce((acc, s) => acc + Number(s.totalValue || 0), 0);
-    }, [filteredScraps]);
+    }, [scraps, filters, groupBy, isUIReady]);
 
     return (
         <div className="space-y-4">
             <Card>
                 <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
-                    <input type="text" placeholder="Buscar NF ou Caixa..." className="bg-slate-50 dark:bg-zinc-950 border border-slate-300 dark:border-zinc-800 p-2 rounded text-sm outline-none w-full" value={searchQuery} onChange={e => setSearchQuery(e.target.value)} />
-                    <select className="bg-slate-50 dark:bg-zinc-950 border border-slate-300 dark:border-zinc-800 p-2 rounded text-sm outline-none" value={filters.item} onChange={e => setFilters({ ...filters, item: e.target.value })}>
-                        <option value="ALL">Todos Itens</option>
-                        {uniqueItems.map(item => <option key={item} value={item}>{item}</option>)}
-                    </select>
-                    <select className="bg-slate-50 dark:bg-zinc-950 border border-slate-300 dark:border-zinc-800 p-2 rounded text-sm outline-none" value={filters.model} onChange={e => setFilters({ ...filters, model: e.target.value })}>
+                    <input type="text" placeholder={isHeaderReady ? "Buscar NF ou Caixa..." : "Preparando cabeçalho..."} className="bg-slate-50 dark:bg-zinc-950 border border-slate-300 dark:border-zinc-800 p-2 rounded text-sm outline-none w-full min-h-[40px]" value={searchQuery} onChange={e => setSearchQuery(e.target.value)} disabled={!isHeaderReady} />
+                    <input type="text" placeholder={isHeaderReady ? "Buscar item..." : "Carregando filtros..."} className="bg-slate-50 dark:bg-zinc-950 border border-slate-300 dark:border-zinc-800 p-2 rounded text-sm outline-none min-h-[40px]" value={itemSearch} onChange={e => setItemSearch(e.target.value)} disabled={!isHeaderReady} />
+                    <select className="bg-slate-50 dark:bg-zinc-950 border border-slate-300 dark:border-zinc-800 p-2 rounded text-sm outline-none min-h-[40px]" value={filters.model} onChange={e => setFilters({ ...filters, model: e.target.value })} disabled={!isHeaderReady}>
                         <option value="ALL">Todos Modelos</option>
-                        {uniqueModels.map(model => <option key={model} value={model}>{model}</option>)}
+                        {availableModels.map((model) => <option key={model} value={model}>{model}</option>)}
                     </select>
-                    <Input placeholder="Buscar por QR Code / ID..." value={filters.qrCode} onChange={e => setFilters({ ...filters, qrCode: e.target.value })} className="h-fit" />
-                    <select className="bg-slate-50 dark:bg-zinc-950 border border-slate-300 dark:border-zinc-800 p-2 rounded text-sm outline-none h-fit" value={groupBy} onChange={e => setGroupBy(e.target.value as 'NF' | 'BOX')}>
+                    <Input placeholder={isHeaderReady ? "Buscar por QR Code / ID..." : "Preparando busca..."} value={filters.qrCode} onChange={e => setFilters({ ...filters, qrCode: e.target.value })} className="h-fit" disabled={!isHeaderReady} />
+                    <select className="bg-slate-50 dark:bg-zinc-950 border border-slate-300 dark:border-zinc-800 p-2 rounded text-sm outline-none h-fit" value={groupBy} onChange={e => setGroupBy(e.target.value as 'NF' | 'BOX')} disabled={!isHeaderReady}>
                         <option value="NF">Agrupar por NF</option>
                         <option value="BOX">Agrupar por Caixa</option>
                     </select>
@@ -899,105 +1232,118 @@ const HistorySentTab = ({ scraps, users, onRefresh }: { scraps: ScrapData[], use
                 )}
             </Card>
             
-            {Object.keys(groups).length === 0 && <p className="text-center text-slate-500 py-10">Nenhum envio registrado.</p>}
-
-            {Object.entries(groups)
-                .filter(([key]) => key !== 'SEM_CAIXA' && key !== 'SEM_NF')
-                .filter(([key, items]) => {
-                    if (!searchQuery) return true;
-                    const query = searchQuery.toLowerCase();
-                    if (key.toLowerCase().includes(query)) return true;
-                    if (groupBy === 'BOX' && items[0]?.nfNumber?.toLowerCase().includes(query)) return true;
-                    return false;
-                })
-                .sort((a, b) => new Date(b[1][0].sentAt || '').getTime() - new Date(a[1][0].sentAt || '').getTime())
-                .map(([keyVal, items]) => (
-                    <HistoryGroupCard 
-                        key={`group-${groupBy}-${keyVal}`} 
-                        nf={keyVal} 
-                        items={items} 
-                        users={users} 
-                        groupBy={groupBy} 
-                        isExpanded={expandedGroups.includes(keyVal)}
-                        onToggle={() => setExpandedGroups(prev => prev.includes(keyVal) ? prev.filter(k => k !== keyVal) : [...prev, keyVal])}
-                        onRefresh={onRefresh}
-                        onClickPreview={() => setPreviewBoxNf(keyVal)}
-                        onClickScrap={(scrap: ScrapData) => setSelectedScrap(scrap)}
-                    />
-                ))}
-
-            {/* Preview Modal for box items */}
-            {previewBoxNf && groups[previewBoxNf] && (
-                <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={() => setPreviewBoxNf(null)}>
-                    <Card className="max-w-2xl w-full max-h-[80vh] overflow-y-auto bg-white dark:bg-zinc-900 border-slate-200 dark:border-zinc-700" onClick={(e: React.MouseEvent) => e.stopPropagation()}>
-                        <div className="flex justify-between items-center mb-4">
-                            <h3 className="font-bold text-lg text-slate-900 dark:text-white">Detalhes da NF: {previewBoxNf}</h3>
-                            <button onClick={() => setPreviewBoxNf(null)} className="text-slate-400 hover:text-slate-700 dark:hover:text-zinc-200 bg-slate-100 dark:bg-zinc-800 rounded-full w-8 h-8 flex items-center justify-center">
-                                <X size={16} />
-                            </button>
+            {isUIReady ? (
+                <>
+                    {isHistoryPreparing && (
+                        <div className="space-y-2">
+                            {DASHBOARD_SKELETON_ROWS.map((row) => (
+                                <div key={`history-${row}`} className="h-16 animate-pulse rounded-lg bg-slate-100 dark:bg-zinc-800" />
+                            ))}
                         </div>
-                        <div className="space-y-3">
-                            {(() => {
-                                const specificItems = ['FRONT', 'REAR', 'OCTA', 'CAMERA', 'BATERIA RMA', 'BATERIA SCRAP', 'PLACA'];
-                                const summary: Record<string, { qty: number, val: number }> = {};
-                                specificItems.forEach(k => summary[k] = { qty: 0, val: 0 });
-                                summary['MIUDEZAS'] = { qty: 0, val: 0 };
-                                const items = groups[previewBoxNf];
-                                items.forEach(s => {
-                                    let key = 'MIUDEZAS';
-                                    const itemUpper = (s.item || '').toUpperCase();
-                                    if (itemUpper.includes('PLACA')) {
-                                        key = 'PLACA';
-                                    } else {
-                                        const found = specificItems.find(spec => itemUpper.includes(spec));
-                                        if (found) key = found;
-                                    }
-                                    summary[key].qty += (s.qty || 0);
-                                    summary[key].val += (s.totalValue || 0);
-                                });
+                    )}
+                    {!isHistoryPreparing && Object.keys(groups).length === 0 && <p className="text-center text-slate-500 py-10">Nenhum envio registrado.</p>}
 
-                                return Object.entries(summary).filter(([, d]) => d.qty > 0).map(([key, data]) => (
-                                    <div key={key} className="bg-slate-50 dark:bg-zinc-950 border border-slate-200 dark:border-zinc-800 rounded-lg p-3">
-                                        <div className="flex justify-between items-center text-sm">
-                                            <span className="font-bold text-slate-800 dark:text-zinc-200">{key}</span>
-                                            <span className="font-mono text-blue-600 dark:text-blue-400">{formatCurrency(data.val)}</span>
-                                        </div>
-                                        <p className="text-xs text-slate-500 dark:text-zinc-500 mt-1">{data.qty} unidade(s)</p>
-                                        <div className="mt-2 space-y-1">
-                                            {items.filter(i => {
-                                                const iu = (i.item || '').toUpperCase();
-                                                if (key === 'PLACA') return iu.includes('PLACA');
-                                                if (key === 'CAMERA') return iu.includes('CAMERA');
-                                                if (key === 'MIUDEZAS') {
-                                                    return !specificItems.some(sp => iu.includes(sp));
-                                                }
-                                                return iu.includes(key);
-                                            }).map(si => (
-                                                <div
-                                                    key={si.id}
-                                                    className="flex justify-between items-center text-xs cursor-pointer hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded px-2 py-1 transition-colors"
-                                                    onClick={() => { setPreviewBoxNf(null); setSelectedScrap(si); }}
-                                                >
-                                                    <span className="text-slate-600 dark:text-zinc-400">{si.model} • {si.code || '-'}</span>
-                                                    <span className="font-mono text-slate-700 dark:text-zinc-300">{formatCurrency(si.totalValue)}</span>
+                    {!isHistoryPreparing && Object.entries(groups)
+                        .filter(([key]) => key !== 'SEM_CAIXA' && key !== 'SEM_NF')
+                        .filter(([key, items]) => {
+                            if (!searchQuery) return true;
+                            const query = searchQuery.toLowerCase();
+                            if (key.toLowerCase().includes(query)) return true;
+                            if (groupBy === 'BOX' && items[0]?.nfNumber?.toLowerCase().includes(query)) return true;
+                            return false;
+                        })
+                        .sort((a, b) => new Date(b[1][0].sentAt || '').getTime() - new Date(a[1][0].sentAt || '').getTime())
+                        .map(([keyVal, items]) => (
+                            <HistoryGroupCard
+                                key={`group-${groupBy}-${keyVal}`}
+                                nf={keyVal}
+                                items={items}
+                                users={users}
+                                groupBy={groupBy}
+                                isExpanded={expandedGroups.includes(keyVal)}
+                                onToggle={() => setExpandedGroups(prev => prev.includes(keyVal) ? prev.filter(k => k !== keyVal) : [...prev, keyVal])}
+                                onRefresh={onRefresh}
+                                onClickPreview={() => setPreviewBoxNf(keyVal)}
+                                onClickScrap={(scrap: ScrapData) => setSelectedScrap(scrap)}
+                            />
+                        ))}
+
+                    {/* Preview Modal for box items */}
+                    {previewBoxNf && groups[previewBoxNf] && (
+                        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={() => setPreviewBoxNf(null)}>
+                            <Card className="max-w-2xl w-full max-h-[80vh] overflow-y-auto bg-white dark:bg-zinc-900 border-slate-200 dark:border-zinc-700" onClick={(e: React.MouseEvent) => e.stopPropagation()}>
+                                <div className="flex justify-between items-center mb-4">
+                                    <h3 className="font-bold text-lg text-slate-900 dark:text-white">Detalhes da NF: {previewBoxNf}</h3>
+                                    <button onClick={() => setPreviewBoxNf(null)} className="text-slate-400 hover:text-slate-700 dark:hover:text-zinc-200 bg-slate-100 dark:bg-zinc-800 rounded-full w-8 h-8 flex items-center justify-center">
+                                        <X size={16} />
+                                    </button>
+                                </div>
+                                <div className="space-y-3">
+                                    {(() => {
+                                        const specificItems = ['FRONT', 'REAR', 'OCTA', 'CAMERA', 'BATERIA RMA', 'BATERIA SCRAP', 'PLACA'];
+                                        const summary: Record<string, { qty: number, val: number }> = {};
+                                        specificItems.forEach(k => summary[k] = { qty: 0, val: 0 });
+                                        summary['MIUDEZAS'] = { qty: 0, val: 0 };
+                                        const items = groups[previewBoxNf];
+                                        items.forEach(s => {
+                                            let key = 'MIUDEZAS';
+                                            const itemUpper = (s.item || '').toUpperCase();
+                                            if (itemUpper.includes('PLACA')) {
+                                                key = 'PLACA';
+                                            } else {
+                                                const found = specificItems.find(spec => itemUpper.includes(spec));
+                                                if (found) key = found;
+                                            }
+                                            summary[key].qty += (s.qty || 0);
+                                            summary[key].val += (s.totalValue || 0);
+                                        });
+
+                                        return Object.entries(summary).filter(([, d]) => d.qty > 0).map(([key, data]) => (
+                                            <div key={key} className="bg-slate-50 dark:bg-zinc-950 border border-slate-200 dark:border-zinc-800 rounded-lg p-3">
+                                                <div className="flex justify-between items-center text-sm">
+                                                    <span className="font-bold text-slate-800 dark:text-zinc-200">{key}</span>
+                                                    <span className="font-mono text-blue-600 dark:text-blue-400">{formatCurrency(data.val)}</span>
                                                 </div>
-                                            ))}
-                                        </div>
-                                    </div>
-                                ));
-                            })()}
+                                                <p className="text-xs text-slate-500 dark:text-zinc-500 mt-1">{data.qty} unidade(s)</p>
+                                                <div className="mt-2 space-y-1">
+                                                    {items.filter(i => {
+                                                        const iu = (i.item || '').toUpperCase();
+                                                        if (key === 'PLACA') return iu.includes('PLACA');
+                                                        if (key === 'CAMERA') return iu.includes('CAMERA');
+                                                        if (key === 'MIUDEZAS') {
+                                                            return !specificItems.some(sp => iu.includes(sp));
+                                                        }
+                                                        return iu.includes(key);
+                                                    }).map(si => (
+                                                        <div
+                                                            key={si.id}
+                                                            className="flex justify-between items-center text-xs cursor-pointer hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded px-2 py-1 transition-colors"
+                                                            onClick={() => { setPreviewBoxNf(null); setSelectedScrap(si); }}
+                                                        >
+                                                            <span className="text-slate-600 dark:text-zinc-400">{si.model} • {si.code || '-'}</span>
+                                                            <span className="font-mono text-slate-700 dark:text-zinc-300">{formatCurrency(si.totalValue)}</span>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        ));
+                                    })()}
+                                </div>
+                            </Card>
                         </div>
-                    </Card>
-                </div>
-            )}
+                    )}
 
-            {/* Scrap Detail Modal */}
-            <ScrapDetailModal
-                isOpen={!!selectedScrap}
-                scrap={selectedScrap}
-                users={users}
-                onClose={() => setSelectedScrap(null)}
-            />
+                    {/* Scrap Detail Modal */}
+                    <ScrapDetailModal
+                        isOpen={!!selectedScrap}
+                        scrap={selectedScrap}
+                        users={users}
+                        onClose={() => setSelectedScrap(null)}
+                    />
+                </>
+            ) : (
+                <LoadingSpinner label="Preparando histórico de envios..." />
+            )}
         </div>
     );
 };

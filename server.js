@@ -347,7 +347,8 @@ const CACHE_LOADERS = {
             status: true,
             gloveSize: true,
             gloveType: true,
-            gloveExchanges: true
+            gloveExchanges: true,
+            attendanceLogs: true
         }
     }),
     [CACHE_KEYS.BOXES]: async () => prisma.scrapBox.findMany({
@@ -1971,10 +1972,37 @@ app.put('/api/employees/:matricula/transfer', async (req, res) => {
 app.post('/api/attendance', async (req, res) => {
     try {
         const { employeeId, date, type, delayMinutes, loggedById } = req.body;
-        const log = await prisma.attendanceLog.create({
-            data: { employeeId: String(employeeId), date: String(date), type, delayMinutes: delayMinutes ? String(delayMinutes) : null, loggedById }
+        const normalizedEmployeeId = String(employeeId);
+        const normalizedDate = String(date);
+
+        const existingLog = await prisma.attendanceLog.findFirst({
+            where: {
+                employeeId: normalizedEmployeeId,
+                date: normalizedDate
+            }
         });
-        res.json({ message: "Apontamento salvo", log });
+
+        const payload = {
+            employeeId: normalizedEmployeeId,
+            date: normalizedDate,
+            type,
+            delayMinutes: delayMinutes ? String(delayMinutes) : null,
+            loggedById
+        };
+
+        const log = existingLog
+            ? await prisma.attendanceLog.update({
+                where: { id: existingLog.id },
+                data: payload
+            })
+            : await prisma.attendanceLog.create({
+                data: payload
+            });
+
+        await refreshRamCollection(CACHE_KEYS.EMPLOYEES);
+        broadcastSyncDelta(CACHE_KEYS.EMPLOYEES, 'replace', { items: getRamCollection(CACHE_KEYS.EMPLOYEES) });
+
+        res.json({ message: existingLog ? "Apontamento atualizado" : "Apontamento salvo", log });
     } catch (e) {
         res.status(500).json({ error: e.message });
     }

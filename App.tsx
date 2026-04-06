@@ -1,18 +1,17 @@
 import React, { useState, useEffect, useRef, startTransition } from 'react';
+import { Layout } from './components/Layout';
 import { ScrapModule } from './components/ScrapModule';
 import { IQCModule } from './components/IQCModule';
-import { Layout } from './components/Layout';
+import { ManagementModule } from './components/ManagementModule';
+import { PeopleManagementModule } from './components/PeopleManagementModule';
+import { PeopleManagementManagersModule } from './components/PeopleManagementManagersModule';
+import { PreparationModule } from './components/PreparationModule';
 import { getScraps } from './services/scrapService';
 import { Card } from './components/Card';
 import { Button } from './components/Button';
 import { Input } from './components/Input';
 import { User, ChecklistData, ChecklistItem, ChecklistLog, MeetingLog, ChecklistEvidence, Permission, LineStopData, ConfigItem, Material, PERMISSIONS, MODULE_TABS, MODULE_NAMES } from './types';
 import { getMaterials } from './services/materialService';
-import { ManagementModule } from './components/ManagementModule';
-import { PeopleManagementModule } from './components/PeopleManagementModule';
-import { PeopleManagementManagersModule } from './components/PeopleManagementManagersModule';
-import { PreparationModule } from './components/PreparationModule';
-import { MaterialsManager } from './components/MaterialsManager';
 import {
     loginUser, logoutUser, getSessionUser, seedAdmin,
     getAllUsers, deleteUser, updateUser, registerUser, updateSessionUser, recoverPassword
@@ -295,8 +294,22 @@ const App = () => {
     // QR Logic Manual
     const [qrCodeManual, setQrCodeManual] = useState('');
 
-    // Scrap Navigation
-    const [scrapTab, setScrapTab] = useState<any>(() => sessionStorage.getItem('activeTab_ScrapLauncher') || undefined);
+    // Scrap / IQC Navigation
+    const SCRAP_LAUNCHER_TAB_KEY = 'activeTab_ScrapLauncher';
+    const SCRAP_MODULE_TAB_KEY = 'activeTab_ScrapModule';
+    const IQC_MODULE_TAB_KEY = 'activeTab_IQCModule';
+
+    const getStoredTab = (...keys: string[]) => {
+        if (typeof window === 'undefined') return undefined;
+        for (const key of keys) {
+            const value = window.sessionStorage.getItem(key);
+            if (value) return value;
+        }
+        return undefined;
+    };
+
+    const [scrapTab, setScrapTab] = useState<any>(() => getStoredTab(SCRAP_MODULE_TAB_KEY, SCRAP_LAUNCHER_TAB_KEY));
+    const [iqcTab, setIqcTab] = useState<any>(() => getStoredTab(IQC_MODULE_TAB_KEY));
 
     useEffect(() => {
         sessionStorage.setItem('activeTab_LineStopDashboard', lineStopTab);
@@ -319,9 +332,16 @@ const App = () => {
     }, [auditTab]);
 
     useEffect(() => {
-        if (scrapTab) sessionStorage.setItem('activeTab_ScrapLauncher', String(scrapTab));
-        else sessionStorage.removeItem('activeTab_ScrapLauncher');
+        if (scrapTab) {
+            sessionStorage.setItem(SCRAP_LAUNCHER_TAB_KEY, String(scrapTab));
+        }
     }, [scrapTab]);
+
+    useEffect(() => {
+        if (iqcTab) {
+            sessionStorage.setItem(IQC_MODULE_TAB_KEY, String(iqcTab));
+        }
+    }, [iqcTab]);
 
     // Refs
     const categoryRefs = useRef<{ [key: string]: HTMLDivElement | null }>({});
@@ -979,12 +999,16 @@ const App = () => {
         logoutUser();
         setCurrentUser(null);
         setProfileData(null);
+        setScrapTab(undefined);
+        setIqcTab(undefined);
         sessionStorage.removeItem('app_view');
         sessionStorage.removeItem('activeTab_LineStopDashboard');
         sessionStorage.removeItem('activeTab_Admin');
         sessionStorage.removeItem('activeTab_ManagementLegacy');
         sessionStorage.removeItem('activeTab_AuditLegacy');
-        sessionStorage.removeItem('activeTab_ScrapLauncher');
+        sessionStorage.removeItem(SCRAP_LAUNCHER_TAB_KEY);
+        sessionStorage.removeItem(SCRAP_MODULE_TAB_KEY);
+        sessionStorage.removeItem(IQC_MODULE_TAB_KEY);
         sessionStorage.removeItem('scrap_active_tab');
         sessionStorage.removeItem('iqc_active_tab');
         sessionStorage.removeItem('management_active_tab');
@@ -996,6 +1020,19 @@ const App = () => {
         setView('LOGIN');
         setLoginMatricula('');
         setLoginPassword('');
+    };
+
+    const handleScrapBack = () => {
+        sessionStorage.removeItem(SCRAP_LAUNCHER_TAB_KEY);
+        sessionStorage.removeItem(SCRAP_MODULE_TAB_KEY);
+        setScrapTab(undefined);
+        setView('MENU');
+    };
+
+    const handleIqcBack = () => {
+        sessionStorage.removeItem(IQC_MODULE_TAB_KEY);
+        setIqcTab(undefined);
+        setView('MENU');
     };
 
     const canCreateNotice = !!currentUser && hasTabAccess('NOTICES', 'MANAGE');
@@ -2898,9 +2935,9 @@ const App = () => {
     if (view === 'MEETING_HISTORY') return <Layout sidebar={<SidebarContent />} onToggleTheme={toggleTheme}><header className="flex items-center justify-between mb-4 md:mb-8 pb-4 md:pb-6 border-b border-slate-200 dark:border-zinc-800"><h1 className="text-lg md:text-2xl font-bold text-slate-900 dark:text-zinc-100">Histórico de Atas</h1><Button variant="outline" onClick={() => setView('MEETING_MENU')}><ArrowLeft size={16} /> Voltar</Button></header><div className="space-y-4">{meetingHistory.map(m => (<div key={m.id} className="bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 rounded-xl p-5 flex flex-col md:flex-row justify-between items-center gap-4 hover:border-slate-300 dark:hover:border-zinc-700 transition-colors shadow-sm"><div><p className="font-bold text-slate-900 dark:text-white text-lg">{m.title || 'Sem Título'}</p><p className="font-medium text-slate-500 dark:text-zinc-400 text-sm flex items-center gap-2"><Calendar size={14} /> {new Date(m.date).toLocaleDateString()} • {m.startTime} - {m.endTime}</p><div className="flex gap-4 mt-2"><span className="text-xs text-slate-500 dark:text-zinc-500 bg-slate-100 dark:bg-zinc-950 px-2 py-1 rounded">Criado por: {m.createdBy}</span><span className="text-xs text-slate-500 dark:text-zinc-500 bg-slate-100 dark:bg-zinc-950 px-2 py-1 rounded">{m.participants.length} participantes</span></div></div><div className="flex gap-2"><Button variant="secondary" onClick={() => setPreviewMeeting(m)}><Eye size={16} /></Button><Button variant="outline" onClick={() => exportMeetingToExcel(m)}><Download size={16} /> Excel</Button></div></div>))}</div>{renderMeetingPreviewModal()}</Layout>;
     if (view === 'MAINTENANCE_QR') return <Layout sidebar={<SidebarContent />} onToggleTheme={toggleTheme}><header className="flex items-center justify-between mb-4 md:mb-8 pb-4 md:pb-6 border-b border-slate-200 dark:border-zinc-800"><h1 className="text-lg md:text-2xl font-bold text-slate-900 dark:text-zinc-100">Ler QR Code Máquina</h1></header><div className="max-w-md mx-auto"><div className="bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 rounded-xl p-6 text-center"><div id="reader-hidden" className="hidden"></div><label className="cursor-pointer flex flex-col items-center justify-center h-48 w-full border-2 border-dashed border-slate-300 dark:border-zinc-700 hover:border-blue-500 rounded-xl transition-all mb-6 bg-slate-50 dark:bg-zinc-950"><Camera size={48} className={`mb-4 ${isProcessingPhoto ? 'text-blue-500 animate-pulse' : 'text-slate-400 dark:text-zinc-500'}`} /><span className="text-lg font-bold text-slate-700 dark:text-zinc-300">{isProcessingPhoto ? 'Processando Imagem...' : 'Tirar Foto do QR Code'}</span><span className="text-sm text-slate-500 dark:text-zinc-500 mt-2">Clique aqui para abrir a câmera</span><input type="file" accept="image/*" capture="environment" className="hidden" disabled={isProcessingPhoto} onChange={(e) => { if (e.target.files?.[0]) { handleMaintenanceQrPhoto(e.target.files[0]); e.target.value = ''; } }} /></label><div className="border-t border-slate-200 dark:border-zinc-800 pt-6 mt-6"><p className="text-xs font-bold text-slate-500 dark:text-zinc-500 mb-3 uppercase">Inserção Manual</p><div className="flex gap-2"><Input placeholder="Código (Ex: PRENSA_01)" value={qrCodeManual} onChange={e => setQrCodeManual(e.target.value)} /><Button onClick={() => handleMaintenanceCode(qrCodeManual)}>Ir</Button></div></div></div></div></Layout>;
 
-    if (view === 'SCRAP') return <Layout sidebar={<SidebarContent />} onToggleTheme={toggleTheme}><ScrapModule currentUser={currentUser!} onBack={() => { setView('MENU'); setScrapTab(undefined); }} initialTab={scrapTab} hasTabAccess={hasTabAccess} /></Layout>;
+    if (view === 'SCRAP') return <Layout sidebar={<SidebarContent />} onToggleTheme={toggleTheme}><ScrapModule currentUser={currentUser!} onBack={handleScrapBack} initialTab={scrapTab} hasTabAccess={hasTabAccess} /></Layout>;
 
-    if (view === 'IQC') return <Layout sidebar={<SidebarContent />} onToggleTheme={toggleTheme}><IQCModule currentUser={currentUser!} onBack={() => setView('MENU')} hasTabAccess={hasTabAccess} /></Layout>;
+    if (view === 'IQC') return <Layout sidebar={<SidebarContent />} onToggleTheme={toggleTheme}><IQCModule currentUser={currentUser!} onBack={handleIqcBack} initialTab={iqcTab} hasTabAccess={hasTabAccess} /></Layout>;
 
     return null;
 };

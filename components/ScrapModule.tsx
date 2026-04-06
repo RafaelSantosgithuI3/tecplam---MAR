@@ -56,6 +56,11 @@ const sortUsersByDisplayName = (items: User[] = []): User[] => {
     );
 };
 
+const isOperationalUserActive = (user: Partial<User> | null | undefined): boolean => {
+    const status = String((user as any)?.status || '').trim().toUpperCase();
+    return status === 'ATIVO' || (user as any)?.isActive === true;
+};
+
 export const getSafeDateFallback = (dateStr?: string | null): string => {
     if (!dateStr) return getManausDate().toISOString().split('T')[0];
     const parsed = new Date(dateStr);
@@ -188,6 +193,413 @@ const LoadingSpinner = ({ label = 'Carregando dados...' }: { label?: string }) =
     </div>
 );
 
+const INITIAL_SCRAP_RENDER_LIMIT = 50;
+const MAX_FILTER_OPTIONS = 50;
+const FILTER_INPUT_DEBOUNCE_MS = 250;
+
+const getLimitedSortedOptions = (values: Array<unknown> = [], limit = MAX_FILTER_OPTIONS): string[] => {
+    return Array.from(new Set(values.map((value) => String(value ?? '').trim()).filter(Boolean)))
+        .sort((a, b) => a.localeCompare(b))
+        .slice(0, limit);
+};
+
+const useDebouncedText = (value: string, delay = FILTER_INPUT_DEBOUNCE_MS) => {
+    const [debouncedValue, setDebouncedValue] = useState(value);
+
+    useEffect(() => {
+        const timeoutId = globalThis.setTimeout(() => setDebouncedValue(value), delay);
+        return () => globalThis.clearTimeout(timeoutId);
+    }, [value, delay]);
+
+    return debouncedValue;
+};
+
+const useStagedHeaderReady = (enabled: boolean) => {
+    const [isReady, setIsReady] = useState(false);
+
+    useEffect(() => {
+        if (!enabled) {
+            setIsReady(false);
+            return;
+        }
+
+        if (typeof window === 'undefined') {
+            setIsReady(true);
+            return;
+        }
+
+        setIsReady(false);
+        const rafId = window.requestAnimationFrame(() => {
+            globalThis.setTimeout(() => setIsReady(true), 0);
+        });
+
+        return () => window.cancelAnimationFrame(rafId);
+    }, [enabled]);
+
+    return isReady;
+};
+
+const useDeferredUIReady = (enabled: boolean, delay = 50) => {
+    const [isUIReady, setIsUIReady] = useState(false);
+
+    useEffect(() => {
+        if (!enabled) {
+            setIsUIReady(false);
+            return;
+        }
+
+        if (typeof window === 'undefined') {
+            setIsUIReady(true);
+            return;
+        }
+
+        setIsUIReady(false);
+        let rafId: number | null = null;
+        let timerId: ReturnType<typeof setTimeout> | null = null;
+
+        const revealContent = () => {
+            timerId = globalThis.setTimeout(() => setIsUIReady(true), delay);
+        };
+
+        if ('requestAnimationFrame' in window) {
+            rafId = window.requestAnimationFrame(revealContent);
+        } else {
+            revealContent();
+        }
+
+        return () => {
+            if (rafId !== null) window.cancelAnimationFrame(rafId);
+            if (timerId !== null) globalThis.clearTimeout(timerId);
+        };
+    }, [enabled, delay]);
+
+    return isUIReady;
+};
+
+type AsyncDashboardStats = {
+    totalVal: number;
+    totalQty: number;
+    category: Array<[string, number]>;
+    model: Array<[string, number]>;
+    line: Array<[string, number]>;
+};
+
+type ScrapRankingBuckets = {
+    leader: Array<[string, number]>;
+    model: Array<[string, number]>;
+    line: Array<[string, number]>;
+    shift: Array<[string, number]>;
+    pending: Array<[string, number]>;
+};
+
+const EMPTY_DASHBOARD_STATS: AsyncDashboardStats = {
+    totalVal: 0,
+    totalQty: 0,
+    category: [],
+    model: [],
+    line: []
+};
+
+const EMPTY_SCRAP_RANKINGS: ScrapRankingBuckets = {
+    leader: [],
+    model: [],
+    line: [],
+    shift: [],
+    pending: []
+};
+
+const DASHBOARD_SKELETON_ROWS = [0, 1, 2, 3];
+
+const getScrapDashboardCategoryKey = (itemName: unknown): string => {
+    const specificItems = ['FRONT', 'REAR', 'OCTA', 'CAMERA', 'BATERIA RMA', 'BATERIA SCRAP', 'PLACA'];
+    const itemUpper = String(itemName || '').toUpperCase();
+
+    if (itemUpper.includes('PLACA')) return 'PLACA';
+    if (itemUpper.includes('CAMERA')) return 'CAMERA';
+
+    const found = specificItems.find((item) => itemUpper.includes(item) && item !== 'CAMERA' && item !== 'PLACA');
+    return found || 'MIUDEZAS';
+};
+
+const matchesTextFilter = (value: unknown, query: string) => {
+    const normalizedQuery = String(query || '').trim().toLowerCase();
+    if (!normalizedQuery) return true;
+    return String(value || '').toLowerCase().includes(normalizedQuery);
+};
+
+const scheduleDashboardMacrotask = (work: () => void) => {
+    if (typeof window === 'undefined') {
+        work();
+        return () => undefined;
+    }
+
+    let cancelled = false;
+    let handle: number | ReturnType<typeof setTimeout> | null = null;
+
+    const run = () => {
+        if (!cancelled) work();
+    };
+
+    if ('requestIdleCallback' in window) {
+        handle = (window as any).requestIdleCallback(run, { timeout: 120 }) as number;
+    } else {
+        handle = globalThis.setTimeout(run, 0);
+    }
+
+    return () => {
+        cancelled = true;
+        if (handle === null) return;
+
+        if ('cancelIdleCallback' in window) {
+            (window as any).cancelIdleCallback(handle as number);
+        } else {
+            globalThis.clearTimeout(handle as ReturnType<typeof setTimeout>);
+        }
+    };
+};
+
+const calculateOperationalDashboardData = (
+    scraps: ScrapData[],
+    filters: {
+        leader: string;
+        line: string;
+        model: string;
+        period: string;
+        specificDate: string;
+        specificWeek: string;
+        specificMonth: string;
+        specificYear: string;
+        shift: string;
+    }
+) => {
+    let filtered = [...scraps];
+
+    if (filters.leader) filtered = filtered.filter(s => matchesTextFilter(s.leaderName, filters.leader));
+    if (filters.line) filtered = filtered.filter(s => s.line === filters.line);
+    if (filters.model) filtered = filtered.filter(s => matchesTextFilter(s.model, filters.model));
+    if (filters.shift) filtered = filtered.filter(s => String(s.shift ?? '') === filters.shift);
+
+    const now = new Date();
+    const monthPrefix = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+
+    if (filters.period !== 'ALL') {
+        if (filters.period === 'DAY' && filters.specificDate) {
+            filtered = filtered.filter(s => normalizeScrapDateKey(s.date) === filters.specificDate);
+        }
+        else if (filters.period === 'WEEK' && filters.specificWeek) {
+            const [y, w] = filters.specificWeek.split('-W').map(Number);
+            filtered = filtered.filter(s => {
+                const sd = parseScrapDate(s.date);
+                if (!sd) return false;
+                const normalizedDate = new Date(sd.getFullYear(), sd.getMonth(), sd.getDate());
+                return getWeekNumber(normalizedDate) === w && sd.getFullYear() === y;
+            });
+        }
+        else if (filters.period === 'MONTH' && filters.specificMonth) {
+            filtered = filtered.filter(s => normalizeScrapDateKey(s.date).startsWith(filters.specificMonth));
+        }
+        else if (filters.period === 'YEAR' && filters.specificYear) {
+            filtered = filtered.filter(s => normalizeScrapDateKey(s.date).startsWith(filters.specificYear));
+        }
+        else if (filters.period === 'MONTH' && !filters.specificMonth) {
+            filtered = filtered.filter(s => normalizeScrapDateKey(s.date).startsWith(monthPrefix));
+        }
+    }
+
+    filtered = filtered.sort((a, b) => (parseScrapDate(b.date)?.getTime() || 0) - (parseScrapDate(a.date)?.getTime() || 0));
+
+    let totalFilteredValue = 0;
+    filtered.forEach((item) => {
+        totalFilteredValue += normalizeScrapNumber(item.totalValue);
+    });
+
+    return { filtered, totalFilteredValue };
+};
+
+const calculateManagementDashboardData = (
+    scraps: ScrapData[],
+    filters: {
+        period: string;
+        shift: string;
+        leaderName: string;
+        model: string;
+        specificDate: string;
+        specificWeek: string;
+        specificMonth: string;
+        specificYear: string;
+    },
+    startDate: string,
+    endDate: string
+) => {
+    let filtered = [...scraps];
+    const now = new Date();
+    const monthPrefix = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+
+    if (filters.period !== 'ALL') {
+        if (filters.period === 'DAY' && filters.specificDate) {
+            filtered = filtered.filter(s => normalizeScrapDateKey(s.date) === filters.specificDate);
+        }
+        else if (filters.period === 'WEEK' && filters.specificWeek) {
+            const [y, w] = filters.specificWeek.split('-W').map(Number);
+            filtered = filtered.filter(s => {
+                const sd = parseScrapDate(s.date);
+                if (!sd) return false;
+                const normalizedDate = new Date(sd.getFullYear(), sd.getMonth(), sd.getDate());
+                return getWeekNumber(normalizedDate) === w && sd.getFullYear() === y;
+            });
+        }
+        else if (filters.period === 'MONTH' && filters.specificMonth) {
+            filtered = filtered.filter(s => normalizeScrapDateKey(s.date).startsWith(filters.specificMonth));
+        }
+        else if (filters.period === 'YEAR' && filters.specificYear) {
+            filtered = filtered.filter(s => normalizeScrapDateKey(s.date).startsWith(filters.specificYear));
+        }
+        else if (filters.period === 'MONTH' && !filters.specificMonth) {
+            filtered = filtered.filter(s => normalizeScrapDateKey(s.date).startsWith(monthPrefix));
+        }
+    }
+
+    if (filters.shift !== 'ALL') filtered = filtered.filter(s => String(s.shift ?? '') === filters.shift);
+    if (filters.leaderName !== 'ALL') filtered = filtered.filter(s => matchesTextFilter(s.leaderName, filters.leaderName));
+    if (filters.model !== 'ALL') filtered = filtered.filter(s => matchesTextFilter(s.model, filters.model));
+
+    const parsedStart = startDate ? parseScrapDate(startDate) : null;
+    const parsedEnd = endDate ? parseScrapDate(endDate) : null;
+    const startTime = parsedStart ? new Date(parsedStart).setHours(0, 0, 0, 0) : null;
+    const endTime = parsedEnd ? new Date(parsedEnd).setHours(23, 59, 59, 999) : null;
+    const minTime = startTime !== null && endTime !== null ? Math.min(startTime, endTime) : startTime;
+    const maxTime = startTime !== null && endTime !== null ? Math.max(startTime, endTime) : endTime;
+
+    if (minTime !== null || maxTime !== null) {
+        filtered = filtered.filter((item) => {
+            const itemDate = parseScrapDate(item?.date || '');
+            if (!itemDate) return false;
+            const itemTime = itemDate.getTime();
+            if (minTime !== null && itemTime < minTime) return false;
+            if (maxTime !== null && itemTime > maxTime) return false;
+            return true;
+        });
+    }
+
+    let totalFilteredValue = 0;
+    const byLeader: Record<string, number> = {};
+    const byModel: Record<string, number> = {};
+    const byLine: Record<string, number> = {};
+    const byShift: Record<string, number> = {};
+    const pendingByLeader: Record<string, number> = {};
+
+    filtered.forEach((item) => {
+        const val = normalizeScrapNumber(item.totalValue);
+        const leaderKey = item.leaderName || 'Não informado';
+        const modelKey = item.model || 'Não informado';
+        const lineKey = item.line || 'Não informada';
+        const shiftKey = String(item.shift || 'N/A');
+
+        totalFilteredValue += val;
+        byLeader[leaderKey] = (byLeader[leaderKey] || 0) + val;
+        byModel[modelKey] = (byModel[modelKey] || 0) + val;
+        byLine[lineKey] = (byLine[lineKey] || 0) + val;
+        byShift[shiftKey] = (byShift[shiftKey] || 0) + val;
+
+        if (!String(item.countermeasure || '').trim()) {
+            pendingByLeader[leaderKey] = (pendingByLeader[leaderKey] || 0) + 1;
+        }
+    });
+
+    return {
+        filtered,
+        totalFilteredValue,
+        rankings: {
+            leader: Object.entries(byLeader).sort((a, b) => b[1] - a[1]),
+            model: Object.entries(byModel).sort((a, b) => b[1] - a[1]),
+            line: Object.entries(byLine).sort((a, b) => b[1] - a[1]),
+            shift: Object.entries(byShift).sort((a, b) => b[1] - a[1]),
+            pending: Object.entries(pendingByLeader).sort((a, b) => b[1] - a[1]),
+        } as ScrapRankingBuckets
+    };
+};
+
+const calculateGeneralDashboardData = (
+    scraps: ScrapData[],
+    filters: {
+        period: string;
+        plant: string;
+        shift: string;
+        model: string;
+        leader: string;
+        specificDate: string;
+        specificWeek: string;
+        specificMonth: string;
+        specificYear: string;
+    }
+) => {
+    let filtered = [...scraps];
+
+    if (filters.period === 'DAY' && filters.specificDate) {
+        filtered = filtered.filter(s => normalizeScrapDateKey(s.date) === filters.specificDate);
+    }
+    else if (filters.period === 'WEEK' && filters.specificWeek) {
+        const [y, w] = filters.specificWeek.split('-W').map(Number);
+        filtered = filtered.filter(s => {
+            const sd = parseScrapDate(s.date);
+            if (!sd) return false;
+            const normalizedDate = new Date(sd.getFullYear(), sd.getMonth(), sd.getDate());
+            return getWeekNumber(normalizedDate) === w && sd.getFullYear() === y;
+        });
+    }
+    else if (filters.period === 'MONTH' && filters.specificMonth) {
+        filtered = filtered.filter(s => normalizeScrapDateKey(s.date).startsWith(filters.specificMonth));
+    }
+    else if (filters.period === 'YEAR' && filters.specificYear) {
+        filtered = filtered.filter(s => normalizeScrapDateKey(s.date).startsWith(filters.specificYear));
+    }
+
+    if (filters.plant !== 'ALL') filtered = filtered.filter(s => s.plant === filters.plant);
+    if (filters.shift !== 'ALL') filtered = filtered.filter(s => String(s.shift ?? '') === filters.shift);
+    if (filters.leader !== 'ALL') filtered = filtered.filter(s => matchesTextFilter(s.leaderName, filters.leader));
+    if (filters.model !== 'ALL') filtered = filtered.filter(s => matchesTextFilter(s.model, filters.model));
+
+    let totalVal = 0;
+    let totalQty = 0;
+    const byCategory: Record<string, number> = {
+        FRONT: 0,
+        REAR: 0,
+        OCTA: 0,
+        CAMERA: 0,
+        'BATERIA RMA': 0,
+        'BATERIA SCRAP': 0,
+        PLACA: 0,
+        MIUDEZAS: 0
+    };
+    const byModel: Record<string, number> = {};
+    const byLine: Record<string, number> = {};
+
+    filtered.forEach((item) => {
+        const val = normalizeScrapNumber(item.totalValue);
+        const qty = normalizeScrapNumber(item.qty);
+        const modelKey = item.model || 'Não informado';
+        const lineKey = item.line || 'Não informada';
+        const categoryKey = getScrapDashboardCategoryKey(item.item);
+
+        totalVal += val;
+        totalQty += qty;
+        byCategory[categoryKey] = (byCategory[categoryKey] || 0) + val;
+        byModel[modelKey] = (byModel[modelKey] || 0) + val;
+        byLine[lineKey] = (byLine[lineKey] || 0) + val;
+    });
+
+    return {
+        filtered,
+        stats: {
+            totalVal,
+            totalQty,
+            category: Object.entries(byCategory).sort((a, b) => b[1] - a[1]),
+            model: Object.entries(byModel).sort((a, b) => b[1] - a[1]).slice(0, 10),
+            line: Object.entries(byLine).sort((a, b) => b[1] - a[1])
+        } as AsyncDashboardStats
+    };
+};
+
 interface ScrapModuleProps {
     currentUser: User;
     onBack: () => void;
@@ -199,20 +611,32 @@ type Tab = 'FORM' | 'PENDING' | 'HISTORY' | 'OPERATIONAL' | 'MANAGEMENT_ADVANCED
 
 export const ScrapModule: React.FC<ScrapModuleProps> = ({ currentUser, onBack, initialTab, hasTabAccess }) => {
     const allTabs: Tab[] = ['FORM', 'PENDING', 'HISTORY', 'OPERATIONAL', 'EDIT_DELETE', 'MANAGEMENT_ADVANCED', 'NEW_ADVANCED', 'CONSULTA'];
-    const SCRAP_ACTIVE_TAB_KEY = 'activeTab_ScrapModule';
+    const SCRAP_ACTIVE_TAB_KEY = 'scrap_active_tab';
 
-    const determineInitialTab = (): Tab => {
-        const saved = sessionStorage.getItem(SCRAP_ACTIVE_TAB_KEY) as Tab | null;
-        if (saved && allTabs.includes(saved) && (!hasTabAccess || hasTabAccess('SCRAP', saved))) {
-            return saved;
+    const getDefaultTab = (): Tab => {
+        if (initialTab && allTabs.includes(initialTab) && (!hasTabAccess || hasTabAccess('SCRAP', initialTab))) {
+            return initialTab;
         }
-        if (initialTab && (!hasTabAccess || hasTabAccess('SCRAP', initialTab))) return initialTab;
+
+        const lightweightTabs: Tab[] = ['FORM', 'PENDING', 'HISTORY', 'CONSULTA'];
+        const preferred = lightweightTabs.find((tab) => !hasTabAccess || hasTabAccess('SCRAP', tab));
+        if (preferred) return preferred;
         if (!hasTabAccess) return 'FORM';
-        const allowed = allTabs.find(t => hasTabAccess('SCRAP', t));
+        const allowed = allTabs.find((tab) => hasTabAccess('SCRAP', tab));
         return allowed || 'FORM';
     };
 
-    const [activeTab, setActiveTab] = useState<Tab>(determineInitialTab());
+    const [activeTab, setActiveTab] = useState<Tab>(() => {
+        const persistedTab = typeof window !== 'undefined'
+            ? window.sessionStorage.getItem(SCRAP_ACTIVE_TAB_KEY)
+            : null;
+
+        if (persistedTab && allTabs.includes(persistedTab as Tab) && (!hasTabAccess || hasTabAccess('SCRAP', persistedTab))) {
+            return persistedTab as Tab;
+        }
+
+        return getDefaultTab();
+    });
     const [scraps, setScraps] = useState<ScrapData[]>([]);
 
     // Config Data
@@ -223,10 +647,45 @@ export const ScrapModule: React.FC<ScrapModuleProps> = ({ currentUser, onBack, i
     const [materials, setMaterials] = useState<Material[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [isHydrating, startTransition] = useTransition();
+    const pendingHydrationRef = useRef<number | ReturnType<typeof setTimeout> | null>(null);
 
-    useEffect(() => {
-        if (initialTab) setActiveTab(initialTab);
-    }, [initialTab]);
+    const cancelPendingHydration = useCallback(() => {
+        if (pendingHydrationRef.current === null || typeof window === 'undefined') return;
+        if ('cancelIdleCallback' in window) {
+            (window as any).cancelIdleCallback(pendingHydrationRef.current as number);
+        } else {
+            globalThis.clearTimeout(pendingHydrationRef.current as ReturnType<typeof setTimeout>);
+        }
+        pendingHydrationRef.current = null;
+    }, []);
+
+    const hydrateScrapsInChunks = useCallback((nextScraps: ScrapData[]) => {
+        const normalizedScraps = sortScrapCollection(normalizeScrapCollection(Array.isArray(nextScraps) ? nextScraps : []));
+        const initialChunk = normalizedScraps.slice(0, INITIAL_SCRAP_RENDER_LIMIT);
+
+        startTransition(() => {
+            setScraps(initialChunk);
+        });
+
+        cancelPendingHydration();
+
+        if (normalizedScraps.length <= INITIAL_SCRAP_RENDER_LIMIT || typeof window === 'undefined') {
+            return;
+        }
+
+        const flushAllScraps = () => {
+            startTransition(() => {
+                setScraps(normalizedScraps);
+            });
+            pendingHydrationRef.current = null;
+        };
+
+        if ('requestIdleCallback' in window) {
+            pendingHydrationRef.current = (window as any).requestIdleCallback(flushAllScraps, { timeout: 120 }) as number;
+        } else {
+            pendingHydrationRef.current = globalThis.setTimeout(flushAllScraps, 0);
+        }
+    }, [cancelPendingHydration, startTransition]);
 
     // Load Initial Data
     const loadData = async () => {
@@ -246,9 +705,10 @@ export const ScrapModule: React.FC<ScrapModuleProps> = ({ currentUser, onBack, i
                 setModels(Array.isArray(m) ? m : []);
                 setStations(Array.isArray(s) ? s : []);
                 setLines(Array.isArray(l) ? l.map(x => x.name) : []);
-                setScraps(sortScrapCollection(normalizeScrapCollection(Array.isArray(scrapData) ? scrapData : [])));
                 setMaterials(Array.isArray(mats) ? mats : []);
             });
+
+            hydrateScrapsInChunks(Array.isArray(scrapData) ? scrapData : []);
         } finally {
             setIsLoading(false);
         }
@@ -256,7 +716,10 @@ export const ScrapModule: React.FC<ScrapModuleProps> = ({ currentUser, onBack, i
 
     useEffect(() => {
         loadData();
-    }, []);
+        return () => {
+            cancelPendingHydration();
+        };
+    }, [cancelPendingHydration, hydrateScrapsInChunks]);
 
     useEffect(() => {
         const unsubscribe = subscribeToSyncStream((event: any) => {
@@ -280,14 +743,15 @@ export const ScrapModule: React.FC<ScrapModuleProps> = ({ currentUser, onBack, i
 
     useEffect(() => {
         sessionStorage.setItem(SCRAP_ACTIVE_TAB_KEY, activeTab);
+    }, [activeTab]);
+
+    useEffect(() => {
         window.scrollTo({ top: 0, behavior: 'smooth' });
     }, [activeTab]);
 
     const refreshScraps = async () => {
         const s = await getScraps();
-        startTransition(() => {
-            setScraps(sortScrapCollection(normalizeScrapCollection(Array.isArray(s) ? s : [])));
-        });
+        hydrateScrapsInChunks(Array.isArray(s) ? s : []);
     }
 
     const isLeader = isLeadershipRole(currentUser.role);
@@ -309,8 +773,6 @@ export const ScrapModule: React.FC<ScrapModuleProps> = ({ currentUser, onBack, i
 
         return currentUser.isAdmin || allowedKeywords.some(keyword => role.includes(keyword));
     }, [currentUser]);
-
-    const shouldBlockContent = (isLoading || isHydrating) && scraps.length === 0;
 
     return (
         <div className="min-h-screen bg-gray-50 dark:bg-zinc-950 text-gray-900 dark:text-zinc-100 p-4 md:p-8 space-y-6 transition-colors duration-200">
@@ -384,11 +846,8 @@ export const ScrapModule: React.FC<ScrapModuleProps> = ({ currentUser, onBack, i
 
             {/* CONTENT */}
             <div className="mt-6">
-                {shouldBlockContent ? (
-                    <LoadingSpinner label="Carregando Scraps..." />
-                ) : (
-                    <>
-                        {activeTab === 'FORM' && (
+                <>
+                    {activeTab === 'FORM' && (
                             <ScrapForm
                                 users={users}
                                 models={models}
@@ -448,11 +907,10 @@ export const ScrapModule: React.FC<ScrapModuleProps> = ({ currentUser, onBack, i
                         {activeTab === 'NEW_ADVANCED' && (
                             <NewAdvancedDashboard scraps={scraps} users={users} isLoading={isLoading} isHydrating={isHydrating} />
                         )}
-                        {activeTab === 'CONSULTA' && (
-                            <ScrapConsulta scraps={scraps} users={users} />
-                        )}
-                    </>
-                )}
+                    {activeTab === 'CONSULTA' && (
+                        <ScrapConsulta scraps={scraps} users={users} />
+                    )}
+                </>
             </div>
         </div>
     );
@@ -763,9 +1221,9 @@ const ScrapForm = ({ users, models, stations, lines, materials, onSuccess, curre
     };
 
     const normalizeStr = (s: string) => (s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
-    const pqcUsers = users.filter((u: User) => u.status !== 'INATIVO' && normalizeStr(u.role).includes('pqc'));
+    const pqcUsers = users.filter((u: User) => isOperationalUserActive(u) && normalizeStr(u.role).includes('pqc'));
     const leaderUsers = sortUsersByDisplayName(
-        users.filter((u: User) => u.status !== 'INATIVO' && isLeadershipRole(u.role))
+        users.filter((u: User) => isOperationalUserActive(u) && isLeadershipRole(u.role))
     );
 
     return (
@@ -1154,10 +1612,10 @@ const ScrapPending = ({ scraps, currentUser, onUpdate, users, lines, models, cat
 
 const ScrapHistory = ({ scraps, currentUser, users }: any) => {
     const [filters, setFilters] = useState({
-        period: 'ALL', // ALL, DAY, WEEK, MONTH, YEAR
+        period: 'MONTH', // ALL, DAY, WEEK, MONTH, YEAR
         specificDate: '',
         specificWeek: '',
-        specificMonth: '',
+        specificMonth: new Date().toISOString().slice(0, 7),
         specificYear: ''
     });
 
@@ -1262,65 +1720,50 @@ export const ScrapOperational = ({ scraps, users, lines, models, isLoading = fal
         leader: '',
         line: '',
         model: '',
-        period: 'ALL', // DAY, WEEK, MONTH, YEAR, ALL
+        period: 'MONTH', // DAY, WEEK, MONTH, YEAR, ALL
         specificDate: '', // For DAY
         specificWeek: '', // For WEEK
-        specificMonth: '', // For MONTH
+        specificMonth: new Date().toISOString().slice(0, 7), // For MONTH
         specificYear: '', // For YEAR
         shift: ''
     });
 
     const [selected, setSelected] = useState<ScrapData | null>(null);
     const reactiveScraps = useMemo(() => normalizeScrapCollection(Array.isArray(scraps) ? scraps : []), [scraps]);
-    const safeUsers = useMemo(() => Array.isArray(users) ? users : [], [users]);
     const safeLines = useMemo(() => Array.isArray(lines) ? lines : [], [lines]);
-    const safeModels = useMemo(() => Array.isArray(models) ? models : [], [models]);
-
-    const filtered = useMemo(() => {
-        let res = [...reactiveScraps];
-        if (filters.leader) res = res.filter(s => s.leaderName === filters.leader);
-        if (filters.line) res = res.filter(s => s.line === filters.line);
-        if (filters.model) res = res.filter(s => s.model === filters.model);
-        if (filters.shift) res = res.filter(s => String(s.shift ?? '') === filters.shift);
-
-        const now = new Date();
-        const monthPrefix = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
-
-        if (filters.period !== 'ALL') {
-            if (filters.period === 'DAY' && filters.specificDate) {
-                res = res.filter(s => normalizeScrapDateKey(s.date) === filters.specificDate);
-            }
-            else if (filters.period === 'WEEK' && filters.specificWeek) {
-                const [y, w] = filters.specificWeek.split('-W').map(Number);
-                res = res.filter(s => {
-                    const sd = parseScrapDate(s.date);
-                    if (!sd) return false;
-                    const normalizedDate = new Date(sd.getFullYear(), sd.getMonth(), sd.getDate());
-                    return getWeekNumber(normalizedDate) === w && sd.getFullYear() === y;
-                });
-            }
-            else if (filters.period === 'MONTH' && filters.specificMonth) {
-                res = res.filter(s => normalizeScrapDateKey(s.date).startsWith(filters.specificMonth));
-            }
-            else if (filters.period === 'YEAR' && filters.specificYear) {
-                res = res.filter(s => normalizeScrapDateKey(s.date).startsWith(filters.specificYear));
-            }
-            else if (filters.period === 'MONTH' && !filters.specificMonth) {
-                res = res.filter(s => normalizeScrapDateKey(s.date).startsWith(monthPrefix));
-            }
-        }
-
-        return res.sort((a, b) => (parseScrapDate(b.date)?.getTime() || 0) - (parseScrapDate(a.date)?.getTime() || 0));
-    }, [reactiveScraps, filters]);
-
-    const leadersOnly = useMemo(
-        () => sortUsersByDisplayName(safeUsers.filter((u: User) => isLeadershipRole(u.role))),
-        [safeUsers]
+    const isUIReady = useDeferredUIReady(!(isLoading || isHydrating));
+    const isHeaderReady = useStagedHeaderReady(isUIReady);
+    const availableLeaders = useMemo(
+        () => Array.from(new Set(reactiveScraps.map((item) => String(item?.leaderName || '').trim()).filter(Boolean)))
+            .sort((a, b) => String(a).localeCompare(String(b))),
+        [reactiveScraps]
+    );
+    const availableModels = useMemo(
+        () => Array.from(new Set(reactiveScraps.map((item) => item.model).filter(Boolean)))
+            .sort((a, b) => String(a).localeCompare(String(b))),
+        [reactiveScraps]
     );
 
-    if ((isLoading || isHydrating) && reactiveScraps.length === 0) {
-        return <LoadingSpinner label="Sincronizando monitoramento..." />;
-    }
+    const [filtered, setFiltered] = useState<ScrapData[]>([]);
+    const [totalFilteredValue, setTotalFilteredValue] = useState(0);
+    const [isMetricsLoading, setIsMetricsLoading] = useState(true);
+
+    useEffect(() => {
+        if (!isUIReady) {
+            setFiltered([]);
+            setTotalFilteredValue(0);
+            setIsMetricsLoading(true);
+            return;
+        }
+
+        setIsMetricsLoading(true);
+        return scheduleDashboardMacrotask(() => {
+            const next = calculateOperationalDashboardData(reactiveScraps, filters);
+            setFiltered(next.filtered);
+            setTotalFilteredValue(next.totalFilteredValue);
+            setIsMetricsLoading(false);
+        });
+    }, [reactiveScraps, filters, isUIReady]);
 
     const downloadExcel = () => {
         exportScrapToExcel(filtered);
@@ -1355,25 +1798,25 @@ export const ScrapOperational = ({ scraps, users, lines, models, isLoading = fal
         <div className="space-y-6">
             <Card>
                 <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
-                    <select className="bg-white dark:bg-zinc-950 border border-slate-300 dark:border-zinc-800 p-2 rounded text-sm text-slate-900 dark:text-zinc-300 outline-none focus:ring-2 focus:ring-blue-600/50" onChange={e => setFilters({ ...filters, leader: e.target.value })} value={filters.leader}>
+                    <select className="bg-white dark:bg-zinc-950 border border-slate-300 dark:border-zinc-800 p-2 rounded text-sm text-slate-900 dark:text-zinc-300 outline-none focus:ring-2 focus:ring-blue-600/50" onChange={e => setFilters({ ...filters, leader: e.target.value })} value={filters.leader} disabled={!isHeaderReady}>
                         <option value="">Todos Líderes</option>
-                        {leadersOnly.map((u: User) => <option key={u.matricula} value={u.name}>{u.name}</option>)}
+                        {availableLeaders.map((leader) => <option key={leader} value={leader}>{leader}</option>)}
                     </select>
-                    <select className="bg-white dark:bg-zinc-950 border border-slate-300 dark:border-zinc-800 p-2 rounded text-sm text-slate-900 dark:text-zinc-300 outline-none focus:ring-2 focus:ring-blue-600/50" onChange={e => setFilters({ ...filters, line: e.target.value })} value={filters.line}>
+                    <select className="bg-white dark:bg-zinc-950 border border-slate-300 dark:border-zinc-800 p-2 rounded text-sm text-slate-900 dark:text-zinc-300 outline-none focus:ring-2 focus:ring-blue-600/50" onChange={e => setFilters({ ...filters, line: e.target.value })} value={filters.line} disabled={!isHeaderReady}>
                         <option value="">Todas Linhas</option>
-                        {safeLines.map((l: string) => <option key={l} value={l}>{l}</option>)}
+                        {safeLines.slice(0, MAX_FILTER_OPTIONS).map((l: string) => <option key={l} value={l}>{l}</option>)}
                     </select>
-                    <select className="bg-white dark:bg-zinc-950 border border-slate-300 dark:border-zinc-800 p-2 rounded text-sm text-slate-900 dark:text-zinc-300 outline-none focus:ring-2 focus:ring-blue-600/50" onChange={e => setFilters({ ...filters, model: e.target.value })} value={filters.model}>
+                    <select className="bg-white dark:bg-zinc-950 border border-slate-300 dark:border-zinc-800 p-2 rounded text-sm text-slate-900 dark:text-zinc-300 outline-none focus:ring-2 focus:ring-blue-600/50" onChange={e => setFilters({ ...filters, model: e.target.value })} value={filters.model} disabled={!isHeaderReady}>
                         <option value="">Todos Modelos</option>
-                        {safeModels.map((m: string) => <option key={m} value={m}>{m}</option>)}
+                        {availableModels.map((model) => <option key={model} value={model}>{model}</option>)}
                     </select>
-                    <select className="bg-white dark:bg-zinc-950 border border-slate-300 dark:border-zinc-800 p-2 rounded text-sm text-slate-900 dark:text-zinc-300 outline-none focus:ring-2 focus:ring-blue-600/50" onChange={e => setFilters({ ...filters, shift: e.target.value })} value={filters.shift}>
+                    <select className="bg-white dark:bg-zinc-950 border border-slate-300 dark:border-zinc-800 p-2 rounded text-sm text-slate-900 dark:text-zinc-300 outline-none focus:ring-2 focus:ring-blue-600/50" onChange={e => setFilters({ ...filters, shift: e.target.value })} value={filters.shift} disabled={!isHeaderReady}>
                         <option value="">Todos Turnos</option>
                         <option value="1">1º Turno</option>
                         <option value="2">2º Turno</option>
                     </select>
                     <div className="flex flex-wrap items-center gap-2 w-full md:w-auto">
-                        <select className="bg-white dark:bg-zinc-950 border border-slate-300 dark:border-zinc-800 p-2 rounded text-sm text-slate-900 dark:text-zinc-300 outline-none focus:ring-2 focus:ring-blue-600/50 w-full md:w-auto" onChange={e => setFilters({ ...filters, period: e.target.value })} value={filters.period}>
+                        <select className="bg-white dark:bg-zinc-950 border border-slate-300 dark:border-zinc-800 p-2 rounded text-sm text-slate-900 dark:text-zinc-300 outline-none focus:ring-2 focus:ring-blue-600/50 w-full md:w-auto" onChange={e => setFilters({ ...filters, period: e.target.value })} value={filters.period} disabled={!isHeaderReady}>
                             <option value="ALL">Todo Período</option>
                             <option value="DAY">Dia</option>
                             <option value="WEEK">Semana</option>
@@ -1388,39 +1831,57 @@ export const ScrapOperational = ({ scraps, users, lines, models, isLoading = fal
                 </div>
             </Card>
 
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <Card className="bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-900/50 p-6">
-                    <h3 className="text-blue-600 dark:text-blue-400 font-bold uppercase text-xs">Total Filtrado</h3>
-                    <p className="text-3xl font-bold mt-2 text-slate-900 dark:text-zinc-100">{formatCurrency(filtered.reduce((a, b) => a + normalizeScrapNumber(b.totalValue), 0))}</p>
-                </Card>
-                <Card className="bg-white dark:bg-zinc-900 border-slate-200 dark:border-zinc-800 p-6 flex flex-col justify-center items-center cursor-pointer hover:bg-slate-50 dark:hover:bg-zinc-800 shadow-sm" onClick={downloadExcel}>
-                    <Download size={32} className="text-green-600 dark:text-green-500 mb-2" />
-                    <span className="text-sm font-bold text-green-600 dark:text-green-400">Baixar Excel</span>
-                </Card>
-            </div>
-
-            <div className="w-full overflow-x-auto bg-white dark:bg-zinc-900 rounded-xl border border-slate-200 dark:border-zinc-800 shadow-sm">
-                <div className="min-w-[900px]">
-                    <div className="grid grid-cols-[100px_1fr_1fr_1fr_1fr_1fr_80px_120px] bg-slate-50 dark:bg-zinc-950 text-slate-500 dark:text-zinc-400 border-b border-slate-200 dark:border-zinc-800 text-sm h-12 items-center px-2">
-                        <div className="p-2">Data</div>
-                        <div className="p-2">Líder</div>
-                        <div className="p-2">Modelo</div>
-                        <div className="p-2">Linha</div>
-                        <div className="p-2">Código</div>
-                        <div className="p-2">Item</div>
-                        <div className="p-2">Qtd</div>
-                        <div className="p-2 text-right">Valor</div>
-                    </div>
-                    <List
-                        rowCount={filtered.length}
-                        rowHeight={52}
-                        rowComponent={OperationalRow}
-                        rowProps={operationalListData}
-                        style={{ height: Math.min(560, Math.max(56, filtered.length * 52)), width: '100%' }}
-                    />
-                    {filtered.length === 0 && <div className="p-8 text-center text-slate-500 dark:text-zinc-500">Nenhum registro encontrado.</div>}
+            <>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <Card className="bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-900/50 p-6 min-h-[124px]">
+                        <h3 className="text-blue-600 dark:text-blue-400 font-bold uppercase text-xs">Total Filtrado</h3>
+                        <div className="mt-2 flex h-10 items-center">
+                            {(!isUIReady || isMetricsLoading) ? (
+                                <div className="h-9 w-32 animate-pulse rounded-md bg-blue-200/70 dark:bg-blue-400/20" />
+                            ) : (
+                                <p className="text-3xl font-bold text-slate-900 dark:text-zinc-100 tabular-nums min-w-[8rem]">{formatCurrency(totalFilteredValue)}</p>
+                            )}
+                        </div>
+                    </Card>
+                    <Card className="bg-white dark:bg-zinc-900 border-slate-200 dark:border-zinc-800 p-6 flex min-h-[124px] flex-col justify-center items-center cursor-pointer hover:bg-slate-50 dark:hover:bg-zinc-800 shadow-sm" onClick={downloadExcel}>
+                        <Download size={32} className="text-green-600 dark:text-green-500 mb-2" />
+                        <span className="text-sm font-bold text-green-600 dark:text-green-400">Baixar Excel</span>
+                    </Card>
                 </div>
-            </div>
+
+                <div className="w-full overflow-x-auto bg-white dark:bg-zinc-900 rounded-xl border border-slate-200 dark:border-zinc-800 shadow-sm min-h-[340px]">
+                    <div className="min-w-[900px]">
+                        <div className="grid grid-cols-[100px_1fr_1fr_1fr_1fr_1fr_80px_120px] bg-slate-50 dark:bg-zinc-950 text-slate-500 dark:text-zinc-400 border-b border-slate-200 dark:border-zinc-800 text-sm h-12 items-center px-2">
+                            <div className="p-2">Data</div>
+                            <div className="p-2">Líder</div>
+                            <div className="p-2">Modelo</div>
+                            <div className="p-2">Linha</div>
+                            <div className="p-2">Código</div>
+                            <div className="p-2">Item</div>
+                            <div className="p-2">Qtd</div>
+                            <div className="p-2 text-right">Valor</div>
+                        </div>
+                        {(!isUIReady || isMetricsLoading) ? (
+                            <div className="space-y-2 p-4">
+                                {DASHBOARD_SKELETON_ROWS.map((row) => (
+                                    <div key={row} className="h-11 animate-pulse rounded-lg bg-slate-100 dark:bg-zinc-800" />
+                                ))}
+                            </div>
+                        ) : (
+                            <>
+                                <List
+                                    rowCount={filtered.length}
+                                    rowHeight={52}
+                                    rowComponent={OperationalRow}
+                                    rowProps={operationalListData}
+                                    style={{ height: Math.min(560, Math.max(56, filtered.length * 52)), width: '100%' }}
+                                />
+                                {filtered.length === 0 && <div className="p-8 text-center text-slate-500 dark:text-zinc-500">Nenhum registro encontrado.</div>}
+                            </>
+                        )}
+                    </div>
+                </div>
+            </>
 
             <ScrapDetailModal
                 isOpen={!!selected}
@@ -1434,10 +1895,10 @@ export const ScrapOperational = ({ scraps, users, lines, models, isLoading = fal
 
 export const ScrapManagementAdvanced = ({ scraps, users, isLoading = false, isHydrating = false }: any) => {
     const [filters, setFilters] = useState({
-        period: 'ALL', // DAY, WEEK, MONTH, YEAR, ALL
+        period: 'MONTH', // DAY, WEEK, MONTH, YEAR, ALL
         specificDate: '',
         specificWeek: '',
-        specificMonth: '',
+        specificMonth: new Date().toISOString().slice(0, 7),
         specificYear: '',
         shift: 'ALL',
         leaderName: 'ALL',
@@ -1445,7 +1906,7 @@ export const ScrapManagementAdvanced = ({ scraps, users, isLoading = false, isHy
     });
     const [showChartsModal, setShowChartsModal] = useState(false);
     const [chartFilters, setChartFilters] = useState({
-        period: 'ALL', specificDate: '', specificWeek: '', specificMonth: '', specificYear: '',
+        period: 'MONTH', specificDate: '', specificWeek: '', specificMonth: new Date().toISOString().slice(0, 7), specificYear: '',
         shift: 'ALL', leaderName: 'ALL', model: 'ALL', startDate: '', endDate: ''
     });
     const [startDate, setStartDate] = useState('');
@@ -1458,6 +1919,7 @@ export const ScrapManagementAdvanced = ({ scraps, users, isLoading = false, isHy
     const [detailModal, setDetailModal] = useState<{ isOpen: boolean; scrap: ScrapData | null }>({ isOpen: false, scrap: null });
     const reactiveScraps = useMemo(() => normalizeScrapCollection(Array.isArray(scraps) ? scraps : []), [scraps]);
     const safeUsers = useMemo(() => Array.isArray(users) ? users : [], [users]);
+    const isUIReady = useDeferredUIReady(!(isLoading || isHydrating));
 
     const availableModels = useMemo(() => {
         let modelSource = [...reactiveScraps];
@@ -1470,7 +1932,7 @@ export const ScrapManagementAdvanced = ({ scraps, users, isLoading = false, isHy
             modelSource = modelSource.filter(s => s.leaderName === filters.leaderName);
         }
 
-        return Array.from(new Set(modelSource.map(s => s.model).filter(Boolean))).sort((a, b) => String(a).localeCompare(String(b)));
+        return getLimitedSortedOptions(modelSource.slice(0, 500).map(s => s.model));
     }, [reactiveScraps, filters.shift, filters.leaderName]);
 
     const formatRangeDate = (date: Date) => {
@@ -1512,69 +1974,32 @@ export const ScrapManagementAdvanced = ({ scraps, users, isLoading = false, isHy
         }));
     };
 
-    const filtered = useMemo(() => {
-        let res = [...reactiveScraps];
-        const now = new Date();
-        const monthPrefix = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+    const [filtered, setFiltered] = useState<ScrapData[]>([]);
+    const [totalFilteredValue, setTotalFilteredValue] = useState(0);
+    const [rankings, setRankings] = useState<ScrapRankingBuckets>(EMPTY_SCRAP_RANKINGS);
+    const [isMetricsLoading, setIsMetricsLoading] = useState(true);
 
-        if (filters.period !== 'ALL') {
-            if (filters.period === 'DAY' && filters.specificDate) {
-                res = res.filter(s => normalizeScrapDateKey(s.date) === filters.specificDate);
-            }
-            else if (filters.period === 'WEEK' && filters.specificWeek) {
-                const [y, w] = filters.specificWeek.split('-W').map(Number);
-                res = res.filter(s => {
-                    const sd = parseScrapDate(s.date);
-                    if (!sd) return false;
-                    const normalizedDate = new Date(sd.getFullYear(), sd.getMonth(), sd.getDate());
-                    return getWeekNumber(normalizedDate) === w && sd.getFullYear() === y;
-                });
-            }
-            else if (filters.period === 'MONTH' && filters.specificMonth) {
-                res = res.filter(s => normalizeScrapDateKey(s.date).startsWith(filters.specificMonth));
-            }
-            else if (filters.period === 'YEAR' && filters.specificYear) {
-                res = res.filter(s => normalizeScrapDateKey(s.date).startsWith(filters.specificYear));
-            }
-            else if (filters.period === 'MONTH' && !filters.specificMonth) {
-                res = res.filter(s => normalizeScrapDateKey(s.date).startsWith(monthPrefix));
-            }
+    useEffect(() => {
+        if (!isUIReady) {
+            setFiltered([]);
+            setTotalFilteredValue(0);
+            setRankings(EMPTY_SCRAP_RANKINGS);
+            setIsMetricsLoading(true);
+            return;
         }
 
-        if (filters.shift !== 'ALL') {
-            res = res.filter(s => String(s.shift ?? '') === filters.shift);
-        }
-
-        if (filters.leaderName !== 'ALL') {
-            res = res.filter(s => s.leaderName === filters.leaderName);
-        }
-
-        if (filters.model !== 'ALL') {
-            res = res.filter(s => s.model === filters.model);
-        }
-
-        const parsedStart = startDate ? parseScrapDate(startDate) : null;
-        const parsedEnd = endDate ? parseScrapDate(endDate) : null;
-        const startTime = parsedStart ? new Date(parsedStart).setHours(0, 0, 0, 0) : null;
-        const endTime = parsedEnd ? new Date(parsedEnd).setHours(23, 59, 59, 999) : null;
-        const minTime = startTime !== null && endTime !== null ? Math.min(startTime, endTime) : startTime;
-        const maxTime = startTime !== null && endTime !== null ? Math.max(startTime, endTime) : endTime;
-
-        if (minTime !== null || maxTime !== null) {
-            res = res.filter((item) => {
-                const itemDate = parseScrapDate(item?.date || '');
-                if (!itemDate) return false;
-                const itemTime = itemDate.getTime();
-                if (minTime !== null && itemTime < minTime) return false;
-                if (maxTime !== null && itemTime > maxTime) return false;
-                return true;
-            });
-        }
-
-        return res;
-    }, [reactiveScraps, filters, startDate, endDate]);
+        setIsMetricsLoading(true);
+        return scheduleDashboardMacrotask(() => {
+            const next = calculateManagementDashboardData(reactiveScraps, filters, startDate, endDate);
+            setFiltered(next.filtered);
+            setTotalFilteredValue(next.totalFilteredValue);
+            setRankings(next.rankings);
+            setIsMetricsLoading(false);
+        });
+    }, [reactiveScraps, filters, startDate, endDate, isUIReady]);
 
     const baseFiltered = useMemo(() => {
+        if (!isUIReady) return [] as ScrapData[];
         let res = [...reactiveScraps];
 
         if (filters.shift !== 'ALL') {
@@ -1590,9 +2015,10 @@ export const ScrapManagementAdvanced = ({ scraps, users, isLoading = false, isHy
         }
 
         return res;
-    }, [reactiveScraps, filters.shift, filters.leaderName, filters.model]);
+    }, [reactiveScraps, filters.shift, filters.leaderName, filters.model, isUIReady]);
 
     const chartFiltered = useMemo(() => {
+        if (!showChartsModal) return [] as ScrapData[];
         let res = [...reactiveScraps];
         const now = new Date();
         const monthPrefix = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
@@ -1639,9 +2065,10 @@ export const ScrapManagementAdvanced = ({ scraps, users, isLoading = false, isHy
         }
 
         return res;
-    }, [reactiveScraps, chartFilters]);
+    }, [reactiveScraps, chartFilters, showChartsModal]);
 
     const chartBaseFiltered = useMemo(() => {
+        if (!showChartsModal) return [] as ScrapData[];
         let res = [...reactiveScraps];
         if (chartFilters.shift !== 'ALL') res = res.filter(s => String(s.shift ?? '') === chartFilters.shift);
         if (chartFilters.leaderName !== 'ALL') res = res.filter(s => s.leaderName === chartFilters.leaderName);
@@ -1666,51 +2093,24 @@ export const ScrapManagementAdvanced = ({ scraps, users, isLoading = false, isHy
         }
 
         return res;
-    }, [reactiveScraps, chartFilters.shift, chartFilters.leaderName, chartFilters.model, chartFilters.startDate, chartFilters.endDate]);
+    }, [reactiveScraps, chartFilters.shift, chartFilters.leaderName, chartFilters.model, chartFilters.startDate, chartFilters.endDate, showChartsModal]);
+
+    const chartAvailableLeaders = useMemo(() => {
+        if (!showChartsModal) return [] as string[];
+        let src = [...reactiveScraps];
+        if (chartFilters.shift !== 'ALL') src = src.filter(s => String(s.shift ?? '') === chartFilters.shift);
+        return Array.from(new Set(src.map(s => String(s?.leaderName || '').trim()).filter(Boolean)))
+            .sort((a, b) => String(a).localeCompare(String(b)));
+    }, [reactiveScraps, chartFilters.shift, showChartsModal]);
 
     const chartAvailableModels = useMemo(() => {
+        if (!showChartsModal) return [] as string[];
         let src = [...reactiveScraps];
         if (chartFilters.shift !== 'ALL') src = src.filter(s => String(s.shift ?? '') === chartFilters.shift);
         if (chartFilters.leaderName !== 'ALL') src = src.filter(s => s.leaderName === chartFilters.leaderName);
-        return Array.from(new Set(src.map(s => s.model).filter(Boolean))).sort((a, b) => String(a).localeCompare(String(b)));
-    }, [reactiveScraps, chartFilters.shift, chartFilters.leaderName]);
+        return getLimitedSortedOptions(src.slice(0, 500).map(s => s.model));
+    }, [reactiveScraps, chartFilters.shift, chartFilters.leaderName, showChartsModal]);
 
-    const rankings = useMemo(() => {
-        const byLeader: Record<string, number> = {};
-        const byModel: Record<string, number> = {};
-        const byLine: Record<string, number> = {};
-        const byShift: Record<string, number> = {};
-        const pendingByLeader: Record<string, number> = {};
-
-        filtered.forEach((s: ScrapData) => {
-            const val = normalizeScrapNumber(s.totalValue);
-            const leaderKey = s.leaderName || 'Não informado';
-            const modelKey = s.model || 'Não informado';
-            const lineKey = s.line || 'Não informada';
-            const shiftKey = String(s.shift || 'N/A');
-
-            byLeader[leaderKey] = (byLeader[leaderKey] || 0) + val;
-            byModel[modelKey] = (byModel[modelKey] || 0) + val;
-            byLine[lineKey] = (byLine[lineKey] || 0) + val;
-            byShift[shiftKey] = (byShift[shiftKey] || 0) + val;
-
-            if (!String(s.countermeasure || '').trim()) {
-                pendingByLeader[leaderKey] = (pendingByLeader[leaderKey] || 0) + 1;
-            }
-        });
-
-        return {
-            leader: Object.entries(byLeader).sort((a, b) => b[1] - a[1]),
-            model: Object.entries(byModel).sort((a, b) => b[1] - a[1]),
-            line: Object.entries(byLine).sort((a, b) => b[1] - a[1]),
-            shift: Object.entries(byShift).sort((a, b) => b[1] - a[1]),
-            pending: Object.entries(pendingByLeader).sort((a, b) => b[1] - a[1]),
-        };
-    }, [filtered]);
-
-    if ((isLoading || isHydrating) && reactiveScraps.length === 0) {
-        return <LoadingSpinner label="Sincronizando ranking geral..." />;
-    }
 
     const openGroupPreview = (type: 'shift' | 'line' | 'model' | 'leader' | 'pending', key: string) => {
         let groupScraps: ScrapData[] = [];
@@ -1782,77 +2182,94 @@ export const ScrapManagementAdvanced = ({ scraps, users, isLoading = false, isHy
                 </div>
             </Card>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <Card className="bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-900/50 p-6">
-                    <h3 className="text-blue-600 dark:text-blue-400 font-bold uppercase text-xs">Total Filtrado (Gestão)</h3>
-                    <p className="text-3xl font-bold mt-2 !text-slate-900 dark:!text-zinc-100">{formatCurrency(filtered.reduce((a, b) => a + normalizeScrapNumber(b.totalValue), 0))}</p>
-                </Card>
-                <Card className="bg-white dark:bg-zinc-900 border-slate-200 dark:border-zinc-800 p-6 flex flex-col justify-center items-center cursor-pointer hover:bg-slate-50 dark:hover:bg-zinc-800 shadow-sm" onClick={() => exportExecutiveReport(filtered)}>
-                    <Download size={32} className="text-green-600 dark:text-green-500 mb-2" />
-                    <span className="text-sm font-bold text-green-600 dark:text-green-400">Baixar Relatório Detalhado (Excel)</span>
-                </Card>
-            </div>
+            {isUIReady ? (
+                <>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <Card className="bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-900/50 p-6 min-h-[124px]">
+                            <h3 className="text-blue-600 dark:text-blue-400 font-bold uppercase text-xs">Total Filtrado (Gestão)</h3>
+                            <div className="mt-2 flex h-10 items-center">
+                                {isMetricsLoading ? (
+                                    <div className="h-9 w-32 animate-pulse rounded-md bg-blue-200/70 dark:bg-blue-400/20" />
+                                ) : (
+                                    <p className="text-3xl font-bold !text-slate-900 dark:!text-zinc-100 tabular-nums min-w-[8rem]">{formatCurrency(totalFilteredValue)}</p>
+                                )}
+                            </div>
+                        </Card>
+                        <Card className="bg-white dark:bg-zinc-900 border-slate-200 dark:border-zinc-800 p-6 flex min-h-[124px] flex-col justify-center items-center cursor-pointer hover:bg-slate-50 dark:hover:bg-zinc-800 shadow-sm" onClick={() => exportExecutiveReport(filtered)}>
+                            <Download size={32} className="text-green-600 dark:text-green-500 mb-2" />
+                            <span className="text-sm font-bold text-green-600 dark:text-green-400">Baixar Relatório Detalhado (Excel)</span>
+                        </Card>
+                    </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                {/* Reordered: Shift -> Line -> Model -> Leaders -> Pending */}
-                <Card>
-                    <h3 className="font-bold text-slate-900 dark:text-white mb-4 uppercase text-sm">Ranking Turnos (R$)</h3>
-                    <div className="space-y-2">
-                        {rankings.shift.map(([name, val], i) => (
-                            <div key={name} className="flex justify-between items-center text-sm cursor-pointer hover:bg-slate-100 dark:hover:bg-zinc-800 p-2 rounded transition-colors" onClick={() => openGroupPreview('shift', name)}>
-                                <span className="text-slate-900 dark:text-zinc-100">Turno {name}</span>
-                                <span className="font-bold text-slate-800 dark:text-zinc-200">{formatCurrency(val)}</span>
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                        <Card className="min-h-[300px]">
+                            <h3 className="font-bold text-slate-900 dark:text-white mb-4 uppercase text-sm">Ranking Turnos (R$)</h3>
+                            <div className="space-y-2 min-h-[220px]">
+                                {isMetricsLoading ? DASHBOARD_SKELETON_ROWS.map((row) => (
+                                    <div key={`shift-${row}`} className="h-10 animate-pulse rounded-lg bg-slate-100 dark:bg-zinc-800" />
+                                )) : rankings.shift.map(([name, val]) => (
+                                    <div key={name} className="flex justify-between items-center text-sm cursor-pointer hover:bg-slate-100 dark:hover:bg-zinc-800 p-2 rounded transition-colors" onClick={() => openGroupPreview('shift', name)}>
+                                        <span className="text-slate-900 dark:text-zinc-100">Turno {name}</span>
+                                        <span className="font-bold text-slate-800 dark:text-zinc-200">{formatCurrency(val)}</span>
+                                    </div>
+                                ))}
                             </div>
-                        ))}
-                    </div>
-                </Card>
-                <Card>
-                    <h3 className="font-bold text-slate-900 dark:text-white mb-4 uppercase text-sm">Ranking Linhas (R$)</h3>
-                    <div className="space-y-2">
-                        {rankings.line.map(([name, val], i) => (
-                            <div key={name} className="flex justify-between items-center text-sm cursor-pointer hover:bg-slate-100 dark:hover:bg-zinc-800 p-2 rounded transition-colors" onClick={() => openGroupPreview('line', name)}>
-                                <span className="text-slate-900 dark:text-zinc-100">{name}</span>
-                                <span className="font-bold text-slate-800 dark:text-zinc-200">{formatCurrency(val)}</span>
+                        </Card>
+                        <Card className="min-h-[300px]">
+                            <h3 className="font-bold text-slate-900 dark:text-white mb-4 uppercase text-sm">Ranking Linhas (R$)</h3>
+                            <div className="space-y-2 min-h-[220px]">
+                                {isMetricsLoading ? DASHBOARD_SKELETON_ROWS.map((row) => (
+                                    <div key={`line-${row}`} className="h-10 animate-pulse rounded-lg bg-slate-100 dark:bg-zinc-800" />
+                                )) : rankings.line.map(([name, val]) => (
+                                    <div key={name} className="flex justify-between items-center text-sm cursor-pointer hover:bg-slate-100 dark:hover:bg-zinc-800 p-2 rounded transition-colors" onClick={() => openGroupPreview('line', name)}>
+                                        <span className="text-slate-900 dark:text-zinc-100">{name}</span>
+                                        <span className="font-bold text-slate-800 dark:text-zinc-200">{formatCurrency(val)}</span>
+                                    </div>
+                                ))}
                             </div>
-                        ))}
-                    </div>
-                </Card>
-                <Card>
-                    <h3 className="font-bold text-slate-900 dark:text-white mb-4 uppercase text-sm">Ranking Modelos (R$)</h3>
-                    <div className="space-y-2">
-                        {rankings.model.slice(0, 10).map(([name, val], i) => (
-                            <div key={name} className="flex justify-between items-center text-sm cursor-pointer hover:bg-slate-100 dark:hover:bg-zinc-800 p-2 rounded transition-colors" onClick={() => openGroupPreview('model', name)}>
-                                <span className="text-sm truncate max-w-[150px] text-slate-900 dark:text-zinc-100">{name}</span>
-                                <span className="font-mono font-bold text-slate-800 dark:text-zinc-200">{formatCurrency(val)}</span>
+                        </Card>
+                        <Card className="min-h-[300px]">
+                            <h3 className="font-bold text-slate-900 dark:text-white mb-4 uppercase text-sm">Ranking Modelos (R$)</h3>
+                            <div className="space-y-2 min-h-[220px]">
+                                {isMetricsLoading ? DASHBOARD_SKELETON_ROWS.map((row) => (
+                                    <div key={`model-${row}`} className="h-10 animate-pulse rounded-lg bg-slate-100 dark:bg-zinc-800" />
+                                )) : rankings.model.slice(0, 10).map(([name, val]) => (
+                                    <div key={name} className="flex justify-between items-center text-sm cursor-pointer hover:bg-slate-100 dark:hover:bg-zinc-800 p-2 rounded transition-colors" onClick={() => openGroupPreview('model', name)}>
+                                        <span className="text-sm truncate max-w-[150px] text-slate-900 dark:text-zinc-100">{name}</span>
+                                        <span className="font-mono font-bold text-slate-800 dark:text-zinc-200">{formatCurrency(val)}</span>
+                                    </div>
+                                ))}
                             </div>
-                        ))}
+                        </Card>
                     </div>
-                </Card>
-            </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <Card>
-                    <h3 className="font-bold text-slate-900 dark:text-white mb-4 uppercase text-sm">Ranking Líderes (R$)</h3>
-                    <div className="space-y-2">
-                        {rankings.leader.slice(0, 10).map(([name, val], i) => (
-                            <div key={name} className="flex justify-between items-center text-sm cursor-pointer hover:bg-slate-100 dark:hover:bg-zinc-800 p-2 rounded transition-colors" onClick={() => openGroupPreview('leader', name)}>
-                                <span className="text-sm text-slate-500 dark:text-zinc-400"><span className="font-bold text-slate-400 dark:text-zinc-500 mr-2">#{i + 1}</span> {name}</span>
-                                <span className="font-mono font-bold text-slate-800 dark:text-zinc-200">{formatCurrency(val)}</span>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <Card className="min-h-[300px]">
+                            <h3 className="font-bold text-slate-900 dark:text-white mb-4 uppercase text-sm">Ranking Líderes (R$)</h3>
+                            <div className="space-y-2 min-h-[220px]">
+                                {isMetricsLoading ? DASHBOARD_SKELETON_ROWS.map((row) => (
+                                    <div key={`leader-${row}`} className="h-10 animate-pulse rounded-lg bg-slate-100 dark:bg-zinc-800" />
+                                )) : rankings.leader.slice(0, 10).map(([name, val], i) => (
+                                    <div key={name} className="flex justify-between items-center text-sm cursor-pointer hover:bg-slate-100 dark:hover:bg-zinc-800 p-2 rounded transition-colors" onClick={() => openGroupPreview('leader', name)}>
+                                        <span className="text-sm text-slate-500 dark:text-zinc-400"><span className="font-bold text-slate-400 dark:text-zinc-500 mr-2">#{i + 1}</span> {name}</span>
+                                        <span className="font-mono font-bold text-slate-800 dark:text-zinc-200">{formatCurrency(val)}</span>
+                                    </div>
+                                ))}
                             </div>
-                        ))}
-                    </div>
-                </Card>
-                <Card>
-                    <h3 className="font-bold text-slate-900 dark:text-white mb-4 uppercase text-sm">Pendências (Qtd)</h3>
-                    <div className="space-y-2">
-                        {rankings.pending.slice(0, 10).map(([name, val], i) => (
-                            <div key={name} className="flex justify-between items-center text-sm cursor-pointer hover:bg-slate-100 dark:hover:bg-zinc-800 p-2 rounded transition-colors" onClick={() => openGroupPreview('pending', name)}>
-                                <span className="text-sm truncate max-w-[150px] text-slate-900 dark:text-zinc-100">{name}</span>
-                                <span className="font-mono font-bold text-slate-800 dark:text-zinc-200">{val}</span>
+                        </Card>
+                        <Card className="min-h-[300px]">
+                            <h3 className="font-bold text-slate-900 dark:text-white mb-4 uppercase text-sm">Pendências (Qtd)</h3>
+                            <div className="space-y-2 min-h-[220px]">
+                                {isMetricsLoading ? DASHBOARD_SKELETON_ROWS.map((row) => (
+                                    <div key={`pending-${row}`} className="h-10 animate-pulse rounded-lg bg-slate-100 dark:bg-zinc-800" />
+                                )) : rankings.pending.slice(0, 10).map(([name, val]) => (
+                                    <div key={name} className="flex justify-between items-center text-sm cursor-pointer hover:bg-slate-100 dark:hover:bg-zinc-800 p-2 rounded transition-colors" onClick={() => openGroupPreview('pending', name)}>
+                                        <span className="text-sm truncate max-w-[150px] text-slate-900 dark:text-zinc-100">{name}</span>
+                                        <span className="font-mono font-bold text-slate-800 dark:text-zinc-200">{val}</span>
+                                    </div>
+                                ))}
                             </div>
-                        ))}
+                        </Card>
                     </div>
-                </Card>
-            </div>
 
             <RankingPreviewModal
                 isOpen={!!selectedRanking}
@@ -1918,15 +2335,15 @@ export const ScrapManagementAdvanced = ({ scraps, users, isLoading = false, isHy
             )}
 
             {/* Detail Modal */}
-            <ScrapDetailModal
-                isOpen={detailModal.isOpen}
-                scrap={detailModal.scrap}
-                users={[]}
-                onClose={() => setDetailModal({ isOpen: false, scrap: null })}
-            />
+                    <ScrapDetailModal
+                        isOpen={detailModal.isOpen}
+                        scrap={detailModal.scrap}
+                        users={[]}
+                        onClose={() => setDetailModal({ isOpen: false, scrap: null })}
+                    />
 
-            {/* Charts Modal */}
-            {showChartsModal && (
+                    {/* Charts Modal */}
+                    {showChartsModal && (
                 <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
                     <Card className="w-full h-full max-w-7xl max-h-[95vh] bg-white dark:bg-zinc-900 border-slate-200 dark:border-zinc-700 overflow-y-auto custom-scrollbar shadow-2xl">
                         <div className="mb-6 border-b border-slate-100 dark:border-zinc-800 sticky top-0 bg-white dark:bg-zinc-900 z-10 p-6">
@@ -1952,8 +2369,8 @@ export const ScrapManagementAdvanced = ({ scraps, users, isLoading = false, isHy
                                         </select>
                                         <select className="bg-white dark:bg-zinc-900 border border-slate-300 dark:border-zinc-800 p-2 rounded text-sm text-slate-900 dark:text-zinc-100 outline-none focus:ring-2 focus:ring-blue-600" onChange={e => setChartFilters({ ...chartFilters, leaderName: e.target.value, model: 'ALL' })} value={chartFilters.leaderName}>
                                             <option value="ALL">Líder: Todos</option>
-                                            {sortUsersByDisplayName(safeUsers.filter((u: User) => isLeadershipRole(u.role))).map((u: User) => (
-                                                <option key={u.matricula} value={u.name}>{u.name}</option>
+                                            {chartAvailableLeaders.map((leader: string) => (
+                                                <option key={leader} value={leader}>{leader}</option>
                                             ))}
                                         </select>
                                         <select className="bg-white dark:bg-zinc-900 border border-slate-300 dark:border-zinc-800 p-2 rounded text-sm text-slate-900 dark:text-zinc-100 outline-none focus:ring-2 focus:ring-blue-600" onChange={e => setChartFilters({ ...chartFilters, model: e.target.value })} value={chartFilters.model}>
@@ -2156,6 +2573,44 @@ export const ScrapManagementAdvanced = ({ scraps, users, isLoading = false, isHy
                             <span className="text-xs text-slate-500">{chartDrilldown.scraps.length} registros</span>
                             <span className="font-bold text-slate-800 dark:text-zinc-200">Total: {formatCurrency(chartDrilldown.scraps.reduce((a, s) => a + normalizeScrapNumber(s.totalValue), 0))}</span>
                         </div>
+                    </div>
+                </div>
+            )}
+                </>
+            ) : (
+                <div className="space-y-6">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <Card className="bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-900/50 p-6 min-h-[124px]">
+                            <h3 className="text-blue-600 dark:text-blue-400 font-bold uppercase text-xs">Total Filtrado (Gestão)</h3>
+                            <div className="mt-2 h-9 w-32 animate-pulse rounded-md bg-blue-200/70 dark:bg-blue-400/20" />
+                        </Card>
+                        <Card className="bg-white dark:bg-zinc-900 border-slate-200 dark:border-zinc-800 p-6 min-h-[124px]">
+                            <div className="h-full animate-pulse rounded-lg bg-slate-100 dark:bg-zinc-800" />
+                        </Card>
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                        {['Ranking Turnos (R$)', 'Ranking Linhas (R$)', 'Ranking Modelos (R$)'].map((title) => (
+                            <Card key={title} className="min-h-[300px]">
+                                <h3 className="font-bold text-slate-900 dark:text-white mb-4 uppercase text-sm">{title}</h3>
+                                <div className="space-y-2 min-h-[220px]">
+                                    {DASHBOARD_SKELETON_ROWS.map((row) => (
+                                        <div key={`${title}-${row}`} className="h-10 animate-pulse rounded-lg bg-slate-100 dark:bg-zinc-800" />
+                                    ))}
+                                </div>
+                            </Card>
+                        ))}
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        {['Ranking Líderes (R$)', 'Pendências (Qtd)'].map((title) => (
+                            <Card key={title} className="min-h-[300px]">
+                                <h3 className="font-bold text-slate-900 dark:text-white mb-4 uppercase text-sm">{title}</h3>
+                                <div className="space-y-2 min-h-[220px]">
+                                    {DASHBOARD_SKELETON_ROWS.map((row) => (
+                                        <div key={`${title}-${row}`} className="h-10 animate-pulse rounded-lg bg-slate-100 dark:bg-zinc-800" />
+                                    ))}
+                                </div>
+                            </Card>
+                        ))}
                     </div>
                 </div>
             )}
@@ -2846,6 +3301,11 @@ const ScrapEditDelete = ({ scraps, users, lines, models, onUpdate, categories, s
     const [showQRCamera, setShowQRCamera] = useState(false);
 
     const [editingScrap, setEditingScrap] = useState<ScrapData | null>(null);
+    const availableLeaderFilters = useMemo<string[]>(
+        () => Array.from(new Set(scraps.map((s: ScrapData) => String(s?.leaderName || '').trim()).filter(Boolean) as string[]))
+            .sort((a, b) => String(a).localeCompare(String(b))),
+        [scraps]
+    );
 
     const filterScraps = useMemo(() => {
         let res = [...scraps];
@@ -2853,7 +3313,12 @@ const ScrapEditDelete = ({ scraps, users, lines, models, onUpdate, categories, s
         if (filters.line) res = res.filter((s: ScrapData) => s.line === filters.line);
         if (filters.model) res = res.filter((s: ScrapData) => s.model === filters.model);
         if (filters.item) res = res.filter((s: ScrapData) => (s.item || '').toUpperCase() === filters.item.toUpperCase());
-        if (filters.qrCode) res = res.filter((s: ScrapData) => (s.qrCode || '').toUpperCase().includes(filters.qrCode.toUpperCase()));
+        if (filters.qrCode) {
+            const searchTerm = filters.qrCode.toUpperCase();
+            res = res.filter((s: ScrapData) =>
+                (s.qrCode || '').toUpperCase().includes(searchTerm) || String(s.id).includes(filters.qrCode)
+            );
+        }
 
         const now = new Date();
         const d = new Date(now);
@@ -2904,7 +3369,7 @@ const ScrapEditDelete = ({ scraps, users, lines, models, onUpdate, categories, s
                 <div className="grid grid-cols-1 md:grid-cols-6 gap-4">
                     <select className="bg-white dark:bg-zinc-950 border border-slate-300 dark:border-zinc-800 p-2 rounded text-sm outline-none" onChange={e => setFilters({ ...filters, leader: e.target.value })} value={filters.leader}>
                         <option value="">Todos Líderes</option>
-                        {sortUsersByDisplayName(users.filter((u: User) => isLeadershipRole(u.role))).map((u: User) => <option key={u.matricula} value={u.name}>{u.name}</option>)}
+                        {availableLeaderFilters.map((leader: string) => <option key={leader} value={leader}>{leader}</option>)}
                     </select>
                     <select className="bg-white dark:bg-zinc-950 border border-slate-300 dark:border-zinc-800 p-2 rounded text-sm outline-none" onChange={e => setFilters({ ...filters, line: e.target.value })} value={filters.line}>
                         <option value="">Todas Linhas</option>
@@ -2916,10 +3381,10 @@ const ScrapEditDelete = ({ scraps, users, lines, models, onUpdate, categories, s
                     </select>
                     <select className="bg-white dark:bg-zinc-950 border border-slate-300 dark:border-zinc-800 p-2 rounded text-sm outline-none" onChange={e => setFilters({ ...filters, item: e.target.value })} value={filters.item}>
                         <option value="">Todos Itens</option>
-                        {Array.from(new Set(filterScraps.map((s: ScrapData) => s.item).filter(Boolean))).sort((a, b) => String(a).localeCompare(String(b))).map((item: string) => <option key={item} value={item}>{item}</option>)}
+                        {getLimitedSortedOptions(filterScraps.slice(0, 500).map((s: ScrapData) => s.item)).map((item: string) => <option key={item} value={item}>{item}</option>)}
                     </select>
                     <div className="flex gap-1 items-end">
-                        <Input label="" placeholder="QR Code" value={filters.qrCode} onChange={e => setFilters({ ...filters, qrCode: e.target.value })} onKeyDown={e => e.key === 'Enter' && setFilters({ ...filters, qrCode: e.currentTarget.value })} className="text-sm flex-1" />
+                        <Input label="" placeholder="Buscar por QR Code ou ID do Scrap..." value={filters.qrCode} onChange={e => setFilters({ ...filters, qrCode: e.target.value })} onKeyDown={e => e.key === 'Enter' && setFilters({ ...filters, qrCode: e.currentTarget.value })} className="text-sm flex-1" />
                         {isAndroid && <Button size="sm" onClick={() => { setShowQRCamera(true); }} className="flex-shrink-0" title="Câmera"><QrCode size={16} /></Button>}
                     </div>
                     {showQRCamera && <QRStreamReader onScanSuccess={(text) => { setShowQRCamera(false); setFilters({ ...filters, qrCode: text }); }} onClose={() => setShowQRCamera(false)} />}
@@ -3111,7 +3576,7 @@ const ScrapEditModal = ({ scrap, users, lines, models, categories, statusOptions
         }
     };
 
-    const pqcUsers = users.filter((u: User) => (u.role || '').toUpperCase().includes('PQC'));
+    const pqcUsers = users.filter((u: User) => isOperationalUserActive(u) && (u.role || '').toUpperCase().includes('PQC'));
 
     // Replicate ScrapForm Layout
     return (
@@ -3161,7 +3626,7 @@ const ScrapEditModal = ({ scrap, users, lines, models, categories, statusOptions
                                 disabled={readOnlyMode}
                             >
                                 <option value="" disabled>Selecione...</option>
-                                {sortUsersByDisplayName(users.filter((u: User) => isLeadershipRole(u.role))).map((u: User) => (
+                                {sortUsersByDisplayName(users.filter((u: User) => isOperationalUserActive(u) && isLeadershipRole(u.role))).map((u: User) => (
                                     <option key={u.matricula} value={u.name}>{u.name}</option>
                                 ))}
                             </select>
@@ -3397,92 +3862,45 @@ const NewAdvancedDashboard = ({ scraps, users, isLoading = false, isHydrating = 
     const [groupPreviewModal, setGroupPreviewModal] = useState<{ isOpen: boolean; type: 'category' | 'model' | 'line'; key: string; scraps: ScrapData[] }>({ isOpen: false, type: 'category', key: '', scraps: [] });
     const [detailModal, setDetailModal] = useState<{ isOpen: boolean; scrap: ScrapData | null }>({ isOpen: false, scrap: null });
     const reactiveScraps = useMemo(() => normalizeScrapCollection(Array.isArray(scraps) ? scraps : []), [scraps]);
-    const safeUsers = useMemo(() => Array.isArray(users) ? users : [], [users]);
-
+    const isUIReady = useDeferredUIReady(!(isLoading || isHydrating));
+    const isHeaderReady = useStagedHeaderReady(isUIReady);
+    const availableLeaders = useMemo(
+        () => Array.from(new Set(reactiveScraps.map((item) => String(item?.leaderName || '').trim()).filter(Boolean)))
+            .sort((a, b) => String(a).localeCompare(String(b))),
+        [reactiveScraps]
+    );
     const availableModels = useMemo(() => {
-        let modelsSource = [...reactiveScraps];
-        if (filters.leader !== 'ALL') {
-            modelsSource = modelsSource.filter(s => s.leaderName === filters.leader);
-        }
-        const uniqueModels = Array.from(new Set(modelsSource.map(s => s.model).filter(Boolean)));
-        return uniqueModels.sort((a, b) => String(a).localeCompare(String(b)));
+        const source = filters.leader === 'ALL'
+            ? reactiveScraps
+            : reactiveScraps.filter((item) => item.leaderName === filters.leader);
+
+        return Array.from(new Set(source.map((item) => item.model).filter(Boolean)))
+            .sort((a, b) => String(a).localeCompare(String(b)));
     }, [reactiveScraps, filters.leader]);
 
-    const filtered = useMemo(() => {
-        let res = [...reactiveScraps];
+    const [dashboardData, setDashboardData] = useState<{ filtered: ScrapData[]; stats: AsyncDashboardStats }>({
+        filtered: [],
+        stats: EMPTY_DASHBOARD_STATS
+    });
+    const [isMetricsLoading, setIsMetricsLoading] = useState(true);
 
-        if (filters.period === 'DAY' && filters.specificDate) {
-            res = res.filter(s => normalizeScrapDateKey(s.date) === filters.specificDate);
-        }
-        else if (filters.period === 'WEEK' && filters.specificWeek) {
-            const [y, w] = filters.specificWeek.split('-W').map(Number);
-            res = res.filter(s => {
-                const sd = parseScrapDate(s.date);
-                if (!sd) return false;
-                const normalizedDate = new Date(sd.getFullYear(), sd.getMonth(), sd.getDate());
-                return getWeekNumber(normalizedDate) === w && sd.getFullYear() === y;
-            });
-        }
-        else if (filters.period === 'MONTH' && filters.specificMonth) {
-            res = res.filter(s => normalizeScrapDateKey(s.date).startsWith(filters.specificMonth));
-        }
-        else if (filters.period === 'YEAR' && filters.specificYear) {
-            res = res.filter(s => normalizeScrapDateKey(s.date).startsWith(filters.specificYear));
+    useEffect(() => {
+        if (!isUIReady) {
+            setDashboardData({ filtered: [], stats: EMPTY_DASHBOARD_STATS });
+            setIsMetricsLoading(true);
+            return;
         }
 
-        if (filters.plant !== 'ALL') res = res.filter(s => s.plant === filters.plant);
-        if (filters.shift !== 'ALL') res = res.filter(s => String(s.shift ?? '') === filters.shift);
-        if (filters.leader !== 'ALL') res = res.filter(s => s.leaderName === filters.leader);
-        if (filters.model !== 'ALL') res = res.filter(s => s.model === filters.model);
-
-        return res;
-    }, [reactiveScraps, filters]);
-
-    const stats = useMemo(() => {
-        const totalVal = filtered.reduce((acc, s) => acc + normalizeScrapNumber(s.totalValue), 0);
-        const totalQty = filtered.reduce((acc, s) => acc + normalizeScrapNumber(s.qty), 0);
-
-        const specificItems = ['FRONT', 'REAR', 'OCTA', 'CAMERA', 'BATERIA RMA', 'BATERIA SCRAP', 'PLACA'];
-        const byCategory: Record<string, number> = {};
-        const byModel: Record<string, number> = {};
-        const byLine: Record<string, number> = {};
-
-        specificItems.forEach(k => byCategory[k] = 0);
-        byCategory['MIUDEZAS'] = 0;
-
-        filtered.forEach(s => {
-            const val = normalizeScrapNumber(s.totalValue);
-            const itemUpper = String(s.item || '').toUpperCase();
-
-            let catKey = 'MIUDEZAS';
-            if (itemUpper.includes('PLACA')) {
-                catKey = 'PLACA';
-            } else if (itemUpper.includes('CAMERA')) {
-                catKey = 'CAMERA';
-            } else {
-                const found = specificItems.find(i => itemUpper.includes(i) && i !== 'CAMERA' && i !== 'PLACA');
-                if (found) catKey = found;
-            }
-
-            const modelKey = s.model || 'Não informado';
-            const lineKey = s.line || 'Não informada';
-            byCategory[catKey] = (byCategory[catKey] || 0) + val;
-            byModel[modelKey] = (byModel[modelKey] || 0) + val;
-            byLine[lineKey] = (byLine[lineKey] || 0) + val;
+        setIsMetricsLoading(true);
+        return scheduleDashboardMacrotask(() => {
+            const next = calculateGeneralDashboardData(reactiveScraps, filters);
+            setDashboardData(next);
+            setIsMetricsLoading(false);
         });
+    }, [reactiveScraps, filters, isUIReady]);
 
-        return {
-            totalVal,
-            totalQty,
-            category: Object.entries(byCategory).sort((a, b) => b[1] - a[1]),
-            model: Object.entries(byModel).sort((a, b) => b[1] - a[1]).slice(0, 10),
-            line: Object.entries(byLine).sort((a, b) => b[1] - a[1])
-        };
-    }, [filtered]);
-
-    if ((isLoading || isHydrating) && reactiveScraps.length === 0) {
-        return <LoadingSpinner label="Sincronizando gestão avançada..." />;
-    }
+    const filtered = dashboardData.filtered;
+    const stats = dashboardData.stats;
 
     const openGroupPreview = (type: 'category' | 'model' | 'line', key: string) => {
         let groupScraps: ScrapData[] = [];
@@ -3515,7 +3933,7 @@ const NewAdvancedDashboard = ({ scraps, users, isLoading = false, isHydrating = 
                     <h3 className="font-bold text-lg">Dashboard Geral</h3>
                     <div className="flex flex-wrap gap-2 items-center">
                         <div className="flex flex-wrap items-center gap-2 w-full md:w-auto">
-                            <select className="bg-slate-50 dark:bg-zinc-950 border border-slate-300 dark:border-zinc-800 p-2 rounded text-sm outline-none w-full md:w-auto" onChange={e => setFilters({ ...filters, period: e.target.value })} value={filters.period}>
+                            <select className="bg-slate-50 dark:bg-zinc-950 border border-slate-300 dark:border-zinc-800 p-2 rounded text-sm outline-none w-full md:w-auto" onChange={e => setFilters({ ...filters, period: e.target.value })} value={filters.period} disabled={!isHeaderReady}>
                                 <option value="ALL">Todo Período</option>
                                 <option value="DAY">Dia</option>
                                 <option value="WEEK">Semana</option>
@@ -3528,28 +3946,28 @@ const NewAdvancedDashboard = ({ scraps, users, isLoading = false, isHydrating = 
                             {filters.period === 'YEAR' && <Input type="number" placeholder="2026" value={filters.specificYear} onChange={e => setFilters({ ...filters, specificYear: e.target.value })} className="w-full md:w-24" />}
                         </div>
 
-                        <select className="bg-slate-50 dark:bg-zinc-950 border border-slate-300 dark:border-zinc-800 p-2 rounded text-sm outline-none" value={filters.leader} onChange={e => setFilters({ ...filters, leader: e.target.value })}>
+                        <select className="bg-slate-50 dark:bg-zinc-950 border border-slate-300 dark:border-zinc-800 p-2 rounded text-sm outline-none" value={filters.leader} onChange={e => setFilters({ ...filters, leader: e.target.value })} disabled={!isHeaderReady}>
                             <option value="ALL">Todos os Líderes</option>
-                            {sortUsersByDisplayName(safeUsers.filter((u: User) => isLeadershipRole(u.role))).map((u: User) => (
-                                <option key={u.matricula} value={u.name}>{u.name}</option>
+                            {availableLeaders.map((leader) => (
+                                <option key={leader} value={leader}>{leader}</option>
                             ))}
                         </select>
 
-                        <select className="bg-slate-50 dark:bg-zinc-950 border border-slate-300 dark:border-zinc-800 p-2 rounded text-sm outline-none" value={filters.plant} onChange={e => setFilters({ ...filters, plant: e.target.value })}>
+                        <select className="bg-slate-50 dark:bg-zinc-950 border border-slate-300 dark:border-zinc-800 p-2 rounded text-sm outline-none" value={filters.plant} onChange={e => setFilters({ ...filters, plant: e.target.value })} disabled={!isHeaderReady}>
                             <option value="ALL">Todas Plantas</option>
                             <option value="P81L">P81L</option>
                             <option value="P81M">P81M</option>
                             <option value="P81N">P81N</option>
                         </select>
-                        <select className="bg-slate-50 dark:bg-zinc-950 border border-slate-300 dark:border-zinc-800 p-2 rounded text-sm outline-none" value={filters.shift} onChange={e => setFilters({ ...filters, shift: e.target.value })}>
+                        <select className="bg-slate-50 dark:bg-zinc-950 border border-slate-300 dark:border-zinc-800 p-2 rounded text-sm outline-none" value={filters.shift} onChange={e => setFilters({ ...filters, shift: e.target.value })} disabled={!isHeaderReady}>
                             <option value="ALL">Todos Turnos</option>
                             <option value="1">1º Turno</option>
                             <option value="2">2º Turno</option>
                         </select>
-                        <select className="bg-slate-50 dark:bg-zinc-950 border border-slate-300 dark:border-zinc-800 p-2 rounded text-sm outline-none" value={filters.model} onChange={e => setFilters({ ...filters, model: e.target.value })}>
+                        <select className="bg-slate-50 dark:bg-zinc-950 border border-slate-300 dark:border-zinc-800 p-2 rounded text-sm outline-none" value={filters.model} onChange={e => setFilters({ ...filters, model: e.target.value })} disabled={!isHeaderReady}>
                             <option value="ALL">Todos os Modelos</option>
-                            {availableModels.map(m => (
-                                <option key={m} value={m}>{m}</option>
+                            {availableModels.map((model) => (
+                                <option key={model} value={model}>{model}</option>
                             ))}
                         </select>
 
@@ -3560,22 +3978,38 @@ const NewAdvancedDashboard = ({ scraps, users, isLoading = false, isHydrating = 
                 </div>
             </Card>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <Card className="bg-blue-900 border-blue-800">
-                    <p className="text-blue-100 text-xs font-bold uppercase">Valor Total (Filtrado)</p>
-                    <p className="text-3xl font-bold mt-1 text-white">{formatCurrency(stats.totalVal)}</p>
-                </Card>
-                <Card className="bg-slate-900 border-slate-800">
-                    <p className="text-slate-300 text-xs font-bold uppercase">Quantidade (Filtrado)</p>
-                    <p className="text-3xl font-bold mt-1 text-white">{stats.totalQty} <span className="text-base font-normal text-slate-400">itens</span></p>
-                </Card>
-            </div>
+            {isUIReady ? (
+                <>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <Card className="bg-blue-900 border-blue-800 min-h-[108px]">
+                            <p className="text-blue-100 text-xs font-bold uppercase">Valor Total (Filtrado)</p>
+                            <div className="mt-1 flex h-10 items-center">
+                                {isMetricsLoading ? (
+                                    <div className="h-9 w-32 animate-pulse rounded-md bg-white/20" />
+                                ) : (
+                                    <p className="text-3xl font-bold text-white tabular-nums min-w-[8rem]">{formatCurrency(stats.totalVal)}</p>
+                                )}
+                            </div>
+                        </Card>
+                        <Card className="bg-slate-900 border-slate-800 min-h-[108px]">
+                            <p className="text-slate-300 text-xs font-bold uppercase">Quantidade (Filtrado)</p>
+                            <div className="mt-1 flex h-10 items-center">
+                                {isMetricsLoading ? (
+                                    <div className="h-9 w-32 animate-pulse rounded-md bg-white/10" />
+                                ) : (
+                                    <p className="text-3xl font-bold text-white tabular-nums min-w-[8rem]">{stats.totalQty} <span className="text-base font-normal text-slate-400">itens</span></p>
+                                )}
+                            </div>
+                        </Card>
+                    </div>
 
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                <Card>
+                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                <Card className="min-h-[320px]">
                     <h3 className="font-bold text-slate-900 dark:text-white mb-4 flex items-center gap-2"><LayoutDashboard size={16} className="text-purple-500" /> Por Categoria</h3>
-                    <div className="space-y-3">
-                        {stats.category.map(([name, val]) => (
+                    <div className="space-y-3 min-h-[240px]">
+                        {isMetricsLoading ? DASHBOARD_SKELETON_ROWS.map((row) => (
+                            <div key={`category-${row}`} className="h-10 animate-pulse rounded-lg bg-slate-100 dark:bg-zinc-800" />
+                        )) : stats.category.map(([name, val]) => (
                             <div key={name} className="flex justify-between items-center text-sm cursor-pointer hover:bg-slate-100 dark:hover:bg-zinc-800 p-2 rounded transition-colors" onClick={() => openGroupPreview('category', name)}>
                                 <span className={val > 0 ? 'text-slate-900 dark:text-zinc-100' : 'text-slate-400 dark:text-zinc-600'}>{name}</span>
                                 <span className="font-bold text-slate-800 dark:text-zinc-200">{formatCurrency(val)}</span>
@@ -3583,10 +4017,12 @@ const NewAdvancedDashboard = ({ scraps, users, isLoading = false, isHydrating = 
                         ))}
                     </div>
                 </Card>
-                <Card>
+                <Card className="min-h-[320px]">
                     <h3 className="font-bold text-slate-900 dark:text-white mb-4 flex items-center gap-2"><Truck size={16} className="text-blue-500" /> Top Modelos</h3>
-                    <div className="space-y-3">
-                        {stats.model.map(([name, val], i) => (
+                    <div className="space-y-3 min-h-[240px]">
+                        {isMetricsLoading ? DASHBOARD_SKELETON_ROWS.map((row) => (
+                            <div key={`top-model-${row}`} className="h-10 animate-pulse rounded-lg bg-slate-100 dark:bg-zinc-800" />
+                        )) : stats.model.map(([name, val], i) => (
                             <div key={name} className="flex justify-between items-center text-sm cursor-pointer hover:bg-slate-100 dark:hover:bg-zinc-800 p-2 rounded transition-colors" onClick={() => openGroupPreview('model', name)}>
                                 <span className="text-slate-900 dark:text-zinc-100 whitespace-normal break-words w-2/3">{i + 1}. {name}</span>
                                 <span className="font-bold text-blue-600 dark:text-blue-400">{formatCurrency(val)}</span>
@@ -3594,10 +4030,12 @@ const NewAdvancedDashboard = ({ scraps, users, isLoading = false, isHydrating = 
                         ))}
                     </div>
                 </Card>
-                <Card>
+                <Card className="min-h-[320px]">
                     <h3 className="font-bold text-slate-900 dark:text-white mb-4 flex items-center gap-2"><Filter size={16} className="text-green-500" /> Por Linha</h3>
-                    <div className="space-y-3">
-                        {stats.line.map(([name, val]) => (
+                    <div className="space-y-3 min-h-[240px]">
+                        {isMetricsLoading ? DASHBOARD_SKELETON_ROWS.map((row) => (
+                            <div key={`line-${row}`} className="h-10 animate-pulse rounded-lg bg-slate-100 dark:bg-zinc-800" />
+                        )) : stats.line.map(([name, val]) => (
                             <div key={name} className="flex justify-between items-center text-sm cursor-pointer hover:bg-slate-100 dark:hover:bg-zinc-800 p-2 rounded transition-colors" onClick={() => openGroupPreview('line', name)}>
                                 <span className="text-slate-900 dark:text-zinc-100">{name}</span>
                                 <span className="font-bold text-green-600 dark:text-green-400">{formatCurrency(val)}</span>
@@ -3664,6 +4102,33 @@ const NewAdvancedDashboard = ({ scraps, users, isLoading = false, isHydrating = 
                 users={users}
                 onClose={() => setDetailModal({ isOpen: false, scrap: null })}
             />
+                </>
+            ) : (
+                <div className="space-y-6">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <Card className="bg-blue-900 border-blue-800 min-h-[108px]">
+                            <p className="text-blue-100 text-xs font-bold uppercase">Valor Total (Filtrado)</p>
+                            <div className="mt-1 h-9 w-32 animate-pulse rounded-md bg-white/20" />
+                        </Card>
+                        <Card className="bg-slate-900 border-slate-800 min-h-[108px]">
+                            <p className="text-slate-300 text-xs font-bold uppercase">Quantidade (Filtrado)</p>
+                            <div className="mt-1 h-9 w-32 animate-pulse rounded-md bg-white/10" />
+                        </Card>
+                    </div>
+                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                        {['Por Categoria', 'Top Modelos', 'Por Linha'].map((title) => (
+                            <Card key={title} className="min-h-[320px]">
+                                <h3 className="font-bold text-slate-900 dark:text-white mb-4">{title}</h3>
+                                <div className="space-y-3 min-h-[240px]">
+                                    {DASHBOARD_SKELETON_ROWS.map((row) => (
+                                        <div key={`${title}-${row}`} className="h-10 animate-pulse rounded-lg bg-slate-100 dark:bg-zinc-800" />
+                                    ))}
+                                </div>
+                            </Card>
+                        ))}
+                    </div>
+                </div>
+            )}
         </div>
     );
 };

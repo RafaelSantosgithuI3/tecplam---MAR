@@ -47,6 +47,12 @@ export const PeopleManagementModule = ({ onBack, currentUser, hasTabAccess }: Pe
         return 4;
     };
 
+    const isActiveEmployee = (employee: any) => {
+        const status = String(employee?.status || '').trim().toUpperCase();
+        if (!status) return true;
+        return status !== 'DESLIGADO' && status !== 'INATIVO';
+    };
+
     const allTabs: Tab[] = ['CADASTRO', 'CONSULTA', 'EDICAO', 'PRESENCA', 'LAYOUT', 'LUVAS'];
     const determineInitialTab = (): Tab => {
         const saved = sessionStorage.getItem(PEOPLE_MANAGEMENT_ACTIVE_TAB_KEY) as Tab | null;
@@ -68,6 +74,7 @@ export const PeopleManagementModule = ({ onBack, currentUser, hasTabAccess }: Pe
     const [printSelectedModel, setPrintSelectedModel] = useState('');
     const [layoutMasterModel, setLayoutMasterModel] = useState('');
     const [viewMode, setViewMode] = useState<'posto' | 'colaborador'>('colaborador');
+    const [showInactive, setShowInactive] = useState(false);
 
     useEffect(() => {
         loadBaseData();
@@ -106,7 +113,7 @@ export const PeopleManagementModule = ({ onBack, currentUser, hasTabAccess }: Pe
             if (Array.isArray(users)) {
                 setLeaders(
                     sortByLocale(
-                        users.filter(u => isLeadershipRole(u?.role)),
+                        users.filter(u => isLeadershipRole(u?.role) && isActiveEmployee(u)),
                         (u: any) => u?.fullName || u?.name
                     )
                 );
@@ -151,7 +158,7 @@ export const PeopleManagementModule = ({ onBack, currentUser, hasTabAccess }: Pe
         if (!formData.matricula || !formData.fullName || !formData.shift || !formData.role || !formData.sector) return alert('Matrícula, Nome, Turno, Função e Setor são obrigatórios.');
         try {
             await apiFetch('/employees', {
-                method: isEdit ? 'PUT' : 'POST',
+                method: 'POST',
                 body: JSON.stringify({ ...formData, isEdit })
             });
             alert('Salvo!');
@@ -623,9 +630,76 @@ export const PeopleManagementModule = ({ onBack, currentUser, hasTabAccess }: Pe
     const [attSelectedEmployee, setAttSelectedEmployee] = useState<any>(null);
     const [attType, setAttType] = useState('FALTA');
     const [attDelayMinutes, setAttDelayMinutes] = useState('');
+    const [startDate, setStartDate] = useState(() => new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().split('T')[0]);
+    const [endDate, setEndDate] = useState(() => new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().split('T')[0]);
+    const [attendanceShiftFilter, setAttendanceShiftFilter] = useState<'ALL' | '1º TURNO' | '2º TURNO'>('ALL');
+
+    const formatDelayMinutes = (value: unknown) => {
+        const raw = String(value ?? '').trim();
+        if (!raw) return '-';
+        if (/^\d+$/.test(raw)) return `${raw} min`;
+        if (/^\d{1,2}:\d{2}$/.test(raw)) {
+            const [hours, minutes] = raw.split(':').map(Number);
+            return `${(hours * 60) + minutes} min`;
+        }
+        return raw;
+    };
+
+    const normalizeAttendanceDate = (value: unknown) => {
+        if (!value) return '';
+        if (value instanceof Date) {
+            if (Number.isNaN(value.getTime())) return '';
+            const year = value.getFullYear();
+            const month = String(value.getMonth() + 1).padStart(2, '0');
+            const day = String(value.getDate()).padStart(2, '0');
+            return `${year}-${month}-${day}`;
+        }
+
+        const rawValue = String(value).trim();
+        if (!rawValue) return '';
+
+        const matchedDate = rawValue.match(/^(\d{4}-\d{2}-\d{2})/);
+        if (matchedDate) return matchedDate[1];
+
+        const parsed = new Date(rawValue);
+        if (Number.isNaN(parsed.getTime())) return '';
+
+        const year = parsed.getFullYear();
+        const month = String(parsed.getMonth() + 1).padStart(2, '0');
+        const day = String(parsed.getDate()).padStart(2, '0');
+        return `${year}-${month}-${day}`;
+    };
+
+    const filteredAttendanceLogs = useMemo(() => {
+        const team = employees.filter((employee: any) => employee.superiorId === currentUser.matricula && isActiveEmployee(employee));
+        const rawStartDate = normalizeAttendanceDate(startDate);
+        const rawEndDate = normalizeAttendanceDate(endDate);
+        const rangeStart = rawStartDate && rawEndDate && rawStartDate > rawEndDate ? rawEndDate : rawStartDate;
+        const rangeEnd = rawStartDate && rawEndDate && rawStartDate > rawEndDate ? rawStartDate : rawEndDate;
+
+        return team
+            .flatMap((employee: any) =>
+                (Array.isArray(employee?.attendanceLogs) ? employee.attendanceLogs : []).map((log: any) => ({
+                    ...log,
+                    matricula: employee.matricula,
+                    fullName: employee.fullName,
+                    shift: employee.shift,
+                    role: employee.role,
+                }))
+            )
+            .filter((log: any) => ['FALTA', 'ATRASO', 'ATESTADO'].includes(String(log?.type || '').toUpperCase()))
+            .filter((log: any) => {
+                const logDate = normalizeAttendanceDate(log?.date);
+                return Boolean(logDate) && (!rangeStart || logDate >= rangeStart) && (!rangeEnd || logDate <= rangeEnd);
+            })
+            .filter((log: any) => attendanceShiftFilter === 'ALL' || log.shift === attendanceShiftFilter)
+            .sort((a: any, b: any) => new Date(b.date).getTime() - new Date(a.date).getTime());
+    }, [employees, currentUser.matricula, startDate, endDate, attendanceShiftFilter]);
 
     const handleSearchSubordinado = () => {
-        const found = employees.find(e => e.superiorId === currentUser.matricula && (e.matricula.includes(attSearchQuery) || e.fullName.toLowerCase().includes(attSearchQuery.toLowerCase())));
+        const found = employees
+            .filter(e => e.superiorId === currentUser.matricula && isActiveEmployee(e) && (attendanceShiftFilter === 'ALL' || e.shift === attendanceShiftFilter))
+            .find(e => e.matricula.includes(attSearchQuery) || e.fullName.toLowerCase().includes(attSearchQuery.toLowerCase()));
         if (found) setAttSelectedEmployee(found);
         else alert('Colaborador não encontrado ou não é seu subordinado.');
     };
@@ -633,8 +707,22 @@ export const PeopleManagementModule = ({ onBack, currentUser, hasTabAccess }: Pe
     const handleSaveAttendance = async () => {
         if (!attSelectedEmployee) return;
         try {
-            const now = new Date();
-            const dateString = now.toISOString().split('T')[0]; // YYYY-MM-DD
+            const dateString = normalizeAttendanceDate(new Date());
+            const existingLog = (Array.isArray(attSelectedEmployee?.attendanceLogs) ? attSelectedEmployee.attendanceLogs : [])
+                .find((log: any) => normalizeAttendanceDate(log?.date) === dateString);
+
+            if (existingLog) {
+                const existingType = String(existingLog?.type || '').toUpperCase();
+                const nextType = String(attType || '').toUpperCase();
+
+                if (existingType === nextType) {
+                    alert('Este apontamento já foi registrado para este colaborador hoje.');
+                    return;
+                }
+
+                const shouldUpdate = window.confirm(`Já existe um apontamento de ${existingType} hoje. Deseja alterar para ${nextType}?`);
+                if (!shouldUpdate) return;
+            }
 
             await apiFetch('/attendance', {
                 method: 'POST',
@@ -655,18 +743,98 @@ export const PeopleManagementModule = ({ onBack, currentUser, hasTabAccess }: Pe
     };
 
     const renderPresenca = () => {
-        const team = employees.filter(e => e.superiorId === currentUser.matricula);
+        const team = employees.filter(e => e.superiorId === currentUser.matricula && isActiveEmployee(e) && (attendanceShiftFilter === 'ALL' || e.shift === attendanceShiftFilter));
         const filteredTeam = attSearchQuery
             ? team.filter(e => e.matricula.includes(attSearchQuery) || e.fullName.toLowerCase().includes(attSearchQuery.toLowerCase()))
             : team;
+        const totalFaltas = filteredAttendanceLogs.filter((log: any) => log.type === 'FALTA').length;
+        const totalAtrasos = filteredAttendanceLogs.filter((log: any) => log.type === 'ATRASO').length;
+        const totalAtestados = filteredAttendanceLogs.filter((log: any) => log.type === 'ATESTADO').length;
 
         return (
             <div className="space-y-4">
-                <Card className="flex gap-2 items-end">
+                <Card className="flex flex-col gap-3 xl:flex-row xl:items-end">
                     <div className="flex-1">
                         <Input label="Filtrar Subordinado na Lista (Nome ou Matrícula)" value={attSearchQuery} onChange={e => setAttSearchQuery(e.target.value)} />
                     </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 min-w-[320px]">
+                        <div className="flex flex-col gap-1">
+                            <label className="text-xs font-bold text-slate-500 dark:text-zinc-400 uppercase tracking-wide">Data Inicial</label>
+                            <input
+                                type="date"
+                                className="bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 rounded-xl px-4 py-2.5 text-slate-900 dark:text-zinc-100 text-sm"
+                                value={startDate}
+                                onChange={e => setStartDate(e.target.value)}
+                            />
+                        </div>
+                        <div className="flex flex-col gap-1">
+                            <label className="text-xs font-bold text-slate-500 dark:text-zinc-400 uppercase tracking-wide">Data Final</label>
+                            <input
+                                type="date"
+                                className="bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 rounded-xl px-4 py-2.5 text-slate-900 dark:text-zinc-100 text-sm"
+                                value={endDate}
+                                onChange={e => setEndDate(e.target.value)}
+                            />
+                        </div>
+                    </div>
+                    <div className="flex flex-col gap-1 min-w-[180px]">
+                        <label className="text-xs font-bold text-slate-500 dark:text-zinc-400 uppercase tracking-wide">Turno</label>
+                        <select className="bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 rounded-xl px-4 py-2.5 text-slate-900 dark:text-zinc-100 text-sm" value={attendanceShiftFilter} onChange={e => setAttendanceShiftFilter(e.target.value as 'ALL' | '1º TURNO' | '2º TURNO')}>
+                            <option value="ALL">Todos</option>
+                            <option value="1º TURNO">1º TURNO</option>
+                            <option value="2º TURNO">2º TURNO</option>
+                        </select>
+                    </div>
                     <Button onClick={handleSearchSubordinado}><Search size={16} /> Buscar Externo</Button>
+                </Card>
+
+                <Card className="space-y-4">
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                        <div className="rounded-xl border border-red-200 dark:border-red-900/40 bg-red-50 dark:bg-red-900/10 p-4">
+                            <p className="text-xs font-bold uppercase tracking-wide text-red-600 dark:text-red-400">Total de Faltas</p>
+                            <p className="text-2xl font-black text-slate-900 dark:text-zinc-100 mt-2">{totalFaltas}</p>
+                        </div>
+                        <div className="rounded-xl border border-orange-200 dark:border-orange-900/40 bg-orange-50 dark:bg-orange-900/10 p-4">
+                            <p className="text-xs font-bold uppercase tracking-wide text-orange-600 dark:text-orange-400">Total de Atrasos</p>
+                            <p className="text-2xl font-black text-slate-900 dark:text-zinc-100 mt-2">{totalAtrasos}</p>
+                        </div>
+                        <div className="rounded-xl border border-amber-200 dark:border-amber-900/40 bg-amber-50 dark:bg-amber-900/10 p-4">
+                            <p className="text-xs font-bold uppercase tracking-wide text-amber-600 dark:text-amber-400">Total de Atestados</p>
+                            <p className="text-2xl font-black text-slate-900 dark:text-zinc-100 mt-2">{totalAtestados}</p>
+                        </div>
+                    </div>
+                    <div className="overflow-x-auto">
+                        {filteredAttendanceLogs.length === 0 ? (
+                            <p className="text-sm text-slate-500">Nenhuma ocorrência encontrada para os filtros selecionados.</p>
+                        ) : (
+                            <table className="w-full text-sm">
+                                <thead className="bg-slate-50 dark:bg-zinc-950 text-slate-500 dark:text-zinc-400">
+                                    <tr>
+                                        <th className="p-3 text-left">Matrícula</th>
+                                        <th className="p-3 text-left">Nome do Colaborador</th>
+                                        <th className="p-3 text-left">Turno</th>
+                                        <th className="p-3 text-left">Função</th>
+                                        <th className="p-3 text-left">Tipo de Ocorrência</th>
+                                        <th className="p-3 text-left">Data da Ocorrência</th>
+                                        <th className="p-3 text-left">Tempo de Atraso</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-slate-200 dark:divide-zinc-800">
+                                    {filteredAttendanceLogs.map((log: any, index: number) => (
+                                        <tr key={`${log.matricula}-${log.date}-${log.type}-${index}`} className="bg-white dark:bg-zinc-900">
+                                            <td className="p-3 font-mono text-slate-700 dark:text-zinc-300">{log.matricula}</td>
+                                            <td className="p-3 text-slate-700 dark:text-zinc-300">{log.fullName}</td>
+                                            <td className="p-3 text-slate-700 dark:text-zinc-300">{log.shift}</td>
+                                            <td className="p-3 text-slate-700 dark:text-zinc-300">{log.role}</td>
+                                            <td className="p-3 text-slate-700 dark:text-zinc-300">{log.type}</td>
+                                            <td className="p-3 text-slate-700 dark:text-zinc-300">{new Date(log.date).toLocaleDateString('pt-BR')}</td>
+                                            <td className="p-3 text-slate-700 dark:text-zinc-300">{log.type === 'ATRASO' ? formatDelayMinutes(log.delayMinutes) : '-'}</td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        )}
+                    </div>
                 </Card>
 
                 {!attSelectedEmployee ? (
@@ -749,7 +917,9 @@ export const PeopleManagementModule = ({ onBack, currentUser, hasTabAccess }: Pe
     const [layoutsList, setLayoutsList] = useState<any[]>([]);
 
     const handleSearchLine = () => {
-        const found = employees.find(e => e.matricula.includes(lineSearch) || e.fullName.toLowerCase().includes(lineSearch.toLowerCase()));
+        const found = employees
+            .filter(isActiveEmployee)
+            .find(e => e.matricula.includes(lineSearch) || e.fullName.toLowerCase().includes(lineSearch.toLowerCase()));
         if (found) setLinePreview(found);
         else alert('Colaborador não encontrado.');
     };
@@ -855,6 +1025,7 @@ export const PeopleManagementModule = ({ onBack, currentUser, hasTabAccess }: Pe
     const subordinados = useMemo(
         () => employees
             .filter(e => e.superiorId === currentUser.matricula)
+            .filter(isActiveEmployee)
             .filter(e => !layoutMasterModel || String(e?.role || '').toUpperCase().includes('MONTADOR'))
             .sort((a, b) => {
                 const priorityDiff = getLayoutRolePriority(String(a?.role || '')) - getLayoutRolePriority(String(b?.role || ''));
@@ -1313,8 +1484,8 @@ export const PeopleManagementModule = ({ onBack, currentUser, hasTabAccess }: Pe
     );
 
     const gloveDashboardData = useMemo(() => {
-        const team = employees.filter(employee => employee.superiorId === currentUser.matricula);
-        const selfEmployee = employees.find(employee => employee.matricula === currentUser.matricula);
+        const team = employees.filter(employee => employee.superiorId === currentUser.matricula && isActiveEmployee(employee));
+        const selfEmployee = employees.find(employee => employee.matricula === currentUser.matricula && isActiveEmployee(employee));
         const baseList = selfEmployee ? [selfEmployee, ...team.filter(employee => employee.matricula !== currentUser.matricula)] : team;
         const processedList = [...baseList].sort((a, b) => {
             const priorityDiff = getGloveRolePriority(a?.role || '') - getGloveRolePriority(b?.role || '');
@@ -1514,12 +1685,12 @@ export const PeopleManagementModule = ({ onBack, currentUser, hasTabAccess }: Pe
         if (!editQuery.trim()) return;
         try {
             const res = await apiFetch(`/employees/search/${encodeURIComponent(editQuery.trim())}?superiorId=${currentUser.matricula}`);
-            if (res && res.matricula) {
+            if (res && res.matricula && (showInactive || isActiveEmployee(res))) {
                 setFormData({ ...res, photo: res.photo || '', superiorId: res.superiorId || '' });
                 setEditFound(true);
             } else {
                 setEditFound(false);
-                alert('Colaborador não encontrado.');
+                alert(showInactive ? 'Colaborador não encontrado.' : 'Colaborador não encontrado ou está desligado.');
             }
         } catch { setEditFound(false); alert('Erro na busca.'); }
     };
@@ -1537,8 +1708,12 @@ export const PeopleManagementModule = ({ onBack, currentUser, hasTabAccess }: Pe
 
     const renderEdicao = () => (
         <div className="space-y-4">
-            <Card className="flex gap-2 items-end">
+            <Card className="flex flex-col gap-3 md:flex-row md:items-end">
                 <div className="flex-1"><Input label="Buscar Matrícula para Editar" value={editQuery} onChange={e => setEditQuery(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleEditSearch()} /></div>
+                <label className="flex items-center gap-2 text-sm font-medium text-slate-600 dark:text-zinc-300 select-none">
+                    <input type="checkbox" checked={showInactive} onChange={e => setShowInactive(e.target.checked)} className="rounded border-slate-300 text-cyan-600 focus:ring-cyan-500" />
+                    Mostrar Desligados
+                </label>
                 <Button onClick={handleEditSearch}><Search size={16} /> Buscar</Button>
             </Card>
 
@@ -1548,6 +1723,7 @@ export const PeopleManagementModule = ({ onBack, currentUser, hasTabAccess }: Pe
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                         {employees
                             .filter(e => e.superiorId === currentUser.matricula)
+                            .filter(e => showInactive || isActiveEmployee(e))
                             .filter(e => !editQuery || e.matricula.toLowerCase().includes(editQuery.toLowerCase()) || e.fullName.toLowerCase().includes(editQuery.toLowerCase()))
                             .map(emp => (
                                 <div
@@ -1679,7 +1855,7 @@ export const PeopleManagementModule = ({ onBack, currentUser, hasTabAccess }: Pe
                             <Button variant="outline" className="flex-1" onClick={() => setShowPrintModal(false)}>Cancelar</Button>
                             <Button className="flex-1" onClick={() => {
                                 if (!printSelectedModel) return alert('Selecione um modelo');
-                                exportModelLayout(printSelectedModel, workstations, employees, currentUser?.fullName || currentUser?.name || 'LIDER');
+                                exportModelLayout(printSelectedModel, workstations, employees.filter(isActiveEmployee), currentUser?.fullName || currentUser?.name || 'LIDER');
                                 setShowPrintModal(false);
                             }}>Gerar Excel</Button>
                         </div>
