@@ -28,7 +28,30 @@ async function enableWAL() {
 }
 enableWAL();
 
-let SCRAP_CACHE = null; // In-Memory Cache for Scraps
+const CACHE_KEYS = Object.freeze({
+    USERS: 'users',
+    LOGS: 'logs',
+    CONFIG_ITEMS: 'config-items',
+    LINE_STOPS: 'line-stops',
+    ROLES: 'roles',
+    LINES: 'lines',
+    MODELS: 'models',
+    STATIONS: 'stations',
+    PERMISSIONS: 'permissions',
+    NOTICES: 'notices',
+    MEETINGS: 'meetings',
+    SCRAPS: 'scraps',
+    MATERIALS: 'materials',
+    EMPLOYEES: 'employees',
+    BOXES: 'boxes',
+    WORKSTATIONS: 'workstations',
+    PRODUCTION_MODELS: 'production-models',
+    LAYOUTS: 'layouts'
+});
+
+const GLOBAL_RAM_CACHE = new Map();
+const SSE_CLIENTS = new Set();
+let SCRAP_CACHE = [];
 
 const normalizeMoney = (value) => {
     const num = Number(value);
@@ -36,31 +59,400 @@ const normalizeMoney = (value) => {
     return Math.round((num + Number.EPSILON) * 100) / 100;
 };
 
-const loadScrapCache = async () => {
-    console.log("🔄 Carregando Scraps para a RAM...");
+const safeJsonParse = (value, fallback) => {
     try {
-        // WAL Mode is enabled globally at start
-
-
-        SCRAP_CACHE = await prisma.scrapLog.findMany({
-            orderBy: [{ date: 'desc' }, { time: 'desc' }]
-        });
-        console.log(`✅ Cache carregado: ${SCRAP_CACHE.length} registros.`);
+        return typeof value === 'string' ? JSON.parse(value) : (value ?? fallback);
     } catch (e) {
-        console.error("❌ Erro ao carregar cache de scraps:", e);
-        SCRAP_CACHE = []; // Fallback to empty array to prevent null errors
+        return fallback;
+    }
+};
+
+const safeDateValue = (value) => {
+    const parsed = new Date(value || 0).getTime();
+    return Number.isFinite(parsed) ? parsed : 0;
+};
+
+const sendSseMessage = (client, payload) => {
+    client.write(`data: ${JSON.stringify(payload)}\n\n`);
+};
+
+const broadcastSyncDelta = (collection, action, payload = {}) => {
+    const message = {
+        collection,
+        action,
+        timestamp: Date.now(),
+        ...payload
+    };
+
+    SSE_CLIENTS.forEach((client) => {
+        try {
+            sendSseMessage(client, message);
+        } catch (error) {
+            console.error('Erro ao enviar delta SSE:', error);
+            SSE_CLIENTS.delete(client);
+        }
+    });
+};
+
+const resolveCacheId = (collection, item) => {
+    if (!item) return null;
+
+    switch (collection) {
+        case CACHE_KEYS.USERS:
+        case CACHE_KEYS.EMPLOYEES:
+            return item.matricula != null ? String(item.matricula) : null;
+        case CACHE_KEYS.MATERIALS:
+            return item.code != null ? String(item.code) : null;
+        case CACHE_KEYS.ROLES:
+        case CACHE_KEYS.LINES:
+        case CACHE_KEYS.MODELS:
+        case CACHE_KEYS.STATIONS:
+            return item.id != null ? String(item.id) : (item.name != null ? String(item.name) : null);
+        case CACHE_KEYS.PERMISSIONS:
+            return `${item.role || ''}::${item.module || ''}::${item.tab || ''}`;
+        default:
+            return item.id != null ? String(item.id) : (item.name != null ? String(item.name) : null);
+    }
+};
+
+const sortCacheItems = (collection, items = []) => {
+    const list = Array.isArray(items) ? [...items] : [];
+
+    switch (collection) {
+        case CACHE_KEYS.LOGS:
+        case CACHE_KEYS.LINE_STOPS:
+        case CACHE_KEYS.MEETINGS:
+        case CACHE_KEYS.SCRAPS:
+            return list.sort((a, b) => safeDateValue(b.sentAt || b.createdAt || b.date) - safeDateValue(a.sentAt || a.createdAt || a.date));
+        case CACHE_KEYS.NOTICES:
+            return list.sort((a, b) => safeDateValue(b.createdAt) - safeDateValue(a.createdAt));
+        case CACHE_KEYS.ROLES:
+        case CACHE_KEYS.LINES:
+        case CACHE_KEYS.MODELS:
+        case CACHE_KEYS.STATIONS:
+            return list.sort((a, b) => String(a.name || '').localeCompare(String(b.name || '')));
+        default:
+            return list;
+    }
+};
+
+const syncRamCollection = (collection, items = []) => {
+    const sortedList = sortCacheItems(collection, items);
+    const byId = new Map();
+
+    sortedList.forEach((item) => {
+        const id = resolveCacheId(collection, item);
+        if (id !== null && id !== undefined) {
+            byId.set(String(id), item);
+        }
+    });
+
+    GLOBAL_RAM_CACHE.set(collection, {
+        list: sortedList,
+        byId,
+        updatedAt: Date.now()
+    });
+
+    if (collection === CACHE_KEYS.SCRAPS) {
+        SCRAP_CACHE = sortedList;
+    }
+
+    return sortedList;
+};
+
+const getRamCollection = (collection) => {
+    return GLOBAL_RAM_CACHE.get(collection)?.list || [];
+};
+
+const getRamItem = (collection, id) => {
+    return GLOBAL_RAM_CACHE.get(collection)?.byId?.get(String(id)) || null;
+};
+
+const upsertRamItems = (collection, incoming = []) => {
+    const items = Array.isArray(incoming) ? incoming : [incoming];
+    const currentItems = getRamCollection(collection);
+    const nextMap = new Map();
+
+    currentItems.forEach((item) => {
+        const id = resolveCacheId(collection, item);
+        if (id !== null && id !== undefined) nextMap.set(String(id), item);
+    });
+
+    items.forEach((item) => {
+        const id = resolveCacheId(collection, item);
+        if (id !== null && id !== undefined) nextMap.set(String(id), item);
+    });
+
+    return syncRamCollection(collection, Array.from(nextMap.values()));
+};
+
+const removeRamItems = (collection, ids = []) => {
+    const removeSet = new Set((Array.isArray(ids) ? ids : [ids]).map((id) => String(id)));
+    const nextItems = getRamCollection(collection).filter((item) => {
+        const itemId = resolveCacheId(collection, item);
+        return itemId === null || !removeSet.has(String(itemId));
+    });
+
+    return syncRamCollection(collection, nextItems);
+};
+
+const formatSafeUser = (user) => ({
+    matricula: user.matricula,
+    name: user.name,
+    role: user.role,
+    shift: user.shift,
+    email: user.email,
+    isAdmin: !!user.isAdmin,
+    status: user.status
+});
+
+const formatChecklistItemRecord = (item, type) => ({
+    id: item.id.toString(),
+    category: item.category,
+    text: item.text,
+    evidence: item.evidence,
+    imageUrl: item.imageUrl,
+    type
+});
+
+const formatLogRecord = (record, type) => {
+    const parsedData = safeJsonParse(record.data || '{}', {});
+    const parsedSnapshot = safeJsonParse(record.itemsSnapshot || '[]', []);
+
+    return {
+        id: record.id.toString(),
+        userId: record.userId,
+        userName: record.userName,
+        userRole: record.userRole,
+        line: record.line,
+        date: record.date,
+        itemsCount: record.itemsCount,
+        ngCount: record.ngCount,
+        observation: record.observation,
+        data: parsedData.answers || parsedData,
+        evidenceData: parsedData.evidence || {},
+        type,
+        maintenanceTarget: record.maintenanceTarget || parsedData.maintenanceTarget,
+        itemsSnapshot: parsedSnapshot
+    };
+};
+
+const formatLineStopRecord = (record) => ({
+    ...record,
+    id: record.id.toString(),
+    type: 'LINE_STOP',
+    data: safeJsonParse(record.data || '{}', {}),
+    itemsCount: 0,
+    ngCount: 0,
+    observation: record.observation || ''
+});
+
+const formatMeetingRecord = (meeting) => ({
+    ...meeting,
+    participants: typeof meeting.participants === 'string'
+        ? safeJsonParse(meeting.participants || '[]', [])
+        : (meeting.participants || [])
+});
+
+const formatPermissionRecord = (permission) => ({
+    role: permission.role,
+    module: permission.module,
+    tab: permission.tab || '',
+    allowed: permission.allowed === 1 || permission.allowed === true
+});
+
+const CACHE_LOADERS = {
+    [CACHE_KEYS.USERS]: async () => {
+        const users = await prisma.user.findMany({
+            select: {
+                matricula: true,
+                name: true,
+                role: true,
+                shift: true,
+                email: true,
+                isAdmin: true,
+                status: true
+            }
+        });
+        return users.map(formatSafeUser);
+    },
+    [CACHE_KEYS.LOGS]: async () => {
+        const [liderLogs, maintLogs] = await Promise.all([
+            prisma.log.findMany({ orderBy: { date: 'desc' } }),
+            prisma.maintenanceLog.findMany({ orderBy: { date: 'desc' } })
+        ]);
+
+        return [
+            ...liderLogs.map((log) => formatLogRecord(log, 'PRODUCTION')),
+            ...maintLogs.map((log) => formatLogRecord(log, 'MAINTENANCE'))
+        ].sort((a, b) => safeDateValue(b.date) - safeDateValue(a.date));
+    },
+    [CACHE_KEYS.CONFIG_ITEMS]: async () => {
+        const [liderItems, maintItems] = await Promise.all([
+            prisma.checklistItem.findMany(),
+            prisma.maintenanceChecklistItem.findMany()
+        ]);
+
+        return [
+            ...liderItems.map((item) => formatChecklistItemRecord(item, 'LEADER')),
+            ...maintItems.map((item) => formatChecklistItemRecord(item, 'MAINTENANCE'))
+        ];
+    },
+    [CACHE_KEYS.LINE_STOPS]: async () => {
+        const stops = await prisma.lineStop.findMany({ orderBy: { date: 'desc' } });
+        return stops.map(formatLineStopRecord);
+    },
+    [CACHE_KEYS.ROLES]: async () => {
+        const roles = await prisma.configRole.findMany();
+        return roles.map((role) => ({ id: role.name, name: role.name }));
+    },
+    [CACHE_KEYS.LINES]: async () => {
+        const lines = await prisma.configLine.findMany();
+        return lines.map((line) => ({ id: line.name, name: line.name }));
+    },
+    [CACHE_KEYS.MODELS]: async () => prisma.configModel.findMany(),
+    [CACHE_KEYS.STATIONS]: async () => prisma.configStation.findMany(),
+    [CACHE_KEYS.PERMISSIONS]: async () => {
+        const perms = await prisma.configPermission.findMany();
+        return perms.map(formatPermissionRecord);
+    },
+    [CACHE_KEYS.NOTICES]: async () => prisma.notice.findMany({
+        where: { expiresAt: { gt: new Date() } },
+        orderBy: { createdAt: 'desc' }
+    }),
+    [CACHE_KEYS.MEETINGS]: async () => {
+        const meetings = await prisma.meeting.findMany({ orderBy: { date: 'desc' } });
+        return meetings.map(formatMeetingRecord);
+    },
+    [CACHE_KEYS.SCRAPS]: async () => prisma.scrapLog.findMany({
+        orderBy: [{ date: 'desc' }, { time: 'desc' }]
+    }),
+    [CACHE_KEYS.MATERIALS]: async () => prisma.material.findMany({
+        orderBy: { model: 'asc' }
+    }),
+    [CACHE_KEYS.EMPLOYEES]: async () => prisma.employee.findMany({
+        select: {
+            matricula: true,
+            fullName: true,
+            shift: true,
+            role: true,
+            sector: true,
+            superiorId: true,
+            idlSt: true,
+            type: true,
+            status: true,
+            gloveSize: true,
+            gloveType: true,
+            gloveExchanges: true
+        }
+    }),
+    [CACHE_KEYS.BOXES]: async () => prisma.scrapBox.findMany({
+        include: { scraps: true },
+        orderBy: { createdAt: 'desc' }
+    }),
+    [CACHE_KEYS.WORKSTATIONS]: async () => prisma.workstation.findMany({
+        include: { productionModel: true }
+    }),
+    [CACHE_KEYS.PRODUCTION_MODELS]: async () => prisma.productionModel.findMany(),
+    [CACHE_KEYS.LAYOUTS]: async () => prisma.layout.findMany({
+        include: {
+            employee: {
+                select: {
+                    matricula: true,
+                    fullName: true,
+                    role: true,
+                    shift: true,
+                    sector: true
+                }
+            }
+        },
+        orderBy: { ordemPosto: 'asc' }
+    })
+};
+
+const refreshRamCollection = async (collection) => {
+    const loader = CACHE_LOADERS[collection];
+    if (!loader) return [];
+    const items = await loader();
+    return syncRamCollection(collection, items);
+};
+
+const ensureRamCollection = async (collection) => {
+    if (GLOBAL_RAM_CACHE.has(collection)) {
+        return getRamCollection(collection);
+    }
+    return refreshRamCollection(collection);
+};
+
+const warmRamCache = async () => {
+    console.log('🔄 Carregando coleções para o cache global em RAM...');
+    const cacheKeys = Object.values(CACHE_KEYS);
+    const results = await Promise.allSettled(cacheKeys.map((cacheKey) => refreshRamCollection(cacheKey)));
+    const loaded = results.filter((result) => result.status === 'fulfilled').length;
+    console.log(`✅ RAM Cache aquecido: ${loaded}/${cacheKeys.length} coleções prontas.`);
+    return GLOBAL_RAM_CACHE;
+};
+
+const loadScrapCache = async () => {
+    console.log('🔄 Recarregando cache de scraps na RAM...');
+    try {
+        const scraps = await refreshRamCollection(CACHE_KEYS.SCRAPS);
+        console.log(`✅ Cache de scraps carregado: ${scraps.length} registros.`);
+        return scraps;
+    } catch (e) {
+        console.error('❌ Erro ao carregar cache de scraps:', e);
+        SCRAP_CACHE = [];
+        return SCRAP_CACHE;
     }
 };
 
 const PORT = 3000;
 const SALT_ROUNDS = 10;
-const apiCompression = compression({ threshold: 0 });
+const apiCompression = compression({
+    threshold: 0,
+    filter: (req, res) => {
+        if (req.path === '/sync-stream') return false;
+        return compression.filter(req, res);
+    }
+});
 
 // Middleware
 app.use('/api', apiCompression); // Garante compressão mesmo para payloads JSON pequenos nas rotas de API.
 app.use(cors());
 app.use(bodyParser.json({ limit: '50mb' }));
 app.use(bodyParser.urlencoded({ limit: '50mb', extended: true }));
+
+const sseHeartbeat = setInterval(() => {
+    SSE_CLIENTS.forEach((client) => {
+        try {
+            client.write(': ping\n\n');
+        } catch (error) {
+            SSE_CLIENTS.delete(client);
+        }
+    });
+}, 25000);
+if (typeof sseHeartbeat.unref === 'function') {
+    sseHeartbeat.unref();
+}
+
+app.get('/api/sync-stream', (req, res) => {
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache, no-transform');
+    res.setHeader('Connection', 'keep-alive');
+    res.setHeader('X-Accel-Buffering', 'no');
+    if (typeof res.flushHeaders === 'function') {
+        res.flushHeaders();
+    }
+
+    SSE_CLIENTS.add(res);
+    res.write('retry: 3000\n\n');
+    sendSseMessage(res, { collection: 'server', action: 'connected', timestamp: Date.now() });
+
+    req.on('close', () => {
+        SSE_CLIENTS.delete(res);
+        res.end();
+    });
+});
 
 // --- ROTAS DE USUÁRIOS ---
 
@@ -108,7 +500,7 @@ app.post('/api/register', async (req, res) => {
         if (existing) return res.status(400).json({ error: "Erro: Matrícula já cadastrada no sistema (Ativa ou Inativa)." });
 
         const hash = await bcrypt.hash(password, SALT_ROUNDS);
-        await prisma.user.create({
+        const createdUser = await prisma.user.create({
             data: {
                 matricula: String(matricula),
                 name,
@@ -117,8 +509,22 @@ app.post('/api/register', async (req, res) => {
                 email,
                 password: hash,
                 isAdmin: false
+            },
+            select: {
+                matricula: true,
+                name: true,
+                role: true,
+                shift: true,
+                email: true,
+                isAdmin: true,
+                status: true
             }
         });
+
+        const safeUser = formatSafeUser(createdUser);
+        upsertRamItems(CACHE_KEYS.USERS, [safeUser]);
+        broadcastSyncDelta(CACHE_KEYS.USERS, 'upsert', { items: [safeUser] });
+
         res.json({ message: "Criado" });
     } catch (e) {
         console.error("Register Error:", e);
@@ -169,21 +575,9 @@ app.put('/api/users', async (req, res) => {
             data.password = await bcrypt.hash(password, SALT_ROUNDS);
         }
 
-        await prisma.user.update({
+        const updatedUser = await prisma.user.update({
             where: { matricula: String(target) },
-            data
-        });
-
-        res.json({ message: "Atualizado" });
-    } catch (e) {
-        console.error("Update User Error:", e);
-        res.status(500).json({ error: e.message });
-    }
-});
-
-app.get('/api/users', async (req, res) => {
-    try {
-        const users = await prisma.user.findMany({
+            data,
             select: {
                 matricula: true,
                 name: true,
@@ -194,7 +588,21 @@ app.get('/api/users', async (req, res) => {
                 status: true
             }
         });
-        const safeUsers = users.map(u => ({ ...u, isAdmin: !!u.isAdmin }));
+
+        const safeUser = formatSafeUser(updatedUser);
+        upsertRamItems(CACHE_KEYS.USERS, [safeUser]);
+        broadcastSyncDelta(CACHE_KEYS.USERS, 'upsert', { items: [safeUser] });
+
+        res.json({ message: "Atualizado" });
+    } catch (e) {
+        console.error("Update User Error:", e);
+        res.status(500).json({ error: e.message });
+    }
+});
+
+app.get('/api/users', async (req, res) => {
+    try {
+        const safeUsers = await ensureRamCollection(CACHE_KEYS.USERS);
         res.json(safeUsers);
     } catch (e) {
         res.status(500).json({ error: "Erro interno ao listar usuários" });
@@ -203,13 +611,9 @@ app.get('/api/users', async (req, res) => {
 
 app.get('/api/users/matricula/:matricula', async (req, res) => {
     try {
-        const user = await prisma.user.findUnique({
-            where: { matricula: String(req.params.matricula) }
-        });
-        if (!user) return res.status(404).json({ error: "Usuário não encontrado." });
-
-        const safeUser = { ...user };
-        delete safeUser.password;
+        await ensureRamCollection(CACHE_KEYS.USERS);
+        const safeUser = getRamItem(CACHE_KEYS.USERS, req.params.matricula);
+        if (!safeUser) return res.status(404).json({ error: "Usuário não encontrado." });
 
         res.json(safeUser);
     } catch (e) {
@@ -222,6 +626,8 @@ app.delete('/api/users/:id', async (req, res) => {
         await prisma.user.delete({
             where: { matricula: req.params.id }
         });
+        removeRamItems(CACHE_KEYS.USERS, req.params.id);
+        broadcastSyncDelta(CACHE_KEYS.USERS, 'remove', { ids: [String(req.params.id)] });
         res.json({ message: "Deletado" });
     } catch (e) {
         res.status(500).json({ error: e.message });
@@ -270,47 +676,8 @@ app.post('/api/admin/reset-password', async (req, res) => {
 app.get('/api/logs', async (req, res) => {
     try {
         const limit = Math.min(parseInt(req.query.limit, 10) || 100, 100);
-        const [liderLogs, maintLogs] = await Promise.all([
-            prisma.log.findMany({
-                orderBy: { date: 'desc' },
-                take: limit
-            }),
-            prisma.maintenanceLog.findMany({
-                orderBy: { date: 'desc' },
-                take: limit
-            })
-        ]);
-
-        const formatLog = (r, type) => {
-            let parsedData = {};
-            let parsedSnapshot = [];
-            try { parsedData = JSON.parse(r.data || '{}'); } catch (e) { }
-            try { parsedSnapshot = JSON.parse(r.itemsSnapshot || '[]'); } catch (e) { }
-
-            return {
-                id: r.id.toString(),
-                userId: r.userId,
-                userName: r.userName,
-                userRole: r.userRole,
-                line: r.line,
-                date: r.date,
-                itemsCount: r.itemsCount,
-                ngCount: r.ngCount,
-                observation: r.observation,
-                data: parsedData.answers || parsedData,
-                evidenceData: parsedData.evidence || {},
-                type: type,
-                maintenanceTarget: r.maintenanceTarget || parsedData.maintenanceTarget,
-                itemsSnapshot: parsedSnapshot
-            };
-        };
-
-        const allLogs = [
-            ...liderLogs.map(l => formatLog(l, 'PRODUCTION')),
-            ...maintLogs.map(l => formatLog(l, 'MAINTENANCE'))
-        ].sort((a, b) => new Date(b.date) - new Date(a.date));
-
-        res.json(allLogs);
+        const allLogs = await ensureRamCollection(CACHE_KEYS.LOGS);
+        res.json(allLogs.slice(0, limit));
     } catch (e) {
         console.error("Get Logs Error:", e);
         res.status(500).json({ error: e.message });
@@ -325,8 +692,10 @@ app.post('/api/logs', async (req, res) => {
     const snapshotStr = itemsSnapshot ? JSON.stringify(itemsSnapshot) : '[]';
 
     try {
+        let createdRecord;
+
         if (type === 'MAINTENANCE') {
-            await prisma.maintenanceLog.create({
+            createdRecord = await prisma.maintenanceLog.create({
                 data: {
                     userId, userName, userRole, line, date,
                     itemsCount, ngCount, observation,
@@ -336,7 +705,7 @@ app.post('/api/logs', async (req, res) => {
                 }
             });
         } else {
-            await prisma.log.create({
+            createdRecord = await prisma.log.create({
                 data: {
                     userId, userName, userRole, line, date,
                     itemsCount, ngCount, observation,
@@ -345,6 +714,11 @@ app.post('/api/logs', async (req, res) => {
                 }
             });
         }
+
+        const formattedLog = formatLogRecord(createdRecord, type === 'MAINTENANCE' ? 'MAINTENANCE' : 'PRODUCTION');
+        upsertRamItems(CACHE_KEYS.LOGS, [formattedLog]);
+        broadcastSyncDelta(CACHE_KEYS.LOGS, 'upsert', { items: [formattedLog] });
+
         res.json({ message: "Salvo" });
     } catch (e) {
         console.error("Save Log Error:", e);
@@ -356,24 +730,8 @@ app.post('/api/logs', async (req, res) => {
 
 app.get('/api/config/items', async (req, res) => {
     try {
-        const [liderItems, maintItems] = await Promise.all([
-            prisma.checklistItem.findMany(),
-            prisma.maintenanceChecklistItem.findMany()
-        ]);
-
-        const mapItem = (item, type) => ({
-            id: item.id.toString(),
-            category: item.category,
-            text: item.text,
-            evidence: item.evidence,
-            imageUrl: item.imageUrl,
-            type
-        });
-
-        res.json([
-            ...liderItems.map(i => mapItem(i, 'LEADER')),
-            ...maintItems.map(i => mapItem(i, 'MAINTENANCE'))
-        ]);
+        const items = await ensureRamCollection(CACHE_KEYS.CONFIG_ITEMS);
+        res.json(items);
     } catch (e) {
         res.status(500).json({ error: e.message });
     }
@@ -405,6 +763,9 @@ app.post('/api/config/items', async (req, res) => {
                 }
             }
         });
+
+        const cachedItems = await refreshRamCollection(CACHE_KEYS.CONFIG_ITEMS);
+        broadcastSyncDelta(CACHE_KEYS.CONFIG_ITEMS, 'replace', { items: cachedItems });
         res.json({ message: "Salvo" });
     } catch (e) {
         console.error("Save Config Items Error:", e);
@@ -417,26 +778,8 @@ app.post('/api/config/items', async (req, res) => {
 app.get('/api/line-stops', async (req, res) => {
     try {
         const limit = Math.min(parseInt(req.query.limit, 10) || 100, 100);
-        const stops = await prisma.lineStop.findMany({
-            orderBy: { date: 'desc' },
-            take: limit
-        });
-
-        res.json(stops.map(r => {
-            let parsed = {};
-            try { parsed = JSON.parse(r.data || '{}'); } catch (e) { parsed = {}; }
-
-            return {
-                ...r,
-                // Ensure ID is string for frontend compatibility
-                id: r.id.toString(),
-                type: 'LINE_STOP',
-                data: parsed,
-                itemsCount: 0,
-                ngCount: 0,
-                observation: ''
-            };
-        }));
+        const stops = await ensureRamCollection(CACHE_KEYS.LINE_STOPS);
+        res.json(stops.slice(0, limit));
     } catch (e) {
         res.status(500).json({ error: e.message });
     }
@@ -467,7 +810,7 @@ app.post('/api/line-stops', async (req, res) => {
         if (id) {
             const existing = await prisma.lineStop.findUnique({ where: { id: String(id) } });
             if (existing) {
-                await prisma.lineStop.update({
+                const updatedStop = await prisma.lineStop.update({
                     where: { id: String(id) },
                     data: {
                         line,
@@ -476,12 +819,16 @@ app.post('/api/line-stops', async (req, res) => {
                         signedDocUrl: signedDocUrl || null
                     }
                 });
+
+                const formattedStop = formatLineStopRecord(updatedStop);
+                upsertRamItems(CACHE_KEYS.LINE_STOPS, [formattedStop]);
+                broadcastSyncDelta(CACHE_KEYS.LINE_STOPS, 'upsert', { items: [formattedStop] });
                 return res.json({ message: "Salvo com sucesso" });
             }
         }
 
         // Create new
-        await prisma.lineStop.create({
+        const createdStop = await prisma.lineStop.create({
             data: {
                 // Let autoincrement handle ID unless we need to force it.
                 // Legacy code forced ID. For Prisma, better to let DB handle it.
@@ -492,6 +839,10 @@ app.post('/api/line-stops', async (req, res) => {
                 signedDocUrl: signedDocUrl || null
             }
         });
+
+        const formattedStop = formatLineStopRecord(createdStop);
+        upsertRamItems(CACHE_KEYS.LINE_STOPS, [formattedStop]);
+        broadcastSyncDelta(CACHE_KEYS.LINE_STOPS, 'upsert', { items: [formattedStop] });
 
         res.json({ message: "Salvo com sucesso" });
     } catch (e) {
@@ -505,9 +856,8 @@ app.post('/api/line-stops', async (req, res) => {
 // Roles
 app.get('/api/config/roles', async (req, res) => {
     try {
-        const roles = await prisma.configRole.findMany();
-        // Return name as ID since that's what the schema uses
-        res.json(roles.map(r => ({ id: r.name, name: r.name })));
+        const roles = await ensureRamCollection(CACHE_KEYS.ROLES);
+        res.json(roles);
     } catch (e) {
         res.status(500).json({ error: e.message });
     }
@@ -518,6 +868,9 @@ app.post('/api/config/roles', async (req, res) => {
     if (!name) return res.status(400).json({ error: "Nome obrigatório" });
     try {
         await prisma.configRole.create({ data: { name } });
+        const roleItem = { id: name, name };
+        upsertRamItems(CACHE_KEYS.ROLES, [roleItem]);
+        broadcastSyncDelta(CACHE_KEYS.ROLES, 'upsert', { items: [roleItem] });
         res.json({ message: "Cargo salvo" });
     } catch (e) {
         // Unique constraint violation?
@@ -531,6 +884,8 @@ app.delete('/api/config/roles/:id', async (req, res) => {
         await prisma.configRole.delete({
             where: { name: req.params.id }
         });
+        removeRamItems(CACHE_KEYS.ROLES, req.params.id);
+        broadcastSyncDelta(CACHE_KEYS.ROLES, 'remove', { ids: [String(req.params.id)] });
         res.json({ message: "Cargo deletado" });
     } catch (e) {
         res.status(500).json({ error: "Erro ao deletar: " + e.message });
@@ -540,9 +895,8 @@ app.delete('/api/config/roles/:id', async (req, res) => {
 // Lines
 app.get('/api/config/lines', async (req, res) => {
     try {
-        const lines = await prisma.configLine.findMany();
-        // Return name as ID since that's what the schema uses
-        res.json(lines.map(l => ({ id: l.name, name: l.name })));
+        const lines = await ensureRamCollection(CACHE_KEYS.LINES);
+        res.json(lines);
     } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -550,6 +904,9 @@ app.post('/api/config/lines', async (req, res) => {
     const { name } = req.body;
     try {
         await prisma.configLine.create({ data: { name } });
+        const lineItem = { id: name, name };
+        upsertRamItems(CACHE_KEYS.LINES, [lineItem]);
+        broadcastSyncDelta(CACHE_KEYS.LINES, 'upsert', { items: [lineItem] });
         res.json({ message: "Linha salva" });
     } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -559,6 +916,8 @@ app.delete('/api/config/lines/:id', async (req, res) => {
         await prisma.configLine.delete({
             where: { name: req.params.id }
         });
+        removeRamItems(CACHE_KEYS.LINES, req.params.id);
+        broadcastSyncDelta(CACHE_KEYS.LINES, 'remove', { ids: [String(req.params.id)] });
         res.json({ message: "Linha deletada" });
     } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -596,7 +955,10 @@ const createConfigRoutes = (modelDelegate, pathName) => {
 };
 
 // We need to define routes manually to use the string key for model
-app.get('/api/config/models', async (req, res) => res.json(await prisma.configModel.findMany()));
+app.get('/api/config/models', async (req, res) => {
+    const models = await ensureRamCollection(CACHE_KEYS.MODELS);
+    res.json(models);
+});
 // POST: salva lista completa e calcula unifiedCode automaticamente
 app.post('/api/config/models', async (req, res) => {
     try {
@@ -611,6 +973,8 @@ app.post('/api/config/models', async (req, res) => {
                 await tx.configModel.create({ data: { name, sku, unifiedCode } });
             }
         });
+        const models = await refreshRamCollection(CACHE_KEYS.MODELS);
+        broadcastSyncDelta(CACHE_KEYS.MODELS, 'replace', { items: models });
         res.json({ message: "Salvo" });
     } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -618,7 +982,7 @@ app.post('/api/config/models', async (req, res) => {
 // GET: retorna modelos agrupados — um por unifiedCode distinto (para selects de Layout)
 app.get('/api/config/models/unified', async (req, res) => {
     try {
-        const all = await prisma.configModel.findMany();
+        const all = await ensureRamCollection(CACHE_KEYS.MODELS);
         const seen = new Set();
         const unified = [];
         for (const m of all) {
@@ -632,13 +996,18 @@ app.get('/api/config/models/unified', async (req, res) => {
     } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-app.get('/api/config/stations', async (req, res) => res.json(await prisma.configStation.findMany()));
+app.get('/api/config/stations', async (req, res) => {
+    const stations = await ensureRamCollection(CACHE_KEYS.STATIONS);
+    res.json(stations);
+});
 app.post('/api/config/stations', async (req, res) => {
     try {
         await prisma.$transaction(async tx => {
             await tx.configStation.deleteMany();
             for (const i of req.body.items) await tx.configStation.create({ data: { name: i } });
         });
+        const stations = await refreshRamCollection(CACHE_KEYS.STATIONS);
+        broadcastSyncDelta(CACHE_KEYS.STATIONS, 'replace', { items: stations });
         res.json({ message: "Salvo" });
     } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -646,13 +1015,8 @@ app.post('/api/config/stations', async (req, res) => {
 
 app.get('/api/config/permissions', async (req, res) => {
     try {
-        const perms = await prisma.configPermission.findMany();
-        res.json(perms.map(p => ({
-            role: p.role,
-            module: p.module,
-            tab: p.tab || '',
-            allowed: p.allowed === 1
-        })));
+        const perms = await ensureRamCollection(CACHE_KEYS.PERMISSIONS);
+        res.json(perms);
     } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -672,6 +1036,8 @@ app.post('/api/config/permissions', async (req, res) => {
                 });
             }
         });
+        const perms = await refreshRamCollection(CACHE_KEYS.PERMISSIONS);
+        broadcastSyncDelta(CACHE_KEYS.PERMISSIONS, 'replace', { items: perms });
         res.json({ message: "Salvo" });
     } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -698,6 +1064,9 @@ app.post('/api/notices', async (req, res) => {
             }
         });
 
+        upsertRamItems(CACHE_KEYS.NOTICES, [notice]);
+        broadcastSyncDelta(CACHE_KEYS.NOTICES, 'upsert', { items: [notice] });
+
         res.json(notice);
     } catch (e) {
         console.error('Create Notice Error:', e);
@@ -707,13 +1076,7 @@ app.post('/api/notices', async (req, res) => {
 
 app.get('/api/notices', async (req, res) => {
     try {
-        const notices = await prisma.notice.findMany({
-            where: {
-                expiresAt: { gt: new Date() }
-            },
-            orderBy: { createdAt: 'desc' }
-        });
-
+        const notices = await ensureRamCollection(CACHE_KEYS.NOTICES);
         res.json(notices);
     } catch (e) {
         console.error('Get Notices Error:', e);
@@ -726,6 +1089,9 @@ app.delete('/api/notices/:id', async (req, res) => {
         await prisma.notice.delete({
             where: { id: parseInt(req.params.id) }
         });
+
+        removeRamItems(CACHE_KEYS.NOTICES, req.params.id);
+        broadcastSyncDelta(CACHE_KEYS.NOTICES, 'remove', { ids: [String(req.params.id)] });
 
         res.json({ message: 'Comunicado excluido.' });
     } catch (e) {
@@ -740,20 +1106,8 @@ app.get('/api/meetings', async (req, res) => {
     try {
         const limit = Math.min(parseInt(req.query.limit, 10) || 100, 100);
         const offset = Math.max(parseInt(req.query.skip, 10) || 0, 0);
-        const rawMeetings = await prisma.meeting.findMany({
-            orderBy: { date: 'desc' },
-            take: limit,
-            skip: offset
-        });
-        // MAP: Parse participants JSON string to Array
-        const formattedMeetings = rawMeetings.map(m => ({
-            ...m,
-            participants: typeof m.participants === 'string'
-                ? JSON.parse(m.participants || "[]")
-                : (m.participants || [])
-        }));
-
-        res.json(formattedMeetings);
+        const meetings = await ensureRamCollection(CACHE_KEYS.MEETINGS);
+        res.json(meetings.slice(offset, offset + limit));
     } catch (error) {
         console.error("❌ ERRO CRÍTICO EM MEETINGS:", error);
         res.status(500).json({ error: "Erro interno ao buscar reuniões." });
@@ -763,7 +1117,7 @@ app.get('/api/meetings', async (req, res) => {
 app.post('/api/meetings', async (req, res) => {
     const { id, title, date, startTime, endTime, photoUrl, participants, topics, createdBy } = req.body;
     try {
-        await prisma.meeting.create({
+        const createdMeeting = await prisma.meeting.create({
             data: {
                 id,
                 title: title || '',
@@ -776,6 +1130,11 @@ app.post('/api/meetings', async (req, res) => {
                 createdBy
             }
         });
+
+        const formattedMeeting = formatMeetingRecord(createdMeeting);
+        upsertRamItems(CACHE_KEYS.MEETINGS, [formattedMeeting]);
+        broadcastSyncDelta(CACHE_KEYS.MEETINGS, 'upsert', { items: [formattedMeeting] });
+
         res.json({ message: "Ata Salva" });
     } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -855,10 +1214,7 @@ app.post('/api/preparation-logs', async (req, res) => {
 // --- SCRAP BOXES ---
 app.get('/api/boxes', async (req, res) => {
     try {
-        const boxes = await prisma.scrapBox.findMany({
-            include: { scraps: true },
-            orderBy: { createdAt: 'desc' }
-        });
+        const boxes = await ensureRamCollection(CACHE_KEYS.BOXES);
         res.json(boxes);
     } catch (e) {
         res.status(500).json({ error: e.message });
@@ -872,6 +1228,8 @@ app.post('/api/boxes', async (req, res) => {
             data: { type, plant, status: 'OPEN' },
             include: { scraps: true }
         });
+        upsertRamItems(CACHE_KEYS.BOXES, [newBox]);
+        broadcastSyncDelta(CACHE_KEYS.BOXES, 'upsert', { items: [newBox] });
         res.json(newBox);
     } catch (e) {
         res.status(500).json({ error: e.message });
@@ -905,15 +1263,16 @@ app.put('/api/boxes/:id', async (req, res) => {
                 where: { boxId: parseInt(id) },
                 data: { nfNumber, situation: 'SENT', sentAt, sentBy: userId }
             });
-            if (SCRAP_CACHE) {
-                SCRAP_CACHE = SCRAP_CACHE.map(s => {
-                    if (s.boxId === parseInt(id)) {
-                        return { ...s, nfNumber, situation: 'SENT', sentAt, sentBy: userId };
-                    }
-                    return s;
-                });
+            await refreshRamCollection(CACHE_KEYS.SCRAPS);
+            const changedScraps = getRamCollection(CACHE_KEYS.SCRAPS).filter((scrap) => scrap.boxId === parseInt(id));
+            if (changedScraps.length > 0) {
+                broadcastSyncDelta(CACHE_KEYS.SCRAPS, 'upsert', { items: changedScraps });
             }
         }
+
+        await refreshRamCollection(CACHE_KEYS.BOXES);
+        const cachedBox = getRamItem(CACHE_KEYS.BOXES, updatedBox.id);
+        broadcastSyncDelta(CACHE_KEYS.BOXES, 'upsert', { items: [cachedBox || updatedBox] });
 
         res.json(updatedBox);
     } catch (e) {
@@ -978,11 +1337,9 @@ app.post('/api/boxes/:id/scraps', async (req, res) => {
             data: { boxId: parseInt(id) }
         });
 
-        // Update Cache Manually (Write-Through)
-        if (SCRAP_CACHE) {
-            const index = SCRAP_CACHE.findIndex(s => s.id === scrap.id);
-            if (index !== -1) SCRAP_CACHE[index] = updatedScrap;
-        }
+        upsertRamItems(CACHE_KEYS.SCRAPS, [updatedScrap]);
+        await refreshRamCollection(CACHE_KEYS.BOXES);
+        broadcastSyncDelta(CACHE_KEYS.SCRAPS, 'upsert', { items: [updatedScrap] });
 
         res.json({ message: "Scrap vinculado com sucesso", scrap: updatedScrap });
     } catch (e) {
@@ -1003,11 +1360,9 @@ app.delete('/api/boxes/:boxId/scraps/:scrapId', async (req, res) => {
             data: { boxId: null }
         });
 
-        // Atualiza cache
-        if (SCRAP_CACHE) {
-            const idx = SCRAP_CACHE.findIndex(s => s.id === updated.id);
-            if (idx !== -1) SCRAP_CACHE[idx] = updated;
-        }
+        upsertRamItems(CACHE_KEYS.SCRAPS, [updated]);
+        await refreshRamCollection(CACHE_KEYS.BOXES);
+        broadcastSyncDelta(CACHE_KEYS.SCRAPS, 'upsert', { items: [updated] });
 
         res.json({ message: "Scrap desvinculado com sucesso.", scrap: updated });
     } catch (e) {
@@ -1020,10 +1375,8 @@ app.delete('/api/boxes/:boxId/scraps/:scrapId', async (req, res) => {
 
 app.get('/api/scraps', async (req, res) => {
     try {
-        if (!SCRAP_CACHE) {
-            await loadScrapCache();
-        }
-        res.json(SCRAP_CACHE);
+        const scraps = await ensureRamCollection(CACHE_KEYS.SCRAPS);
+        res.json(scraps);
     } catch (e) {
         res.status(500).json({ error: e.message });
     }
@@ -1117,10 +1470,8 @@ app.post('/api/scraps', async (req, res) => {
             }
         });
 
-        // Write-Through Cache
-        if (SCRAP_CACHE) {
-            SCRAP_CACHE.unshift(newScrap);
-        }
+        upsertRamItems(CACHE_KEYS.SCRAPS, [newScrap]);
+        broadcastSyncDelta(CACHE_KEYS.SCRAPS, 'upsert', { items: [newScrap] });
 
         res.json({ message: "Scrap salvo" });
     } catch (e) {
@@ -1197,10 +1548,8 @@ app.post('/api/scraps/batch-create', async (req, res) => {
             }
         });
 
-        // Write-Through Cache
-        if (SCRAP_CACHE) {
-            created.forEach(ns => SCRAP_CACHE.unshift(ns));
-        }
+        upsertRamItems(CACHE_KEYS.SCRAPS, created);
+        broadcastSyncDelta(CACHE_KEYS.SCRAPS, 'upsert', { items: created });
 
         res.json({ message: `${created.length} scraps salvos com sucesso.` });
     } catch (e) {
@@ -1272,13 +1621,8 @@ app.put('/api/scraps/:id', async (req, res) => {
             data: dataToUpdate
         });
 
-        // Update Cache Manually (Write-Through)
-        if (SCRAP_CACHE) {
-            const index = SCRAP_CACHE.findIndex(s => s.id === numericId);
-            if (index !== -1) {
-                SCRAP_CACHE[index] = updatedScrap;
-            }
-        }
+        upsertRamItems(CACHE_KEYS.SCRAPS, [updatedScrap]);
+        broadcastSyncDelta(CACHE_KEYS.SCRAPS, 'upsert', { items: [updatedScrap] });
 
         res.json({ message: "Scrap atualizado" });
     } catch (e) {
@@ -1297,10 +1641,8 @@ app.delete('/api/scraps/:id', async (req, res) => {
             where: { id: numericId }
         });
 
-        // Remove from Cache
-        if (SCRAP_CACHE) {
-            SCRAP_CACHE = SCRAP_CACHE.filter(s => s.id !== numericId);
-        }
+        removeRamItems(CACHE_KEYS.SCRAPS, numericId);
+        broadcastSyncDelta(CACHE_KEYS.SCRAPS, 'remove', { ids: [String(numericId)] });
 
         res.json({ message: "Scrap deletado" });
     } catch (e) {
@@ -1337,14 +1679,10 @@ app.post('/api/scraps/batch-process', async (req, res) => {
             data: updateData
         });
 
-        // Update Cache
-        if (SCRAP_CACHE) {
-            SCRAP_CACHE = SCRAP_CACHE.map(s => {
-                if (scrapIds.includes(s.id)) {
-                    return { ...s, ...updateData, sentAt: updateData.sentAt };
-                }
-                return s;
-            });
+        await refreshRamCollection(CACHE_KEYS.SCRAPS);
+        const changedScraps = getRamCollection(CACHE_KEYS.SCRAPS).filter((scrap) => scrapIds.includes(scrap.id));
+        if (changedScraps.length > 0) {
+            broadcastSyncDelta(CACHE_KEYS.SCRAPS, 'upsert', { items: changedScraps });
         }
 
         res.json({ message: `${result.count} registros atualizados com a NF ${nfNumber}` });
@@ -1358,9 +1696,7 @@ app.post('/api/scraps/batch-process', async (req, res) => {
 
 app.get('/api/materials', async (req, res) => {
     try {
-        const materials = await prisma.material.findMany({
-            orderBy: { model: 'asc' }
-        });
+        const materials = await ensureRamCollection(CACHE_KEYS.MATERIALS);
         res.json(materials);
     } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -1395,6 +1731,8 @@ app.post('/api/materials/bulk', async (req, res) => {
                 });
             }
         });
+        const cachedMaterials = await refreshRamCollection(CACHE_KEYS.MATERIALS);
+        broadcastSyncDelta(CACHE_KEYS.MATERIALS, 'replace', { items: cachedMaterials });
         res.json({ success: true, count: materials.length });
     } catch (e) {
         console.error("Bulk Material Error:", e);
@@ -1409,6 +1747,8 @@ app.delete('/api/materials/:code', async (req, res) => {
     const { code } = req.params;
     try {
         await prisma.material.delete({ where: { code: String(code) } });
+        removeRamItems(CACHE_KEYS.MATERIALS, code);
+        broadcastSyncDelta(CACHE_KEYS.MATERIALS, 'remove', { ids: [String(code)] });
         res.json({ success: true });
     } catch (e) {
         console.error("Material Delete Error:", e);
@@ -1426,6 +1766,8 @@ app.post('/api/materials/bulk-delete', async (req, res) => {
         const result = await prisma.material.deleteMany({
             where: { code: { in: codes.map(c => String(c)) } }
         });
+        removeRamItems(CACHE_KEYS.MATERIALS, codes.map((code) => String(code)));
+        broadcastSyncDelta(CACHE_KEYS.MATERIALS, 'remove', { ids: codes.map((code) => String(code)) });
         res.json({ success: true, deleted: result.count });
     } catch (e) {
         console.error("Bulk Material Delete Error:", e);
@@ -1487,26 +1829,11 @@ function getLocalIp() {
 app.get('/api/employees', async (req, res) => {
     try {
         const { superiorId } = req.query;
-        const whereClause = superiorId ? { superiorId: String(superiorId) } : {};
-
-        const employees = await prisma.employee.findMany({
-            where: whereClause,
-            select: {
-                matricula: true,
-                fullName: true,
-                shift: true,
-                role: true,
-                sector: true,
-                superiorId: true,
-                idlSt: true,
-                type: true,
-                status: true,
-                gloveSize: true,
-                gloveType: true,
-                gloveExchanges: true
-            }
-        });
-        res.json(employees);
+        const employees = await ensureRamCollection(CACHE_KEYS.EMPLOYEES);
+        const filteredEmployees = superiorId
+            ? employees.filter((employee) => employee.superiorId === String(superiorId))
+            : employees;
+        res.json(filteredEmployees);
     } catch (e) {
         res.status(500).json({ error: "Erro interno no servidor ao buscar colaboradores" });
     }
@@ -1526,6 +1853,8 @@ app.post('/api/employees', async (req, res) => {
             update: { photo, fullName, shift, role, sector, superiorId, idlSt, type, status, address, addressNum, neighborhood, whatsapp, gloveSize, gloveType, gloveExchanges: gloveExchanges ? Number(gloveExchanges) : null },
             create: { matricula: String(matricula), photo, fullName, shift, role, sector, superiorId, idlSt, type, status: status || 'ATIVO', address, addressNum, neighborhood, whatsapp, gloveSize, gloveType, gloveExchanges: gloveExchanges ? Number(gloveExchanges) : null }
         });
+        await refreshRamCollection(CACHE_KEYS.EMPLOYEES);
+        broadcastSyncDelta(CACHE_KEYS.EMPLOYEES, 'upsert', { items: [getRamItem(CACHE_KEYS.EMPLOYEES, employee.matricula) || employee] });
         res.json({ message: "Salvo com sucesso", employee });
     } catch (e) {
         console.error("Save Employee Error:", e);
@@ -1595,6 +1924,13 @@ app.put('/api/employees/:matricula/deactivate', async (req, res) => {
             return res.status(404).json({ error: "Colaborador não localizado em nenhuma das bases (Employees/Users)." });
         }
 
+        await Promise.all([
+            refreshRamCollection(CACHE_KEYS.EMPLOYEES),
+            refreshRamCollection(CACHE_KEYS.USERS)
+        ]);
+        broadcastSyncDelta(CACHE_KEYS.EMPLOYEES, 'replace', { items: getRamCollection(CACHE_KEYS.EMPLOYEES) });
+        broadcastSyncDelta(CACHE_KEYS.USERS, 'replace', { items: getRamCollection(CACHE_KEYS.USERS) });
+
         res.json({ message: "Desligado com sucesso" });
     } catch (e) {
         console.error("Deactivate Error:", e);
@@ -1620,6 +1956,8 @@ app.put('/api/employees/:matricula/transfer', async (req, res) => {
             where: { matricula: String(req.params.matricula) },
             data: { superiorId, previousLeaders: JSON.stringify(history) }
         });
+        await refreshRamCollection(CACHE_KEYS.EMPLOYEES);
+        broadcastSyncDelta(CACHE_KEYS.EMPLOYEES, 'upsert', { items: [getRamItem(CACHE_KEYS.EMPLOYEES, updated.matricula) || updated] });
         res.json({ message: "Transferência realizada", employee: updated });
     } catch (e) {
         res.status(500).json({ error: e.message });
@@ -1640,9 +1978,7 @@ app.post('/api/attendance', async (req, res) => {
 
 app.get('/api/workstations', async (req, res) => {
     try {
-        const workstations = await prisma.workstation.findMany({
-            include: { productionModel: true }
-        });
+        const workstations = await ensureRamCollection(CACHE_KEYS.WORKSTATIONS);
         res.json(workstations);
     } catch (e) {
         res.status(500).json({ error: e.message });
@@ -1651,7 +1987,7 @@ app.get('/api/workstations', async (req, res) => {
 
 app.get('/api/production-models', async (req, res) => {
     try {
-        const models = await prisma.productionModel.findMany();
+        const models = await ensureRamCollection(CACHE_KEYS.PRODUCTION_MODELS);
         res.json(models);
     } catch (e) {
         res.status(500).json({ error: e.message });
@@ -1664,6 +2000,8 @@ app.post('/api/production-models', async (req, res) => {
         const pModel = await prisma.productionModel.create({
             data: { name }
         });
+        upsertRamItems(CACHE_KEYS.PRODUCTION_MODELS, [pModel]);
+        broadcastSyncDelta(CACHE_KEYS.PRODUCTION_MODELS, 'upsert', { items: [pModel] });
         res.json({ message: "Modelo criado", model: pModel });
     } catch (e) {
         res.status(500).json({ error: e.message });
@@ -1680,8 +2018,11 @@ app.post('/api/workstations', async (req, res) => {
                 order: order || null,
                 peopleNeeded: parseInt(peopleNeeded),
                 productionModelId: productionModelId ? parseInt(productionModelId) : null
-            }
+            },
+            include: { productionModel: true }
         });
+        upsertRamItems(CACHE_KEYS.WORKSTATIONS, [workstation]);
+        broadcastSyncDelta(CACHE_KEYS.WORKSTATIONS, 'upsert', { items: [workstation] });
         res.json({ message: "Posto criado", workstation });
     } catch (e) {
         res.status(500).json({ error: e.message });
@@ -1732,6 +2073,9 @@ app.post('/api/workstations/bulk', async (req, res) => {
             });
         });
 
+        const workstations = await refreshRamCollection(CACHE_KEYS.WORKSTATIONS);
+        broadcastSyncDelta(CACHE_KEYS.WORKSTATIONS, 'replace', { items: workstations });
+
         res.json({ message: "Layouts importados com sucesso" });
     } catch (e) {
         console.error("Bulk Workstation Import Error:", e);
@@ -1751,8 +2095,12 @@ app.put('/api/workstations/:id', async (req, res) => {
                 modelName: modelName || undefined,
                 order: order || null,
                 peopleNeeded: peopleNeeded ? parseInt(peopleNeeded) : undefined
-            }
+            },
+            include: { productionModel: true }
         });
+
+        upsertRamItems(CACHE_KEYS.WORKSTATIONS, [updated]);
+        broadcastSyncDelta(CACHE_KEYS.WORKSTATIONS, 'upsert', { items: [updated] });
 
         res.json({ message: "Posto atualizado com sucesso", workstation: updated });
     } catch (e) {
@@ -1768,6 +2116,9 @@ app.delete('/api/workstations/:id', async (req, res) => {
         await prisma.workstation.delete({
             where: { id: parseInt(id) }
         });
+
+        removeRamItems(CACHE_KEYS.WORKSTATIONS, parseInt(id));
+        broadcastSyncDelta(CACHE_KEYS.WORKSTATIONS, 'remove', { ids: [String(id)] });
 
         res.json({ message: "Posto deletado com sucesso" });
     } catch (e) {
@@ -1810,8 +2161,22 @@ app.post('/api/layout', async (req, res) => {
                 modelo: String(modelo),
                 ordemPosto: String(ordemPosto),
                 postoAtual: !!postoAtual
+            },
+            include: {
+                employee: {
+                    select: {
+                        matricula: true,
+                        fullName: true,
+                        role: true,
+                        shift: true,
+                        sector: true
+                    }
+                }
             }
         });
+
+        upsertRamItems(CACHE_KEYS.LAYOUTS, [layout]);
+        broadcastSyncDelta(CACHE_KEYS.LAYOUTS, 'upsert', { items: [layout] });
 
         res.json({ message: "Posto vinculado com sucesso", layout });
     } catch (e) {
@@ -1823,28 +2188,14 @@ app.post('/api/layout', async (req, res) => {
 app.get('/api/layout', async (req, res) => {
     try {
         const { matricula, modelo } = req.query;
-        const whereClause = {};
-        
-        if (matricula) whereClause.matricula = String(matricula);
-        if (modelo) whereClause.modelo = String(modelo);
-
-        const layouts = await prisma.layout.findMany({
-            where: whereClause,
-            include: {
-                employee: {
-                    select: {
-                        matricula: true,
-                        fullName: true,
-                        role: true,
-                        shift: true,
-                        sector: true
-                    }
-                }
-            },
-            orderBy: { ordemPosto: 'asc' }
+        const layouts = await ensureRamCollection(CACHE_KEYS.LAYOUTS);
+        const filteredLayouts = layouts.filter((layout) => {
+            if (matricula && layout.matricula !== String(matricula)) return false;
+            if (modelo && layout.modelo !== String(modelo)) return false;
+            return true;
         });
 
-        res.json(layouts);
+        res.json(filteredLayouts);
     } catch (e) {
         console.error("Get Layout Error:", e);
         res.status(500).json({ error: e.message });
@@ -1888,6 +2239,9 @@ app.put('/api/layout/:id', async (req, res) => {
             }
         });
 
+        upsertRamItems(CACHE_KEYS.LAYOUTS, [updated]);
+        broadcastSyncDelta(CACHE_KEYS.LAYOUTS, 'upsert', { items: [updated] });
+
         res.json({ message: "Posto atualizado com sucesso", layout: updated });
     } catch (e) {
         console.error("Update Layout Error:", e);
@@ -1902,6 +2256,9 @@ app.delete('/api/layout/:id', async (req, res) => {
         const deleted = await prisma.layout.delete({
             where: { id: parseInt(id) }
         });
+
+        removeRamItems(CACHE_KEYS.LAYOUTS, parseInt(id));
+        broadcastSyncDelta(CACHE_KEYS.LAYOUTS, 'remove', { ids: [String(id)] });
 
         res.json({ message: "Posto removido com sucesso", layout: deleted });
     } catch (e) {
@@ -1945,8 +2302,22 @@ app.post('/api/employees/:matricula/workstation-slots', async (req, res) => {
                 modelo: String(modelText),
                 ordemPosto: String(workstationName),
                 postoAtual: false
+            },
+            include: {
+                employee: {
+                    select: {
+                        matricula: true,
+                        fullName: true,
+                        role: true,
+                        shift: true,
+                        sector: true
+                    }
+                }
             }
         });
+
+        upsertRamItems(CACHE_KEYS.LAYOUTS, [layout]);
+        broadcastSyncDelta(CACHE_KEYS.LAYOUTS, 'upsert', { items: [layout] });
 
         res.json({ message: "Posto vinculado com sucesso", layout });
     } catch (e) {
@@ -1956,8 +2327,8 @@ app.post('/api/employees/:matricula/workstation-slots', async (req, res) => {
 });
 
 console.log("🚀 Iniciando servidor...");
-// Warm-up Cache before listening matches user request "Chame essa função assim que o servidor iniciar (antes do app.listen)"
-loadScrapCache().then(() => {
+// Warm-up do cache global em RAM antes de expor o app
+warmRamCache().then(() => {
     app.use(express.static(distPath, {
         setHeaders: setCustomCacheControl
     }));

@@ -1,7 +1,7 @@
 // @ts-nocheck
 import { ChecklistItem, ChecklistLog, User, MeetingLog, Permission, ConfigItem, LineStopData, ConfigModel } from '../types';
 import { CHECKLIST_ITEMS } from '../constants';
-import { apiFetch, clearApiCache, isServerConfigured } from './networkConfig';
+import { apiFetch, clearApiCache, isServerConfigured, getServerUrl } from './networkConfig';
 
 const fetchUncachedCollection = async <T>(endpoint: string): Promise<T> => {
     return apiFetch(endpoint, { useCache: false });
@@ -9,6 +9,295 @@ const fetchUncachedCollection = async <T>(endpoint: string): Promise<T> => {
 
 export const invalidateApiCollectionsCache = async () => {
     await clearApiCache();
+};
+
+type HeavyCollectionKey = 'logs' | 'meetings' | 'line-stops';
+
+const HEAVY_CACHE_DB_NAME = 'tecplam-heavy-collections';
+const HEAVY_CACHE_DB_VERSION = 1;
+const HEAVY_CACHE_STORE_NAME = 'collections';
+const HEAVY_CACHE_TTL = 15 * 60 * 1000;
+
+type HeavyCacheRecord<T> = {
+    key: HeavyCollectionKey;
+    data: T;
+    updatedAt: number;
+};
+
+let heavyCacheDbPromise: Promise<IDBDatabase> | null = null;
+let syncEventSource: EventSource | null = null;
+let syncReconnectTimer: number | null = null;
+const syncListeners = new Set<(event: any) => void>();
+
+const runInBackground = (task: () => Promise<void>) => {
+    const executeTask = () => {
+        void task().catch((error) => {
+            console.error('Erro em tarefa de background:', error);
+        });
+    };
+
+    if (typeof window !== 'undefined' && 'requestIdleCallback' in window) {
+        (window as any).requestIdleCallback(executeTask, { timeout: 1200 });
+        return;
+    }
+
+    setTimeout(executeTask, 0);
+};
+
+const openHeavyCacheDb = (): Promise<IDBDatabase> => {
+    if (typeof window === 'undefined' || !('indexedDB' in window)) {
+        return Promise.reject(new Error('IndexedDB não disponível neste ambiente.'));
+    }
+
+    if (!heavyCacheDbPromise) {
+        heavyCacheDbPromise = new Promise((resolve, reject) => {
+            const request = window.indexedDB.open(HEAVY_CACHE_DB_NAME, HEAVY_CACHE_DB_VERSION);
+
+            request.onupgradeneeded = () => {
+                const database = request.result;
+                if (!database.objectStoreNames.contains(HEAVY_CACHE_STORE_NAME)) {
+                    database.createObjectStore(HEAVY_CACHE_STORE_NAME, { keyPath: 'key' });
+                }
+            };
+
+            request.onsuccess = () => {
+                const database = request.result;
+                database.onversionchange = () => {
+                    database.close();
+                    heavyCacheDbPromise = null;
+                };
+                resolve(database);
+            };
+
+            request.onerror = () => {
+                heavyCacheDbPromise = null;
+                reject(request.error || new Error('Falha ao abrir cache de coleções pesadas.'));
+            };
+        });
+    }
+
+    return heavyCacheDbPromise;
+};
+
+const readHeavyCache = async <T>(key: HeavyCollectionKey): Promise<T | null> => {
+    const database = await openHeavyCacheDb();
+
+    return new Promise((resolve, reject) => {
+        const tx = database.transaction(HEAVY_CACHE_STORE_NAME, 'readonly');
+        const request = tx.objectStore(HEAVY_CACHE_STORE_NAME).get(key);
+
+        request.onsuccess = () => {
+            const record = request.result as HeavyCacheRecord<T> | undefined;
+            if (!record) {
+                resolve(null);
+                return;
+            }
+
+            if (Date.now() - record.updatedAt > HEAVY_CACHE_TTL) {
+                resolve(null);
+                return;
+            }
+
+            resolve(record.data);
+        };
+
+        request.onerror = () => {
+            reject(request.error || new Error('Falha ao ler cache de coleções pesadas.'));
+        };
+    });
+};
+
+const writeHeavyCache = async <T>(key: HeavyCollectionKey, data: T): Promise<void> => {
+    const database = await openHeavyCacheDb();
+
+    await new Promise<void>((resolve, reject) => {
+        const tx = database.transaction(HEAVY_CACHE_STORE_NAME, 'readwrite');
+        const record: HeavyCacheRecord<T> = {
+            key,
+            data,
+            updatedAt: Date.now()
+        };
+
+        tx.objectStore(HEAVY_CACHE_STORE_NAME).put(record);
+
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => reject(tx.error || new Error('Falha ao salvar cache de coleções pesadas.'));
+        tx.onabort = () => reject(tx.error || new Error('Transação abortada no cache de coleções pesadas.'));
+    });
+};
+
+const sortHeavyCollectionItems = <T extends Record<string, any>>(items: T[]): T[] => {
+    return [...items].sort((a, b) => {
+        const left = new Date(b?.sentAt || b?.createdAt || b?.date || 0).getTime();
+        const right = new Date(a?.sentAt || a?.createdAt || a?.date || 0).getTime();
+        return left - right;
+    });
+};
+
+const resolveHeavyItemId = (item: Record<string, any>) => {
+    if (item?.id !== undefined && item?.id !== null) return String(item.id);
+    if (item?.code !== undefined && item?.code !== null) return String(item.code);
+    return null;
+};
+
+const applyHeavyCacheDelta = async (key: HeavyCollectionKey, action: string, items: any[] = [], ids: string[] = []) => {
+    const current = (await readHeavyCache<any[]>(key)) || [];
+    let next = current;
+
+    if (action === 'replace') {
+        next = Array.isArray(items) ? items : [];
+    } else if (action === 'upsert') {
+        const nextMap = new Map<string, any>();
+        current.forEach((item) => {
+            const id = resolveHeavyItemId(item);
+            if (id) nextMap.set(id, item);
+        });
+        items.forEach((item) => {
+            const id = resolveHeavyItemId(item);
+            if (id) nextMap.set(id, item);
+        });
+        next = Array.from(nextMap.values());
+    } else if (action === 'remove') {
+        const removeSet = new Set((ids || []).map(String));
+        next = current.filter((item) => {
+            const id = resolveHeavyItemId(item);
+            return !id || !removeSet.has(id);
+        });
+    }
+
+    const sorted = sortHeavyCollectionItems(next);
+    await writeHeavyCache(key, sorted);
+    return sorted;
+};
+
+const emitSyncEvent = (event: any) => {
+    syncListeners.forEach((listener) => {
+        try {
+            listener(event);
+        } catch (error) {
+            console.error('Erro ao processar listener de sync:', error);
+        }
+    });
+};
+
+const scheduleSyncReconnect = () => {
+    if (typeof window === 'undefined' || syncReconnectTimer !== null) return;
+    syncReconnectTimer = window.setTimeout(() => {
+        syncReconnectTimer = null;
+        connectToSyncStream();
+    }, 3000);
+};
+
+const connectToSyncStream = () => {
+    if (typeof window === 'undefined' || syncEventSource) return;
+
+    const baseUrl = getServerUrl() || window.location.origin;
+    if (!baseUrl) return;
+
+    try {
+        syncEventSource = new EventSource(`${baseUrl}/api/sync-stream`);
+
+        syncEventSource.onmessage = (message) => {
+            let payload: any = null;
+
+            try {
+                payload = JSON.parse(message.data || '{}');
+            } catch (error) {
+                console.error('Erro ao interpretar evento SSE:', error);
+                return;
+            }
+
+            if (!payload?.collection) return;
+
+            if (payload.collection === 'logs' || payload.collection === 'meetings' || payload.collection === 'line-stops') {
+                runInBackground(async () => {
+                    const snapshot = await applyHeavyCacheDelta(
+                        payload.collection as HeavyCollectionKey,
+                        payload.action,
+                        payload.items || [],
+                        payload.ids || []
+                    );
+
+                    emitSyncEvent({ ...payload, snapshot });
+                });
+                return;
+            }
+
+            emitSyncEvent(payload);
+        };
+
+        syncEventSource.onerror = () => {
+            if (syncEventSource) {
+                syncEventSource.close();
+                syncEventSource = null;
+            }
+            if (syncListeners.size > 0) {
+                scheduleSyncReconnect();
+            }
+        };
+    } catch (error) {
+        console.error('Erro ao conectar no sync-stream:', error);
+        syncEventSource = null;
+        scheduleSyncReconnect();
+    }
+};
+
+export const subscribeToSyncStream = (listener: (event: any) => void) => {
+    syncListeners.add(listener);
+    connectToSyncStream();
+
+    return () => {
+        syncListeners.delete(listener);
+
+        if (syncListeners.size === 0) {
+            if (syncEventSource) {
+                syncEventSource.close();
+                syncEventSource = null;
+            }
+            if (syncReconnectTimer !== null && typeof window !== 'undefined') {
+                window.clearTimeout(syncReconnectTimer);
+                syncReconnectTimer = null;
+            }
+        }
+    };
+};
+
+const fetchHeavyCollectionWithCache = async <T>(key: HeavyCollectionKey, endpoint: string): Promise<T> => {
+    try {
+        const data = await fetchUncachedCollection<T>(endpoint);
+        void writeHeavyCache(key, data);
+        return data;
+    } catch (error) {
+        const cachedData = await readHeavyCache<T>(key);
+        if (cachedData) return cachedData;
+        throw error;
+    }
+};
+
+export const getCachedLogs = async (): Promise<ChecklistLog[]> => {
+    try {
+        return (await readHeavyCache<ChecklistLog[]>('logs')) || [];
+    } catch {
+        return [];
+    }
+};
+
+export const getCachedMeetings = async (): Promise<MeetingLog[]> => {
+    try {
+        return (await readHeavyCache<MeetingLog[]>('meetings')) || [];
+    } catch {
+        return [];
+    }
+};
+
+export const hydrateHeavyCollectionsInBackground = () => {
+    runInBackground(async () => {
+        await Promise.allSettled([
+            fetchUncachedCollection<ChecklistLog[]>('/logs').then(data => writeHeavyCache('logs', data)),
+            fetchUncachedCollection<MeetingLog[]>('/meetings').then(data => writeHeavyCache('meetings', data)),
+            fetchUncachedCollection<ChecklistLog[]>('/line-stops').then(data => writeHeavyCache('line-stops', data))
+        ]);
+    });
 };
 
 // --- TIMEZONE UTIL ---
@@ -224,7 +513,12 @@ export const saveLog = async (log: ChecklistLog) => {
 };
 
 export const getLogs = async (): Promise<ChecklistLog[]> => {
-    try { return await fetchUncachedCollection<ChecklistLog[]>('/logs'); } catch (e) { console.error("Erro ao buscar logs", e); return []; }
+    try {
+        return await fetchHeavyCollectionWithCache<ChecklistLog[]>('logs', '/logs');
+    } catch (e) {
+        console.error("Erro ao buscar logs", e);
+        return [];
+    }
 };
 
 export const getTodayLogForUser = async (matricula: string): Promise<ChecklistLog | undefined> => {
@@ -255,7 +549,7 @@ export const getMissingLeadersForToday = async (allUsers: User[]): Promise<User[
 
 export const getLineStops = async (): Promise<ChecklistLog[]> => {
     try {
-        return await fetchUncachedCollection<ChecklistLog[]>('/line-stops');
+        return await fetchHeavyCollectionWithCache<ChecklistLog[]>('line-stops', '/line-stops');
     } catch (e) {
         console.error("Erro ao buscar paradas", e);
         return [];
@@ -281,7 +575,12 @@ export const saveMeeting = async (meeting: MeetingLog) => {
 }
 
 export const getMeetings = async (): Promise<MeetingLog[]> => {
-    try { return await fetchUncachedCollection<MeetingLog[]>('/meetings'); } catch (e) { console.error("Erro ao buscar atas", e); return []; }
+    try {
+        return await fetchHeavyCollectionWithCache<MeetingLog[]>('meetings', '/meetings');
+    } catch (e) {
+        console.error("Erro ao buscar atas", e);
+        return [];
+    }
 }
 
 // --- MAINTENANCE ITEMS ---

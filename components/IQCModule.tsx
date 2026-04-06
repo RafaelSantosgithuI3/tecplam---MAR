@@ -1,5 +1,6 @@
 
-import React, { useState, useEffect, useMemo, useTransition } from 'react';
+import React, { useState, useEffect, useMemo, useTransition, useCallback } from 'react';
+import { List, RowComponentProps } from 'react-window';
 import { Card } from './Card';
 import { Button } from './Button';
 import { Input } from './Input';
@@ -32,6 +33,72 @@ const formatDateDisplay = (dateString: string | undefined) => {
     return `${day}/${month}/${year}`;
 };
 
+const normalizeMetric = (value: unknown): number => {
+    if (typeof value === 'number' && Number.isFinite(value)) return value;
+    if (typeof value === 'string') {
+        const parsed = Number(value.replace(',', '.').trim());
+        return Number.isFinite(parsed) ? parsed : 0;
+    }
+    return 0;
+};
+
+const normalizeDashboardDateKey = (value: unknown): string => {
+    if (typeof value === 'string') {
+        const trimmed = value.trim();
+        const match = trimmed.match(/^(\d{4}-\d{2}-\d{2})/);
+        if (match) return match[1];
+        const parsed = new Date(trimmed);
+        if (!Number.isNaN(parsed.getTime())) {
+            const year = parsed.getFullYear();
+            const month = String(parsed.getMonth() + 1).padStart(2, '0');
+            const day = String(parsed.getDate()).padStart(2, '0');
+            return `${year}-${month}-${day}`;
+        }
+    }
+
+    if (value instanceof Date && !Number.isNaN(value.getTime())) {
+        const year = value.getFullYear();
+        const month = String(value.getMonth() + 1).padStart(2, '0');
+        const day = String(value.getDate()).padStart(2, '0');
+        return `${year}-${month}-${day}`;
+    }
+
+    return '';
+};
+
+const parseDashboardDate = (value: unknown): Date | null => {
+    const dateKey = normalizeDashboardDateKey(value);
+    if (!dateKey) return null;
+    const [year, month, day] = dateKey.split('-').map(Number);
+    const parsed = new Date(year, (month || 1) - 1, day || 1);
+    return Number.isNaN(parsed.getTime()) ? null : parsed;
+};
+
+const normalizeDashboardScraps = (scraps: ScrapData[] = []): ScrapData[] => {
+    if (!Array.isArray(scraps)) return [];
+
+    return scraps.map((scrap) => ({
+        ...scrap,
+        date: normalizeDashboardDateKey(scrap?.date),
+        shift: String(scrap?.shift ?? '').trim(),
+        qty: normalizeMetric(scrap?.qty),
+        totalValue: normalizeMetric(scrap?.totalValue),
+        line: String(scrap?.line ?? ''),
+        model: String(scrap?.model ?? ''),
+        item: String(scrap?.item ?? ''),
+        leaderName: String(scrap?.leaderName ?? ''),
+    }));
+};
+
+const LoadingSpinner = ({ label = 'Carregando dados...' }: { label?: string }) => (
+    <div className="flex items-center justify-center py-16">
+        <div className="flex items-center gap-3 rounded-xl border border-slate-200 dark:border-zinc-800 bg-white/80 dark:bg-zinc-900/80 px-4 py-3 text-sm text-slate-600 dark:text-zinc-300 shadow-sm">
+            <div className="h-4 w-4 animate-spin rounded-full border-2 border-blue-500 border-t-transparent" />
+            <span>{label}</span>
+        </div>
+    </div>
+);
+
 type IQCTab = 'MONITORING' | 'BATCH_PROCESS' | 'HISTORY_SENT' | 'DASHBOARD' | 'BOX_MOUNT' | 'BOX_IDENTIFIED' | 'CONSULTA' | 'MATERIALS';
 
 export const IQCModule = ({ currentUser, onBack, hasTabAccess }: { currentUser: User, onBack: () => void, hasTabAccess?: (m: string, t: string) => boolean }) => {
@@ -54,23 +121,29 @@ export const IQCModule = ({ currentUser, onBack, hasTabAccess }: { currentUser: 
     const [lines, setLines] = useState<string[]>([]);
     const [models, setModels] = useState<string[]>([]);
     const [materials, setMaterials] = useState<Material[]>([]);
-    const [, startTransition] = useTransition();
+    const [isLoading, setIsLoading] = useState(true);
+    const [isHydrating, startTransition] = useTransition();
 
     const loadData = async () => {
-        const [s, u, l, m, mats] = await Promise.all([
-            getScraps(),
-            getAllUsers(),
-            getLines(),
-            getModels(),
-            getMaterials()
-        ]);
-        startTransition(() => {
-            setScraps(s);
-            setUsers(u);
-            setLines(l.map(x => x.name));
-            setModels(m);
-            setMaterials(mats);
-        });
+        setIsLoading(true);
+        try {
+            const [s, u, l, m, mats] = await Promise.all([
+                getScraps(),
+                getAllUsers(),
+                getLines(),
+                getModels(),
+                getMaterials()
+            ]);
+            startTransition(() => {
+                setScraps(normalizeDashboardScraps(Array.isArray(s) ? s : []));
+                setUsers(Array.isArray(u) ? u : []);
+                setLines(Array.isArray(l) ? l.map(x => x.name) : []);
+                setModels(Array.isArray(m) ? m : []);
+                setMaterials(Array.isArray(mats) ? mats : []);
+            });
+        } finally {
+            setIsLoading(false);
+        }
     };
 
     useEffect(() => {
@@ -85,7 +158,7 @@ export const IQCModule = ({ currentUser, onBack, hasTabAccess }: { currentUser: 
     const refreshData = async () => {
         const s = await getScraps();
         startTransition(() => {
-            setScraps(s);
+            setScraps(normalizeDashboardScraps(Array.isArray(s) ? s : []));
         });
     };
 
@@ -160,7 +233,7 @@ export const IQCModule = ({ currentUser, onBack, hasTabAccess }: { currentUser: 
             {/* CONTENT */}
             <div className="mt-6">
                 {activeTab === 'MONITORING' && (
-                    <ScrapOperational scraps={scraps} users={users} lines={lines} models={models} />
+                    <ScrapOperational scraps={scraps} users={users} lines={lines} models={models} isLoading={isLoading} isHydrating={isHydrating} />
                 )}
 
                 {activeTab === 'BATCH_PROCESS' && (
@@ -172,7 +245,7 @@ export const IQCModule = ({ currentUser, onBack, hasTabAccess }: { currentUser: 
                 )}
 
                 {activeTab === 'DASHBOARD' && (
-                    <ExecutiveDashboard scraps={scraps} users={users} />
+                    <ExecutiveDashboard scraps={scraps} users={users} isLoading={isLoading} isHydrating={isHydrating} />
                 )}
 
                 {activeTab === 'BOX_MOUNT' && (
@@ -197,10 +270,11 @@ export const IQCModule = ({ currentUser, onBack, hasTabAccess }: { currentUser: 
 
 // --- SUB COMPONENTS ---
 
-const ExecutiveDashboard = ({ scraps, users }: { scraps: ScrapData[], users: User[] }) => {
+const ExecutiveDashboard = ({ scraps, users, isLoading = false, isHydrating = false }: { scraps: ScrapData[], users: User[], isLoading?: boolean, isHydrating?: boolean }) => {
     const [groupPreviewModal, setGroupPreviewModal] = useState({ isOpen: false, type: '', key: '', scraps: [] as ScrapData[] });
     const [detailModal, setDetailModal] = useState({ isOpen: false, scrap: null as ScrapData | null });
     const openDetailModal = (scrap: ScrapData) => setDetailModal({ isOpen: true, scrap });
+    const reactiveScraps = useMemo(() => normalizeDashboardScraps(Array.isArray(scraps) ? scraps : []), [scraps]);
 
     const [filters, setFilters] = useState({
         period: 'MONTH',
@@ -214,51 +288,47 @@ const ExecutiveDashboard = ({ scraps, users }: { scraps: ScrapData[], users: Use
     });
 
     const filtered = useMemo(() => {
-        let res = [...scraps];
+        let res = [...reactiveScraps];
 
-        // Date Filter
-        if (filters.period === 'DAY' && filters.specificDate) res = res.filter(s => s.date === filters.specificDate);
+        if (filters.period === 'DAY' && filters.specificDate) res = res.filter(s => normalizeDashboardDateKey(s.date) === filters.specificDate);
         else if (filters.period === 'WEEK' && filters.specificWeek) {
             const [y, w] = filters.specificWeek.split('-W').map(Number);
             res = res.filter(s => {
-                const sd = new Date(s.date);
-                const utcDate = new Date(sd.getUTCFullYear(), sd.getUTCMonth(), sd.getUTCDate());
-                const sw = getWeekNumber(utcDate);
-                return sw === w && sd.getFullYear() === y;
+                const sd = parseDashboardDate(s.date);
+                if (!sd) return false;
+                const normalizedDate = new Date(sd.getFullYear(), sd.getMonth(), sd.getDate());
+                return getWeekNumber(normalizedDate) === w && sd.getFullYear() === y;
             });
         }
-        else if (filters.period === 'MONTH' && filters.specificMonth) res = res.filter(s => s.date.startsWith(filters.specificMonth));
-        else if (filters.period === 'YEAR' && filters.specificYear) res = res.filter(s => s.date.startsWith(filters.specificYear));
+        else if (filters.period === 'MONTH' && filters.specificMonth) res = res.filter(s => normalizeDashboardDateKey(s.date).startsWith(filters.specificMonth));
+        else if (filters.period === 'YEAR' && filters.specificYear) res = res.filter(s => normalizeDashboardDateKey(s.date).startsWith(filters.specificYear));
 
-        // Other Filters
         if (filters.plant !== 'ALL') res = res.filter(s => s.plant === filters.plant);
-        if (filters.shift !== 'ALL') res = res.filter(s => String(s.shift) === filters.shift);
+        if (filters.shift !== 'ALL') res = res.filter(s => String(s.shift ?? '') === filters.shift);
         if (filters.status !== 'ALL') {
             if (filters.status === 'SENT') res = res.filter(s => s.situation === 'SENT');
             else res = res.filter(s => s.situation !== 'SENT');
         }
 
         return res;
-    }, [scraps, filters]);
+    }, [reactiveScraps, filters]);
 
     const stats = useMemo(() => {
-        const totalVal = filtered.reduce((acc, s) => acc + (s.totalValue || 0), 0);
-        const totalQty = filtered.reduce((acc, s) => acc + (s.qty || 0), 0);
+        const totalVal = filtered.reduce((acc, s) => acc + normalizeMetric(s.totalValue), 0);
+        const totalQty = filtered.reduce((acc, s) => acc + normalizeMetric(s.qty), 0);
 
         const specificItems = ['FRONT', 'REAR', 'OCTA', 'CAMERA', 'BATERIA RMA', 'BATERIA SCRAP', 'PLACA'];
         const byCategory: Record<string, number> = {};
         const byModel: Record<string, number> = {};
         const byLine: Record<string, number> = {};
 
-        // Initialize categories
         specificItems.forEach(k => byCategory[k] = 0);
         byCategory['MIUDEZAS'] = 0;
 
         filtered.forEach(s => {
-            const val = s.totalValue || 0;
-            const itemUpper = (s.item || '').toUpperCase();
+            const val = normalizeMetric(s.totalValue);
+            const itemUpper = String(s.item || '').toUpperCase();
 
-            // --- CATEGORIZATION LOGIC ---
             let catKey = 'MIUDEZAS';
             if (itemUpper.includes('PLACA')) {
                 catKey = 'PLACA';
@@ -268,15 +338,12 @@ const ExecutiveDashboard = ({ scraps, users }: { scraps: ScrapData[], users: Use
                 const found = specificItems.find(i => itemUpper.includes(i) && i !== 'CAMERA' && i !== 'PLACA');
                 if (found) catKey = found;
             }
-            // ----------------------------
 
+            const modelKey = s.model || 'Não informado';
+            const lineKey = s.line || 'Não informada';
             byCategory[catKey] = (byCategory[catKey] || 0) + val;
-
-            // Model
-            byModel[s.model] = (byModel[s.model] || 0) + val;
-
-            // Line
-            byLine[s.line] = (byLine[s.line] || 0) + val;
+            byModel[modelKey] = (byModel[modelKey] || 0) + val;
+            byLine[lineKey] = (byLine[lineKey] || 0) + val;
         });
 
         return {
@@ -287,6 +354,10 @@ const ExecutiveDashboard = ({ scraps, users }: { scraps: ScrapData[], users: Use
             line: Object.entries(byLine).sort((a, b) => b[1] - a[1])
         };
     }, [filtered]);
+
+    if ((isLoading || isHydrating) && reactiveScraps.length === 0) {
+        return <LoadingSpinner label="Sincronizando dashboard IQC..." />;
+    }
 
     const handleDashboardExport = async () => {
         if (filters.status === 'SENT') {
@@ -494,18 +565,60 @@ const BatchProcessTab = ({ scraps, onProcess, currentUser, lines, models, users 
         return res.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
     }, [scraps, filters]);
 
-    const handleSelect = (id: number) => {
+    const handleSelect = useCallback((id: number) => {
         setSelectedIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
-    };
+    }, []);
 
-    const handleSelectAll = () => {
+    const handleSelectAll = useCallback(() => {
         if (selectedIds.length === pendingScraps.length) setSelectedIds([]);
         else setSelectedIds(pendingScraps.map(s => Number(s.id)));
-    };
+    }, [pendingScraps, selectedIds.length]);
 
-    const totalSelectedValue = pendingScraps
-        .filter(s => selectedIds.includes(Number(s.id)))
-        .reduce((acc, s) => acc + (s.totalValue || 0), 0);
+    const selectedIdsSet = useMemo(() => new Set(selectedIds), [selectedIds]);
+
+    const totalSelectedValue = useMemo(() => {
+        return pendingScraps
+            .filter(s => selectedIdsSet.has(Number(s.id)))
+            .reduce((acc, s) => acc + (s.totalValue || 0), 0);
+    }, [pendingScraps, selectedIdsSet]);
+
+    const batchListData = useMemo(() => ({
+        items: pendingScraps,
+        selectedIdsSet,
+        onToggleSelect: handleSelect,
+        onPreview: setSelectedScrap
+    }), [pendingScraps, selectedIdsSet, handleSelect]);
+
+    const BatchProcessRow = useCallback(({ index, style, items, selectedIdsSet, onToggleSelect, onPreview }: RowComponentProps<any>) => {
+        const s: ScrapData = items[index];
+        const isSelected = selectedIdsSet.has(Number(s.id));
+
+        return (
+            <div
+                style={style}
+                className={`grid grid-cols-[44px_90px_1fr_1fr_1fr_1fr_80px_120px_90px_70px] items-center border-b border-slate-100 dark:border-zinc-800 px-2 text-sm ${isSelected ? 'bg-blue-50 dark:bg-blue-900/10' : 'bg-white dark:bg-zinc-900'} hover:bg-slate-50 dark:hover:bg-zinc-800/50`}
+            >
+                <div className="px-2">
+                    <input type="checkbox" checked={isSelected} onChange={() => onToggleSelect(Number(s.id))} />
+                </div>
+                <div className="px-2 text-slate-700 dark:text-zinc-300">{formatDateDisplay(s.date)}</div>
+                <div className="px-2 text-slate-700 dark:text-zinc-300 truncate">{s.model}</div>
+                <div className="px-2 text-slate-700 dark:text-zinc-300 truncate">{s.line}</div>
+                <div className="px-2 text-slate-700 dark:text-zinc-300 truncate">{s.item}</div>
+                <div className="px-2 font-mono text-slate-700 dark:text-zinc-300 truncate">{s.code || '-'}</div>
+                <div className="px-2 text-slate-700 dark:text-zinc-300">{s.qty}</div>
+                <div className="px-2 text-right font-mono text-slate-700 dark:text-zinc-300">{formatCurrency(s.totalValue)}</div>
+                <div className="px-2 text-center">
+                    <span className={`text-[10px] uppercase px-2 py-0.5 rounded ${s.status === 'OK' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>{s.status || 'NG'}</span>
+                </div>
+                <div className="px-2 text-center">
+                    <button onClick={(e) => { e.stopPropagation(); onPreview(s); }} className="text-blue-500 hover:text-blue-700 p-1 bg-blue-50 dark:bg-blue-900/30 rounded-full transition-colors">
+                        <Eye size={16} />
+                    </button>
+                </div>
+            </div>
+        );
+    }, []);
 
     const handleProcess = async () => {
         if (!nfNumber) return alert("Digite o número da Nota Fiscal");
@@ -577,51 +690,31 @@ const BatchProcessTab = ({ scraps, onProcess, currentUser, lines, models, users 
                 </div>
             </Card>
 
-            {/* Container Responsivo para Mobile */}
             <div className="w-full overflow-x-auto pb-4 mb-4 touch-pan-x border border-gray-200 dark:border-zinc-800 rounded-xl">
-                <table className="w-full text-sm min-w-[800px]">
-                    {/* ... (mantendo o conteúdo da tabela) ... */}
-                    <thead className="bg-slate-50 dark:bg-zinc-950 text-slate-500 dark:text-zinc-400 border-b border-slate-200 dark:border-zinc-800">
-                        <tr>
-                            <th className="p-3 w-10">
-                                <input type="checkbox" checked={selectedIds.length === pendingScraps.length && pendingScraps.length > 0} onChange={handleSelectAll} />
-                            </th>
-                            <th className="p-3 text-left">Data</th>
-                            <th className="p-3 text-left">Modelo</th>
-                            <th className="p-3 text-left">Linha</th>
-                            <th className="p-3 text-left">Item</th>
-                            <th className="p-3 text-left">Código</th>
-                            <th className="p-3 text-left">Qtd</th>
-                            <th className="p-3 text-right">Valor</th>
-                            <th className="p-3 text-center">Status</th>
-                            <th className="p-3 text-center">Ações</th>
-                        </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100 dark:divide-zinc-800">
-                        {pendingScraps.map(s => (
-                            <tr key={s.id} className={`hover:bg-slate-50 dark:hover:bg-zinc-800/50 transition-colors ${selectedIds.includes(Number(s.id)) ? 'bg-blue-50 dark:bg-blue-900/10' : ''}`}>
-                                <td className="p-3">
-                                    <input type="checkbox" checked={selectedIds.includes(Number(s.id))} onChange={() => handleSelect(Number(s.id))} />
-                                </td>
-                                <td className="p-3 text-slate-700 dark:text-zinc-300">{formatDateDisplay(s.date)}</td>
-                                <td className="p-3 text-slate-700 dark:text-zinc-300">{s.model}</td>
-                                <td className="p-3 text-slate-700 dark:text-zinc-300">{s.line}</td>
-                                <td className="p-3 text-slate-700 dark:text-zinc-300">{s.item}</td>
-                                <td className="p-3 font-mono text-slate-700 dark:text-zinc-300">{s.code || '-'}</td>
-                                <td className="p-3 text-slate-700 dark:text-zinc-300">{s.qty}</td>
-                                <td className="p-3 text-right font-mono text-slate-700 dark:text-zinc-300">{formatCurrency(s.totalValue)}</td>
-                                <td className="p-3 text-center">
-                                    <span className={`text-[10px] uppercase px-2 py-0.5 rounded ${s.status === 'OK' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>{s.status || 'NG'}</span>
-                                </td>
-                                <td className="p-3 text-center">
-                                    <button onClick={(e) => { e.stopPropagation(); setSelectedScrap(s); }} className="text-blue-500 hover:text-blue-700 p-1 bg-blue-50 dark:bg-blue-900/30 rounded-full transition-colors">
-                                        <Eye size={16} />
-                                    </button>
-                                </td>
-                            </tr>
-                        ))}
-                    </tbody>
-                </table>
+                <div className="min-w-[980px]">
+                    <div className="grid grid-cols-[44px_90px_1fr_1fr_1fr_1fr_80px_120px_90px_70px] items-center bg-slate-50 dark:bg-zinc-950 text-slate-500 dark:text-zinc-400 border-b border-slate-200 dark:border-zinc-800 text-sm font-medium px-2 h-12">
+                        <div className="px-2">
+                            <input type="checkbox" checked={selectedIds.length === pendingScraps.length && pendingScraps.length > 0} onChange={handleSelectAll} />
+                        </div>
+                        <div className="px-2">Data</div>
+                        <div className="px-2">Modelo</div>
+                        <div className="px-2">Linha</div>
+                        <div className="px-2">Item</div>
+                        <div className="px-2">Código</div>
+                        <div className="px-2">Qtd</div>
+                        <div className="px-2 text-right">Valor</div>
+                        <div className="px-2 text-center">Status</div>
+                        <div className="px-2 text-center">Ações</div>
+                    </div>
+
+                    <List
+                        rowCount={pendingScraps.length}
+                        rowHeight={52}
+                        rowComponent={BatchProcessRow}
+                        rowProps={batchListData}
+                        style={{ height: Math.min(560, Math.max(56, pendingScraps.length * 52)), width: '100%' }}
+                    />
+                </div>
             </div>
 
             <div className="fixed bottom-0 left-0 right-0 bg-white dark:bg-zinc-900 border-t border-slate-200 dark:border-zinc-800 p-4 shadow-lg z-40 lg:left-72">
@@ -852,8 +945,13 @@ const HistoryGroupCard = ({ nf, items, users, groupBy = 'NF', isExpanded, onTogg
     const [itemFilter, setItemFilter] = useState('');
     const [, startTransition] = useTransition();
 
-    const filteredItems = items.filter(i => !itemFilter || (i.code || '').toLowerCase().includes(itemFilter.toLowerCase()));
-    const totalFiltrado = filteredItems.reduce((acc, curr) => acc + Number(curr.totalValue || 0), 0);
+    const filteredItems = useMemo(() => {
+        return items.filter(i => !itemFilter || (i.code || '').toLowerCase().includes(itemFilter.toLowerCase()));
+    }, [items, itemFilter]);
+
+    const totalFiltrado = useMemo(() => {
+        return filteredItems.reduce((acc, curr) => acc + Number(curr.totalValue || 0), 0);
+    }, [filteredItems]);
 
     const totalValue = items.reduce((acc, s) => acc + (s.totalValue || 0), 0);
     const sentDate = items[0].sentAt ? new Date(items[0].sentAt).toLocaleDateString() : '-';
@@ -861,24 +959,77 @@ const HistoryGroupCard = ({ nf, items, users, groupBy = 'NF', isExpanded, onTogg
     const sentByName = users.find(u => u.matricula === sentByMatricula)?.name || sentByMatricula || '-';
 
     const specificItems = ['FRONT', 'REAR', 'OCTA', 'CAMERA', 'BATERIA RMA', 'BATERIA SCRAP', 'PLACA'];
-    const summary: Record<string, { qty: number, val: number }> = {};
+    const summary = useMemo(() => {
+        const groupSummary: Record<string, { qty: number, val: number }> = {};
+        specificItems.forEach(k => groupSummary[k] = { qty: 0, val: 0 });
+        groupSummary['MIUDEZAS'] = { qty: 0, val: 0 };
 
-    specificItems.forEach(k => summary[k] = { qty: 0, val: 0 });
-    summary['MIUDEZAS'] = { qty: 0, val: 0 };
+        items.forEach(s => {
+            let key = 'MIUDEZAS';
+            const itemUpper = (s.item || '').toUpperCase();
+            if (itemUpper.includes('PLACA')) {
+                key = 'PLACA';
+            } else {
+                const found = specificItems.find(spec => itemUpper.includes(spec));
+                if (found) key = found;
+            }
 
-    items.forEach(s => {
-        let key = 'MIUDEZAS';
-        const itemUpper = (s.item || '').toUpperCase();
-        if (itemUpper.includes('PLACA')) {
-            key = 'PLACA';
-        } else {
-            const found = specificItems.find(spec => itemUpper.includes(spec));
-            if (found) key = found;
-        }
+            groupSummary[key].qty += (s.qty || 0);
+            groupSummary[key].val += (s.totalValue || 0);
+        });
 
-        summary[key].qty += (s.qty || 0);
-        summary[key].val += (s.totalValue || 0);
-    });
+        return groupSummary;
+    }, [items]);
+
+    const historyListData = useMemo(() => ({
+        items: filteredItems,
+        onClickScrap,
+        onRefresh
+    }), [filteredItems, onClickScrap, onRefresh]);
+
+    const HistoryItemRow = useCallback(({ index, style, items, onClickScrap, onRefresh }: RowComponentProps<any>) => {
+        const i: ScrapData = items[index];
+
+        return (
+            <div
+                style={style}
+                className="grid grid-cols-[1fr_1fr_1fr_80px_120px_140px] items-center border-b border-slate-100 dark:border-zinc-800 last:border-0 hover:bg-blue-50/50 dark:hover:bg-blue-900/10 cursor-pointer transition-colors px-2 text-xs"
+                onClick={(e) => { e.stopPropagation(); if (onClickScrap) onClickScrap(i); }}
+            >
+                <div className="p-2 text-slate-700 dark:text-zinc-300 truncate">{i.item}</div>
+                <div className="p-2 text-slate-700 dark:text-zinc-300 truncate">{i.model}</div>
+                <div className="p-2 font-mono text-slate-700 dark:text-zinc-300 truncate">{i.code || '-'}</div>
+                <div className="p-2 text-slate-700 dark:text-zinc-300">{i.qty}</div>
+                <div className="p-2 text-right font-mono text-slate-700 dark:text-zinc-300">{formatCurrency(i.totalValue)}</div>
+                <div className="p-2 flex gap-1">
+                    <button onClick={async (e) => {
+                        e.stopPropagation();
+                        if (window.confirm('Tem certeza que deseja remover este item desta NF/Caixa?')) {
+                            try {
+                                await updateScrap(i.id!.toString(), { situation: 'PENDING', nfNumber: null as any, sentAt: null as any });
+                                if (onRefresh) onRefresh();
+                            } catch (err) {
+                                alert('Erro ao remover scrap.');
+                            }
+                        }
+                    }} className="text-red-500 hover:text-red-700">Remover</button>
+                    <button onClick={async (e) => {
+                        e.stopPropagation();
+                        const novaNf = window.prompt('Digite o número da nova NF:');
+                        if (novaNf && novaNf.trim() !== '') {
+                            try {
+                                await updateScrap(i.id!.toString(), { nfNumber: novaNf, situation: 'SENT', sentAt: new Date() });
+                                if (onRefresh) onRefresh();
+                            } catch (err) {
+                                alert('Erro ao realocar scrap.');
+                            }
+                        }
+                    }} className="text-blue-500 hover:text-blue-700">Realocar</button>
+                    <Eye size={14} className="text-blue-500" />
+                </div>
+            </div>
+        );
+    }, []);
 
     return (
         <Card className={`border-l-4 border-l-blue-500 transition-all ${isExpanded ? 'ring-2 ring-blue-500/20' : ''}`}>
@@ -977,55 +1128,23 @@ const HistoryGroupCard = ({ nf, items, users, groupBy = 'NF', isExpanded, onTogg
                         </div>
 
                         <div className="w-full overflow-x-auto pb-4 mb-4 touch-pan-x border border-gray-200 dark:border-zinc-800 rounded-xl">
-                            <table className="w-full text-xs text-left min-w-[600px]">
-                                <thead className="bg-slate-100 dark:bg-zinc-900 text-slate-600 dark:text-zinc-400">
-                                    <tr>
-                                        <th className="p-2">Item</th>
-                                        <th className="p-2">Modelo</th>
-                                        <th className="p-2">Código</th>
-                                        <th className="p-2">Qtd</th>
-                                        <th className="p-2 text-right">Valor</th>
-                                        <th className="p-2">Ações</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    {filteredItems.map(i => (
-                                        <tr key={i.id} className="border-b border-slate-100 dark:border-zinc-800 last:border-0 hover:bg-blue-50/50 dark:hover:bg-blue-900/10 cursor-pointer transition-colors" onClick={(e) => { e.stopPropagation(); if (onClickScrap) onClickScrap(i); }}>
-                                            <td className="p-2 text-slate-700 dark:text-zinc-300">{i.item}</td>
-                                            <td className="p-2 text-slate-700 dark:text-zinc-300">{i.model}</td>
-                                            <td className="p-2 font-mono text-slate-700 dark:text-zinc-300">{i.code || '-'}</td>
-                                            <td className="p-2 text-slate-700 dark:text-zinc-300">{i.qty}</td>
-                                            <td className="p-2 text-right font-mono text-slate-700 dark:text-zinc-300">{formatCurrency(i.totalValue)}</td>
-                                            <td className="p-2 flex gap-1">
-                                                <button onClick={async (e) => { 
-                                                    e.stopPropagation(); 
-                                                    if(window.confirm('Tem certeza que deseja remover este item desta NF/Caixa?')) {
-                                                        try {
-                                                            await updateScrap(i.id!.toString(), { situation: 'PENDING', nfNumber: null as any, sentAt: null as any });
-                                                            if (onRefresh) onRefresh();
-                                                        } catch(err) {
-                                                            alert('Erro ao remover scrap.');
-                                                        }
-                                                    }
-                                                }} className="text-red-500 hover:text-red-700">Remover</button>
-                                                <button onClick={async (e) => { 
-                                                    e.stopPropagation(); 
-                                                    const novaNf = window.prompt('Digite o número da nova NF:');
-                                                    if (novaNf && novaNf.trim() !== '') {
-                                                        try {
-                                                            await updateScrap(i.id!.toString(), { nfNumber: novaNf, situation: 'SENT', sentAt: new Date() });
-                                                            if (onRefresh) onRefresh();
-                                                        } catch(err) {
-                                                            alert('Erro ao realocar scrap.');
-                                                        }
-                                                    }
-                                                }} className="text-blue-500 hover:text-blue-700">Realocar</button>
-                                                <Eye size={14} className="text-blue-500" />
-                                            </td>
-                                        </tr>
-                                    ))}
-                                </tbody>
-                            </table>
+                            <div className="min-w-[700px]">
+                                <div className="grid grid-cols-[1fr_1fr_1fr_80px_120px_140px] bg-slate-100 dark:bg-zinc-900 text-slate-600 dark:text-zinc-400 text-xs font-medium px-2 h-9 items-center">
+                                    <div className="p-2">Item</div>
+                                    <div className="p-2">Modelo</div>
+                                    <div className="p-2">Código</div>
+                                    <div className="p-2">Qtd</div>
+                                    <div className="p-2 text-right">Valor</div>
+                                    <div className="p-2">Ações</div>
+                                </div>
+                                <List
+                                    rowCount={filteredItems.length}
+                                    rowHeight={44}
+                                    rowComponent={HistoryItemRow}
+                                    rowProps={historyListData}
+                                    style={{ height: Math.min(420, Math.max(48, filteredItems.length * 44)), width: '100%' }}
+                                />
+                            </div>
                         </div>
                     </div>
                 )}

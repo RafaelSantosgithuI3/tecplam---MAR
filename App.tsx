@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, startTransition } from 'react';
 import { ScrapModule } from './components/ScrapModule';
 import { IQCModule } from './components/IQCModule';
 import { Layout } from './components/Layout';
@@ -25,7 +25,8 @@ import {
     saveMeeting, getMeetings, getMaintenanceItems,
     getAllChecklistItemsRaw, getPermissions, savePermissions,
     saveLineStop, getLineStops,
-    getModels, saveModels, getStations, saveStations, getMissingLeadersForToday
+    getModels, saveModels, getStations, saveStations, getMissingLeadersForToday,
+    getCachedLogs, getCachedMeetings, hydrateHeavyCollectionsInBackground, subscribeToSyncStream
 } from './services/storageService';
 import { saveServerUrl, getServerUrl, isServerConfigured, apiFetch } from './services/networkConfig';
 import {
@@ -523,6 +524,36 @@ const App = () => {
     }, []);
 
     useEffect(() => {
+        if (!currentUser) return;
+
+        const unsubscribe = subscribeToSyncStream((syncEvent: any) => {
+            if (syncEvent.collection === 'logs' && Array.isArray(syncEvent.snapshot)) {
+                startTransition(() => {
+                    setPersonalLogs(syncEvent.snapshot.filter((log: ChecklistLog) => log.userId === currentUser.matricula));
+                });
+            }
+
+            if (syncEvent.collection === 'meetings' && Array.isArray(syncEvent.snapshot)) {
+                startTransition(() => {
+                    setMeetingHistory(syncEvent.snapshot);
+                });
+            }
+
+            if (syncEvent.collection === 'line-stops' && Array.isArray(syncEvent.snapshot)) {
+                const visibleStops = syncEvent.snapshot.filter((stop: ChecklistLog) =>
+                    stop.status === 'WAITING_JUSTIFICATION' && canUserJustify(currentUser, stop)
+                );
+
+                startTransition(() => {
+                    setPendingLineStopsCount(visibleStops.length);
+                });
+            }
+        });
+
+        return unsubscribe;
+    }, [currentUser, permissions]);
+
+    useEffect(() => {
         if (!currentUser) {
             if (inactivityTimerRef.current) clearTimeout(inactivityTimerRef.current);
             return;
@@ -798,40 +829,97 @@ const App = () => {
         fetchAlerts();
     }, [view, adminTab, currentUser]);
 
+    const runInBackground = (task: () => Promise<void>) => {
+        const executeTask = () => {
+            void task().catch((error) => {
+                console.error('Erro em tarefa de background:', error);
+            });
+        };
+
+        if (typeof window !== 'undefined' && 'requestIdleCallback' in window) {
+            (window as any).requestIdleCallback(executeTask, { timeout: 1200 });
+            return;
+        }
+
+        setTimeout(executeTask, 0);
+    };
+
+    const hydrateNavigationState = async (user: User | null) => {
+        const [loadedLines, loadedRoles, loadedModels, loadedStations, loadedMaterials, loadedPermissions, loadedUsers] = await Promise.all([
+            getLines(),
+            getRoles(),
+            getModels(),
+            getStations(),
+            getMaterials(),
+            getPermissions(),
+            getAllUsers()
+        ]);
+
+        setLines(loadedLines);
+        if (loadedLines.length > 0) setMaintenanceLine(loadedLines[0].name);
+
+        setAvailableRoles(loadedRoles);
+        if (loadedRoles.length > 0 && !user) setRegRole(loadedRoles[0].name);
+
+        setModels(loadedModels);
+        setStations(loadedStations);
+        setMaterials(loadedMaterials);
+        setPermissions(loadedPermissions);
+        setUsersList(loadedUsers);
+
+        const now = getManausDate();
+        setLinesWeekFilter(`${now.getFullYear()}-W${getWeekNumber(now).toString().padStart(2, '0')}`);
+    };
+
+    const fetchInitialData = async (user: User) => {
+        const [logs, meetings] = await Promise.all([getLogs(), getMeetings()]);
+        startTransition(() => {
+            setPersonalLogs(logs.filter(l => l.userId === user.matricula));
+            setMeetingHistory(meetings);
+            setProfileData({ ...user });
+        });
+    }
+
+    const hydrateUserDataInBackground = async (user: User) => {
+        const [cachedLogs, cachedMeetings] = await Promise.all([getCachedLogs(), getCachedMeetings()]);
+
+        startTransition(() => {
+            if (cachedLogs.length > 0) {
+                setPersonalLogs(cachedLogs.filter(l => l.userId === user.matricula));
+            }
+            if (cachedMeetings.length > 0) {
+                setMeetingHistory(cachedMeetings);
+            }
+            setProfileData({ ...user });
+        });
+
+        runInBackground(async () => {
+            hydrateHeavyCollectionsInBackground();
+            await fetchInitialData(user);
+        });
+    };
+
     const initApp = async () => {
         setIsLoading(true);
         try {
             await seedAdmin();
             const user = getSessionUser();
-            const loadLines = await getLines();
-            setLines(loadLines);
-            if (loadLines.length > 0) setMaintenanceLine(loadLines[0].name);
-            const loadRoles = await getRoles();
-            setAvailableRoles(loadRoles);
-            if (loadRoles.length > 0 && !user) setRegRole(loadRoles[0].name);
-            const loadModels = await getModels();
-            setModels(loadModels);
-            const loadStations = await getStations();
-            setStations(await getStations());
-            setMaterials(await getMaterials());
-            const perms = await getPermissions();
-            setPermissions(perms);
-            const users = await getAllUsers();
-            setUsersList(users);
-            const now = getManausDate();
-            setLinesWeekFilter(`${now.getFullYear()}-W${getWeekNumber(now).toString().padStart(2, '0')}`);
 
             if (user) {
                 setCurrentUser(user);
                 const savedView = sessionStorage.getItem('app_view') as ViewState | null;
                 const noRestore: ViewState[] = ['LOGIN', 'REGISTER', 'RECOVER', 'SETUP', 'SUCCESS'];
                 setView((savedView && !noRestore.includes(savedView)) ? savedView : 'MENU');
-                fetchInitialData(user);
+                void hydrateUserDataInBackground(user);
             } else {
                 setLoginMatricula('');
                 setLoginPassword('');
                 setView('LOGIN');
             }
+
+            runInBackground(async () => {
+                await hydrateNavigationState(user);
+            });
         } catch (e) {
             console.error("Erro ao inicializar:", e);
             alert("Não foi possível conectar ao servidor.");
@@ -839,19 +927,6 @@ const App = () => {
         } finally {
             setIsLoading(false);
         }
-    }
-
-    const fetchInitialData = async (user: User) => {
-        const logs = await getLogs();
-        const myLogs = logs.filter(l => l.userId === user.matricula);
-        setPersonalLogs(myLogs);
-
-        if (user) {
-            setProfileData({ ...user });
-        }
-
-        const meetings = await getMeetings();
-        setMeetingHistory(meetings);
     }
 
     useEffect(() => {
@@ -996,9 +1071,13 @@ const App = () => {
         const res = await loginUser(loginMatricula, loginPassword);
         setIsLoginLoading(false);
         if (res.success && res.user) {
-            setCurrentUser(res.user);
+            const loggedUser = res.user;
+            setCurrentUser(loggedUser);
             setView('MENU');
-            fetchInitialData(res.user);
+            void hydrateUserDataInBackground(loggedUser);
+            runInBackground(async () => {
+                await hydrateNavigationState(loggedUser);
+            });
         } else {
             setLoginError(res.message);
         }
