@@ -1136,7 +1136,7 @@ const ScrapForm = ({ users, models, stations, lines, materials, onSuccess, curre
     };
 
     const handleCodeChange = (code: string) => {
-        const found = materials.find((m: Material) => m.code === code);
+        const found = materials.find((m: Material) => String(m.code || '').trim() === String(code || '').trim());
         setFormData(prev => ({
             ...prev,
             code,
@@ -1149,6 +1149,14 @@ const ScrapForm = ({ users, models, stations, lines, materials, onSuccess, curre
     const handleSubmit = async () => {
         if (!formData.leaderName || !formData.model || !formData.item || !formData.line) {
             alert("Preencha todos os campos obrigatórios (Líder, Origem, Modelo, Item)!");
+            return;
+        }
+
+        const normalizedMaterialCode = String(formData.code || '').trim();
+        const isValidMaterialCode = materials.some((m: Material) => String(m.code || '').trim() === normalizedMaterialCode);
+
+        if (!normalizedMaterialCode || !isValidMaterialCode) {
+            alert('Código de material inválido! Selecione ou digite um código de material cadastrado no sistema.');
             return;
         }
 
@@ -1172,6 +1180,7 @@ const ScrapForm = ({ users, models, stations, lines, materials, onSuccess, curre
             // Batch create: one record per QR
             const batchPayloads: ScrapData[] = multiQRs.map(qr => ({
                 ...formData as ScrapData,
+                code: normalizedMaterialCode,
                 date: safeDate,
                 userId: currentUser.matricula,
                 time: time,
@@ -1198,6 +1207,7 @@ const ScrapForm = ({ users, models, stations, lines, materials, onSuccess, curre
             // Single create
             const payload: ScrapData = {
                 ...formData as ScrapData,
+                code: normalizedMaterialCode,
                 date: safeDate,
                 userId: currentUser.matricula,
                 time: time,
@@ -3539,7 +3549,7 @@ const ScrapEditModal = ({ scrap, users, lines, models, categories, statusOptions
 
     // 3. Handle Code Change (Material)
     const handleCodeChange = (code: string) => {
-        const found = materials.find((m: Material) => m.code === code);
+        const found = materials.find((m: Material) => String(m.code || '').trim() === String(code || '').trim());
         setFormData(prev => ({
             ...prev,
             code,
@@ -3561,10 +3571,20 @@ const ScrapEditModal = ({ scrap, users, lines, models, categories, statusOptions
 
     const handleSave = async () => {
         if (!scrap.id) return;
+
+        const normalizedMaterialCode = String(formData.code || '').trim();
+        const isValidMaterialCode = materials.some((m: Material) => String(m.code || '').trim() === normalizedMaterialCode);
+
+        if (!normalizedMaterialCode || !isValidMaterialCode) {
+            alert('Código de material inválido! Selecione ou digite um código de material cadastrado no sistema.');
+            return;
+        }
+
         try {
             // Inject new author (editor) into payload
             const payload = {
                 ...formData,
+                code: normalizedMaterialCode,
                 userId: currentUser.matricula // Force update author
             };
 

@@ -2,12 +2,11 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { Button } from './Button';
 import { Card } from './Card';
 import { Input } from './Input';
-import { Shield, Plus, Search, User as UserIcon, List, ArrowLeft, CheckCircle, Clock, Save, Download, HandMetal, Scan, X, Hand } from 'lucide-react';
+import { Shield, Plus, Search, User as UserIcon, List, ArrowLeft, CheckCircle, Clock, Save, Download, HandMetal, Scan, X, Hand, Pencil, Trash2 } from 'lucide-react';
 import { apiFetch } from '../services/networkConfig';
 import { QRStreamReader } from './QRStreamReader';
-import ExcelJS from 'exceljs';
-import { saveAs } from 'file-saver';
-import { exportLeaderLayout, exportModelLayout, exportGloveControl } from '../services/excelService';
+import { ExcelFidelityPreview } from './ExcelFidelityPreview';
+import { exportLeaderLayout, exportModelLayout, exportGloveControl, downloadAttendanceExcel, getAttendanceExcelBuffer } from '../services/excelService';
 
 interface PeopleManagementModuleProps {
     onBack: () => void;
@@ -28,7 +27,8 @@ export const PeopleManagementModule = ({ onBack, currentUser, hasTabAccess }: Pe
             || roleUp.includes('LIDER')
             || roleUp.includes('COORDENADOR')
             || roleUp.includes('SUPERVISOR')
-            || roleUp.includes('TECNICO DE PROCESSO');
+            || roleUp.includes('TECNICO DE PROCESSO')
+            || roleUp.includes('TÉCNICO DE PROCESSO');
     };
     const getLayoutRolePriority = (role: string) => {
         const normalizedRole = (role || '').toLowerCase();
@@ -253,8 +253,27 @@ export const PeopleManagementModule = ({ onBack, currentUser, hasTabAccess }: Pe
                     </select>
                 </div>
 
-                <Input label="IDL-ST" value={formData.idlSt} onChange={e => setFormData({ ...formData, idlSt: e.target.value })} />
-                <Input label="Tipo" value={formData.type} onChange={e => setFormData({ ...formData, type: e.target.value })} />
+                <div className="flex flex-col gap-2">
+                    <label className="text-sm font-medium text-slate-700 dark:text-zinc-300">IDL-ST</label>
+                    <select className="w-full bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 rounded-xl px-4 py-3 text-slate-900 dark:text-zinc-100" value={formData.idlSt} onChange={e => setFormData({ ...formData, idlSt: e.target.value })}>
+                        <option value="">Selecione...</option>
+                        <option value="DIRETO">DIRETO</option>
+                        <option value="INDIRETO">INDIRETO</option>
+                    </select>
+                </div>
+                <div className="flex flex-col gap-2">
+                    <label className="text-sm font-medium text-slate-700 dark:text-zinc-300">Tipo</label>
+                    <select className="w-full bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 rounded-xl px-4 py-3 text-slate-900 dark:text-zinc-100" value={formData.type} onChange={e => setFormData({ ...formData, type: e.target.value })}>
+                        <option value="">Selecione...</option>
+                        <option value="EFETIVO">EFETIVO</option>
+                        <option value="TEMPORARIO">TEMPORARIO</option>
+                        <option value="APRENDIZ">APRENDIZ</option>
+                        <option value="ESTAGIARIO">ESTAGIARIO</option>
+                        <option value="GRAVIDA">GRAVIDA</option>
+                        <option value="LICENÇA INSS">LICENÇA INSS</option>
+                        <option value="PCD">PCD</option>
+                    </select>
+                </div>
                 <Input label="Logradouro" value={formData.address} onChange={e => setFormData({ ...formData, address: e.target.value })} />
                 <Input label="Número (Endereço)" value={formData.addressNum} onChange={e => setFormData({ ...formData, addressNum: e.target.value })} />
                 <Input label="Bairro" value={formData.neighborhood} onChange={e => setFormData({ ...formData, neighborhood: e.target.value })} />
@@ -629,20 +648,18 @@ export const PeopleManagementModule = ({ onBack, currentUser, hasTabAccess }: Pe
     const [attSearchQuery, setAttSearchQuery] = useState('');
     const [attSelectedEmployee, setAttSelectedEmployee] = useState<any>(null);
     const [attType, setAttType] = useState('FALTA');
-    const [attDelayMinutes, setAttDelayMinutes] = useState('');
-    const [startDate, setStartDate] = useState(() => new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().split('T')[0]);
-    const [endDate, setEndDate] = useState(() => new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().split('T')[0]);
+    const [attTime, setAttTime] = useState('');
+    const todayAttendanceDate = () => new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().split('T')[0];
+    const [startDate, setStartDate] = useState(() => todayAttendanceDate());
+    const [endDate, setEndDate] = useState(() => todayAttendanceDate());
     const [attendanceShiftFilter, setAttendanceShiftFilter] = useState<'ALL' | '1º TURNO' | '2º TURNO'>('ALL');
+    const [attEditingLog, setAttEditingLog] = useState<any>(null);
+    const [attDate, setAttDate] = useState(() => todayAttendanceDate());
+    const [previewBuffer, setPreviewBuffer] = useState<ArrayBuffer | null>(null);
 
-    const formatDelayMinutes = (value: unknown) => {
+    const formatAttendanceTime = (value: unknown) => {
         const raw = String(value ?? '').trim();
-        if (!raw) return '-';
-        if (/^\d+$/.test(raw)) return `${raw} min`;
-        if (/^\d{1,2}:\d{2}$/.test(raw)) {
-            const [hours, minutes] = raw.split(':').map(Number);
-            return `${(hours * 60) + minutes} min`;
-        }
-        return raw;
+        return raw || '-';
     };
 
     const normalizeAttendanceDate = (value: unknown) => {
@@ -678,6 +695,9 @@ export const PeopleManagementModule = ({ onBack, currentUser, hasTabAccess }: Pe
         return `${day}/${month}/${year}`;
     };
 
+    const shouldShowAttTimeInput = attType === 'ATRASO' || attType === 'SAIDA';
+    const attTimeLabel = attType === 'SAIDA' ? 'Horário de Saída' : 'Horário de Chegada';
+
     const filteredAttendanceLogs = useMemo(() => {
         const team = employees.filter((employee: any) => employee.superiorId === currentUser.matricula && isActiveEmployee(employee));
         const normalizedStartDate = String(startDate || '').trim();
@@ -693,7 +713,7 @@ export const PeopleManagementModule = ({ onBack, currentUser, hasTabAccess }: Pe
                     role: employee.role,
                 }))
             )
-            .filter((log: any) => ['FALTA', 'ATRASO', 'ATESTADO'].includes(String(log?.type || '').toUpperCase()))
+            .filter((log: any) => ['FALTA', 'ATRASO', 'ATESTADO', 'SAIDA'].includes(String(log?.type || '').toUpperCase()))
             .filter((log: any) => {
                 const logDate = String(log?.date || '').substring(0, 10);
                 const isAfterStart = !normalizedStartDate || logDate >= normalizedStartDate;
@@ -708,52 +728,171 @@ export const PeopleManagementModule = ({ onBack, currentUser, hasTabAccess }: Pe
         const found = employees
             .filter(e => e.superiorId === currentUser.matricula && isActiveEmployee(e) && (attendanceShiftFilter === 'ALL' || e.shift === attendanceShiftFilter))
             .find(e => e.matricula.includes(attSearchQuery) || e.fullName.toLowerCase().includes(attSearchQuery.toLowerCase()));
-        if (found) setAttSelectedEmployee(found);
-        else alert('Colaborador não encontrado ou não é seu subordinado.');
+
+        if (found) {
+            setAttSelectedEmployee(found);
+            setAttEditingLog(null);
+            setAttType('FALTA');
+            setAttTime('');
+            setAttDate(todayAttendanceDate());
+        } else {
+            alert('Colaborador não encontrado ou não é seu subordinado.');
+        }
+    };
+
+    const handleEditAttendanceLog = (log: any) => {
+        const employee = employees.find((item: any) => item.matricula === log.matricula || item.matricula === log.employeeId);
+        if (!employee) {
+            alert('Colaborador do apontamento não encontrado.');
+            return;
+        }
+
+        const normalizedType = String(log?.type || 'FALTA').toUpperCase();
+        setAttSelectedEmployee(employee);
+        setAttEditingLog(log);
+        setAttSearchQuery(employee.matricula || '');
+        setAttType(normalizedType);
+        setAttTime(['ATRASO', 'SAIDA'].includes(normalizedType) ? String(log?.delayMinutes || '') : '');
+        setAttDate(normalizeAttendanceDate(log?.date) || todayAttendanceDate());
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+    };
+
+    const handleDeleteAttendance = async (log: any) => {
+        const logId = Number(log?.id);
+        if (!Number.isInteger(logId) || logId <= 0) {
+            alert('Apontamento inválido para exclusão.');
+            return;
+        }
+
+        const shouldDelete = window.confirm(`Deseja realmente excluir o apontamento de ${log.fullName} em ${formatAttendanceDisplayDate(log.date)}?`);
+        if (!shouldDelete) return;
+
+        try {
+            await apiFetch(`/attendance/${logId}`, { method: 'DELETE' });
+            if (Number(attEditingLog?.id) === logId) {
+                setAttEditingLog(null);
+                setAttSelectedEmployee(null);
+                setAttType('FALTA');
+                setAttTime('');
+                setAttDate(todayAttendanceDate());
+            }
+            await loadBaseData();
+            alert('Apontamento excluído!');
+        } catch (e) {
+            alert('Erro ao excluir apontamento.');
+        }
+    };
+
+    const handleExportAttendance = async () => {
+        if (!filteredAttendanceLogs.length) {
+            alert('Nenhum registro encontrado para exportação.');
+            return;
+        }
+
+        try {
+            const safeShift = (attendanceShiftFilter === 'ALL' ? 'todos_os_turnos' : attendanceShiftFilter).replace(/[^a-zA-Z0-9_-]+/g, '_');
+            await downloadAttendanceExcel(
+                filteredAttendanceLogs.map((log: any) => ({
+                    matricula: log.matricula,
+                    fullName: log.fullName,
+                    shift: log.shift,
+                    role: log.role,
+                    type: log.type,
+                    date: formatAttendanceDisplayDate(log.date),
+                    time: ['ATRASO', 'SAIDA'].includes(String(log?.type || '').toUpperCase()) ? formatAttendanceTime(log.delayMinutes) : '-',
+                })),
+                {
+                    startDate,
+                    endDate,
+                    shift: attendanceShiftFilter,
+                    fileName: `controle_presenca_${startDate}_${endDate}_${safeShift}.xlsx`
+                }
+            );
+        } catch (e) {
+            alert('Erro ao exportar a planilha.');
+        }
+    };
+
+    const handleDownloadAttendanceJpg = async () => {
+        if (!filteredAttendanceLogs.length) {
+            alert('Nenhum registro encontrado para gerar a prévia.');
+            return;
+        }
+
+        try {
+            const buffer = await getAttendanceExcelBuffer(
+                filteredAttendanceLogs.map((log: any) => ({
+                    matricula: log.matricula,
+                    fullName: log.fullName,
+                    shift: log.shift,
+                    role: log.role,
+                    type: log.type,
+                    date: formatAttendanceDisplayDate(log.date),
+                    time: ['ATRASO', 'SAIDA'].includes(String(log?.type || '').toUpperCase()) ? formatAttendanceTime(log.delayMinutes) : '-',
+                })),
+                {
+                    startDate,
+                    endDate,
+                    shift: attendanceShiftFilter,
+                }
+            );
+            setPreviewBuffer(buffer);
+        } catch (error) {
+            console.error('Erro ao gerar preview da presença:', error);
+            alert('Erro ao gerar a prévia da planilha.');
+        }
     };
 
     const handleSaveAttendance = async () => {
         if (!attSelectedEmployee) return;
         try {
-            const now = new Date();
-            const selectedShift = String(attSelectedEmployee?.shift || '').toUpperCase();
-            const isSecondShift = ['2T', '2º TURNO', '2O TURNO', 'SEGUNDO TURNO'].includes(selectedShift);
+            const normalizedAttType = String(attType || '').toUpperCase();
+            const attendanceTime = ['ATRASO', 'SAIDA'].includes(normalizedAttType) ? attTime : null;
+            const dateString = normalizeAttendanceDate(attDate);
 
-            if (isSecondShift && now.getHours() >= 0 && now.getHours() <= 5) {
-                now.setDate(now.getDate() - 1);
+            if (!dateString) {
+                alert('Informe a data da ocorrência.');
+                return;
             }
 
-            const dateString = normalizeAttendanceDate(now);
+            if (['ATRASO', 'SAIDA'].includes(normalizedAttType) && !attendanceTime) {
+                alert(`Informe o ${normalizedAttType === 'SAIDA' ? 'horário de saída' : 'horário de chegada'}.`);
+                return;
+            }
             const existingLog = (Array.isArray(attSelectedEmployee?.attendanceLogs) ? attSelectedEmployee.attendanceLogs : [])
                 .find((log: any) => normalizeAttendanceDate(log?.date) === dateString);
 
-            if (existingLog) {
+            if (existingLog && Number(existingLog.id) !== Number(attEditingLog?.id)) {
                 const existingType = String(existingLog?.type || '').toUpperCase();
-                const nextType = String(attType || '').toUpperCase();
+                const nextType = normalizedAttType;
 
                 if (existingType === nextType) {
-                    alert('Este apontamento já foi registrado para este colaborador hoje.');
+                    alert('Este apontamento já foi registrado para este colaborador nesta data.');
                     return;
                 }
 
-                const shouldUpdate = window.confirm(`Já existe um apontamento de ${existingType} hoje. Deseja alterar para ${nextType}?`);
+                const shouldUpdate = window.confirm(`Já existe um apontamento de ${existingType} nesta data. Deseja alterar para ${nextType}?`);
                 if (!shouldUpdate) return;
             }
 
             await apiFetch('/attendance', {
                 method: 'POST',
                 body: JSON.stringify({
+                    id: attEditingLog?.id,
                     employeeId: attSelectedEmployee.matricula,
                     date: dateString,
-                    type: attType,
-                    delayMinutes: attType === 'ATRASO' ? attDelayMinutes : null,
+                    type: normalizedAttType,
+                    delayMinutes: attendanceTime,
                     loggedById: currentUser.matricula
                 })
             });
-            alert('Apontamento registrado!');
+            alert(attEditingLog ? 'Apontamento atualizado!' : 'Apontamento registrado!');
+            setAttEditingLog(null);
             setAttSelectedEmployee(null);
             setAttSearchQuery('');
-            setAttDelayMinutes('');
+            setAttType('FALTA');
+            setAttTime('');
+            setAttDate(todayAttendanceDate());
             loadBaseData(); // Reload data to update attendance logs
         } catch (e) { alert('Erro ao salvar'); }
     };
@@ -766,6 +905,7 @@ export const PeopleManagementModule = ({ onBack, currentUser, hasTabAccess }: Pe
         const totalFaltas = filteredAttendanceLogs.filter((log: any) => log.type === 'FALTA').length;
         const totalAtrasos = filteredAttendanceLogs.filter((log: any) => log.type === 'ATRASO').length;
         const totalAtestados = filteredAttendanceLogs.filter((log: any) => log.type === 'ATESTADO').length;
+        const totalSaidas = filteredAttendanceLogs.filter((log: any) => log.type === 'SAIDA').length;
 
         return (
             <div className="space-y-4">
@@ -801,11 +941,15 @@ export const PeopleManagementModule = ({ onBack, currentUser, hasTabAccess }: Pe
                             <option value="2º TURNO">2º TURNO</option>
                         </select>
                     </div>
-                    <Button onClick={handleSearchSubordinado}><Search size={16} /> Buscar Externo</Button>
+                    <div className="flex flex-wrap gap-2">
+                        <Button onClick={handleSearchSubordinado}><Search size={16} /> Buscar Externo</Button>
+                        <Button variant="secondary" onClick={handleExportAttendance}><Download size={16} /> Exportar Excel</Button>
+                        <Button variant="secondary" onClick={handleDownloadAttendanceJpg}><Download size={16} /> Baixar JPG</Button>
+                    </div>
                 </Card>
 
                 <Card className="space-y-4">
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                    <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
                         <div className="rounded-xl border border-red-200 dark:border-red-900/40 bg-red-50 dark:bg-red-900/10 p-4">
                             <p className="text-xs font-bold uppercase tracking-wide text-red-600 dark:text-red-400">Total de Faltas</p>
                             <p className="text-2xl font-black text-slate-900 dark:text-zinc-100 mt-2">{totalFaltas}</p>
@@ -817,6 +961,10 @@ export const PeopleManagementModule = ({ onBack, currentUser, hasTabAccess }: Pe
                         <div className="rounded-xl border border-amber-200 dark:border-amber-900/40 bg-amber-50 dark:bg-amber-900/10 p-4">
                             <p className="text-xs font-bold uppercase tracking-wide text-amber-600 dark:text-amber-400">Total de Atestados</p>
                             <p className="text-2xl font-black text-slate-900 dark:text-zinc-100 mt-2">{totalAtestados}</p>
+                        </div>
+                        <div className="rounded-xl border border-cyan-200 dark:border-cyan-900/40 bg-cyan-50 dark:bg-cyan-900/10 p-4">
+                            <p className="text-xs font-bold uppercase tracking-wide text-cyan-600 dark:text-cyan-400">Total de Saídas</p>
+                            <p className="text-2xl font-black text-slate-900 dark:text-zinc-100 mt-2">{totalSaidas}</p>
                         </div>
                     </div>
                     <div className="overflow-x-auto">
@@ -832,7 +980,8 @@ export const PeopleManagementModule = ({ onBack, currentUser, hasTabAccess }: Pe
                                         <th className="p-3 text-left">Função</th>
                                         <th className="p-3 text-left">Tipo de Ocorrência</th>
                                         <th className="p-3 text-left">Data da Ocorrência</th>
-                                        <th className="p-3 text-left">Tempo de Atraso</th>
+                                        <th className="p-3 text-left">Horário Informado</th>
+                                        <th className="p-3 text-left">Ações</th>
                                     </tr>
                                 </thead>
                                 <tbody className="divide-y divide-slate-200 dark:divide-zinc-800">
@@ -844,7 +993,17 @@ export const PeopleManagementModule = ({ onBack, currentUser, hasTabAccess }: Pe
                                             <td className="p-3 text-slate-700 dark:text-zinc-300">{log.role}</td>
                                             <td className="p-3 text-slate-700 dark:text-zinc-300">{log.type}</td>
                                             <td className="p-3 text-slate-700 dark:text-zinc-300">{formatAttendanceDisplayDate(log.date)}</td>
-                                            <td className="p-3 text-slate-700 dark:text-zinc-300">{log.type === 'ATRASO' ? formatDelayMinutes(log.delayMinutes) : '-'}</td>
+                                            <td className="p-3 text-slate-700 dark:text-zinc-300">{['ATRASO', 'SAIDA'].includes(String(log.type || '').toUpperCase()) ? formatAttendanceTime(log.delayMinutes) : '-'}</td>
+                                            <td className="p-3 text-slate-700 dark:text-zinc-300">
+                                                <div className="flex flex-wrap gap-2">
+                                                    <button onClick={() => handleEditAttendanceLog(log)} className="inline-flex items-center gap-1 rounded-lg border border-cyan-200 px-2.5 py-1 text-xs font-bold text-cyan-700 hover:bg-cyan-50 dark:border-cyan-900/40 dark:text-cyan-300 dark:hover:bg-cyan-900/20">
+                                                        <Pencil size={12} /> Editar
+                                                    </button>
+                                                    <button onClick={() => handleDeleteAttendance(log)} className="inline-flex items-center gap-1 rounded-lg border border-red-200 px-2.5 py-1 text-xs font-bold text-red-700 hover:bg-red-50 dark:border-red-900/40 dark:text-red-300 dark:hover:bg-red-900/20">
+                                                        <Trash2 size={12} /> Excluir
+                                                    </button>
+                                                </div>
+                                            </td>
                                         </tr>
                                     ))}
                                 </tbody>
@@ -863,7 +1022,13 @@ export const PeopleManagementModule = ({ onBack, currentUser, hasTabAccess }: Pe
                                 {filteredTeam.map(emp => (
                                     <div
                                         key={emp.matricula}
-                                        onClick={() => setAttSelectedEmployee(emp)}
+                                        onClick={() => {
+                                            setAttSelectedEmployee(emp);
+                                            setAttEditingLog(null);
+                                            setAttType('FALTA');
+                                            setAttTime('');
+                                            setAttDate(todayAttendanceDate());
+                                        }}
                                         className="flex items-center gap-3 p-3 rounded-xl border border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 hover:border-cyan-500 cursor-pointer transition-all"
                                     >
                                         {emp.photo ? (
@@ -899,27 +1064,62 @@ export const PeopleManagementModule = ({ onBack, currentUser, hasTabAccess }: Pe
                                     <p className="text-slate-500">{attSelectedEmployee.matricula}</p>
                                 </div>
                             </div>
-                            <button onClick={() => setAttSelectedEmployee(null)} className="text-sm text-slate-500 hover:text-red-500 font-bold">Trocar Colaborador</button>
+                            <button onClick={() => {
+                                setAttSelectedEmployee(null);
+                                setAttEditingLog(null);
+                                setAttType('FALTA');
+                                setAttTime('');
+                                setAttDate(todayAttendanceDate());
+                            }} className="text-sm text-slate-500 hover:text-red-500 font-bold">Trocar Colaborador</button>
                         </div>
 
-                        <div className="grid grid-cols-2 gap-4 pt-4 border-t border-slate-100 dark:border-zinc-800">
+                        {attEditingLog && (
+                            <div className="flex items-center justify-between gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:border-amber-900/40 dark:bg-amber-900/10 dark:text-amber-300">
+                                <span>Editando apontamento de {formatAttendanceDisplayDate(attEditingLog.date)}.</span>
+                                <button onClick={() => {
+                                    setAttEditingLog(null);
+                                    setAttType('FALTA');
+                                    setAttTime('');
+                                    setAttDate(todayAttendanceDate());
+                                }} className="font-bold underline underline-offset-2">Cancelar edição</button>
+                            </div>
+                        )}
+
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-4 border-t border-slate-100 dark:border-zinc-800">
+                            <Input label="Data da Ocorrência" type="date" value={attDate} onChange={e => setAttDate(e.target.value)} />
                             <div className="flex flex-col gap-2">
                                 <label className="text-sm font-medium text-slate-700 dark:text-zinc-300">Tipo de Apontamento</label>
-                                <select className="w-full bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 rounded-xl px-4 py-3 text-slate-900 dark:text-zinc-100" value={attType} onChange={e => setAttType(e.target.value)}>
+                                <select
+                                    className="w-full bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 rounded-xl px-4 py-3 text-slate-900 dark:text-zinc-100"
+                                    value={attType}
+                                    onChange={e => {
+                                        const nextType = e.target.value;
+                                        setAttType(nextType);
+                                        if (!['ATRASO', 'SAIDA'].includes(nextType)) setAttTime('');
+                                    }}
+                                >
                                     <option value="FALTA">Falta</option>
                                     <option value="ATESTADO">Atestado</option>
                                     <option value="ATRASO">Atraso</option>
+                                    <option value="SAIDA">Saída Antecipada</option>
                                 </select>
                             </div>
-                            {attType === 'ATRASO' && (
-                                <Input label="Tempo de Atraso (HH:mm)" type="time" value={attDelayMinutes} onChange={e => setAttDelayMinutes(e.target.value)} />
+                            {shouldShowAttTimeInput && (
+                                <Input label={attTimeLabel} type="time" value={attTime} onChange={e => setAttTime(e.target.value)} />
                             )}
                         </div>
                         <div className="flex justify-end pt-2">
-                            <Button onClick={handleSaveAttendance}><CheckCircle size={16} /> Registrar Apontamento</Button>
+                            <Button onClick={handleSaveAttendance}><CheckCircle size={16} /> {attEditingLog ? 'Salvar Edição' : 'Registrar Apontamento'}</Button>
                         </div>
                     </Card>
                 )}
+            {previewBuffer && (
+                <ExcelFidelityPreview
+                    buffer={previewBuffer}
+                    onClose={() => setPreviewBuffer(null)}
+                    title={`absenteísmos (turno: ${attendanceShiftFilter})`}
+                />
+            )}
             </div>
         );
     };
@@ -1501,7 +1701,20 @@ export const PeopleManagementModule = ({ onBack, currentUser, hasTabAccess }: Pe
 
     const gloveDashboardData = useMemo(() => {
         const team = employees.filter(employee => employee.superiorId === currentUser.matricula && isActiveEmployee(employee));
-        const selfEmployee = employees.find(employee => employee.matricula === currentUser.matricula && isActiveEmployee(employee));
+        const leaderSource = leaders.find(leader => leader.matricula === currentUser.matricula) || currentUser;
+        const normalizedLeaderName = leaderSource?.fullName || leaderSource?.name || currentUser?.name || currentUser?.fullName || 'Colaborador Sem Nome';
+        const selfEmployee = employees.find(employee => employee.matricula === currentUser.matricula && isActiveEmployee(employee)) || (leaderSource ? {
+            ...leaderSource,
+            matricula: leaderSource.matricula || currentUser.matricula,
+            fullName: normalizedLeaderName,
+            name: normalizedLeaderName,
+            gloveSize: leaderSource.gloveSize ?? currentUser.gloveSize ?? '',
+            gloveType: leaderSource.gloveType ?? currentUser.gloveType ?? '',
+            gloveExchanges: Number(leaderSource.gloveExchanges ?? currentUser.gloveExchanges ?? 0),
+            role: leaderSource.role || currentUser.role || '',
+            superiorId: leaderSource.superiorId || currentUser.superiorId || currentUser.matricula,
+            status: leaderSource.status || currentUser.status || 'ATIVO',
+        } : null);
         const baseList = selfEmployee ? [selfEmployee, ...team.filter(employee => employee.matricula !== currentUser.matricula)] : team;
         const processedList = [...baseList].sort((a, b) => {
             const priorityDiff = getGloveRolePriority(a?.role || '') - getGloveRolePriority(b?.role || '');
@@ -1538,24 +1751,44 @@ export const PeopleManagementModule = ({ onBack, currentUser, hasTabAccess }: Pe
             roleSummary: Array.from(roleTotals.entries()),
             totalQty,
         };
-    }, [employees, currentUser.matricula]);
+    }, [employees, leaders, currentUser]);
 
     const renderLuvas = () => {
         const { processedList, sizeSummary, roleSummary, totalQty } = gloveDashboardData;
         const totalRoles = roleSummary.reduce((acc, [, qty]) => acc + qty, 0);
 
         const handleUpdateGlove = async (matricula: string, field: 'gloveSize' | 'gloveType' | 'gloveExchanges', value: string | number) => {
-            const empToUpdate = employees.find(e => e.matricula === matricula);
+            const empToUpdate = employees.find(e => e.matricula === matricula)
+                || leaders.find(e => e.matricula === matricula)
+                || (currentUser?.matricula === matricula ? currentUser : null);
             if (!empToUpdate) return;
             const updatedProfile = { ...empToUpdate, [field]: value };
 
             try {
-                await apiFetch('/employees', {
+                const response = await apiFetch('/employees', {
                     method: 'POST',
-                    body: JSON.stringify({ ...updatedProfile, isEdit: true })
+                    body: JSON.stringify({ ...updatedProfile, fullName: empToUpdate.fullName || empToUpdate.name || currentUser?.name, sector: empToUpdate.sector || "PRODUÇÃO", isEdit: true })
                 });
-                // Update local state smoothly
-                setEmployees(prev => prev.map(e => e.matricula === matricula ? { ...e, [field]: value } : e));
+                const savedProfile = response?.employee ? { ...updatedProfile, ...response.employee } : updatedProfile;
+                const normalizedProfile = {
+                    ...savedProfile,
+                    fullName: savedProfile.fullName || savedProfile.name || 'Colaborador Sem Nome',
+                    name: savedProfile.fullName || savedProfile.name || 'Colaborador Sem Nome',
+                };
+                setEmployees(prev => (
+                    prev.some(e => e.matricula === matricula)
+                        ? prev.map(e => e.matricula === matricula ? { ...e, ...normalizedProfile } : e)
+                        : [...prev, normalizedProfile]
+                ));
+                setLeaders(prev => {
+                    const exists = prev.some(e => e.matricula === matricula);
+                    if (exists) {
+                        return prev.map(e => e.matricula === matricula ? { ...e, ...normalizedProfile } : e);
+                    }
+                    return matricula === currentUser?.matricula || isLeadershipRole(normalizedProfile?.role)
+                        ? [...prev, normalizedProfile]
+                        : prev;
+                });
             } catch (e) {
                 alert('Erro ao atualizar luva');
             }
@@ -1643,7 +1876,7 @@ export const PeopleManagementModule = ({ onBack, currentUser, hasTabAccess }: Pe
                                 {processedList.map(s => (
                                     <tr key={s.matricula} className={`hover:bg-slate-50 dark:hover:bg-zinc-800/50 ${s.matricula === currentUser.matricula ? 'bg-indigo-50/30 dark:bg-indigo-900/10' : ''}`}>
                                         <td className="p-4 font-mono">{s.matricula}</td>
-                                        <td className="p-4">{s.fullName} {s.matricula === currentUser.matricula && <span className="text-xs text-indigo-500 font-bold ml-2">(Você)</span>}</td>
+                                        <td className="p-4">{s.fullName || s.name || 'Colaborador Sem Nome'} {s.matricula === currentUser.matricula && <span className="text-xs text-indigo-500 font-bold ml-2">(Você)</span>}</td>
                                         <td className="p-4">{s.role}</td>
                                         <td className="p-4">
                                             <select

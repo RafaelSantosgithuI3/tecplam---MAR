@@ -1661,6 +1661,100 @@ export const downloadPreparationExcel = async (logs: PreparationLog[], filters: 
     saveAs(blob, `Relatorio_Preparacao_${filters.date}.xlsx`);
 }
 
+type AttendanceExcelRow = {
+    matricula?: string;
+    fullName?: string;
+    shift?: string;
+    role?: string;
+    type?: string;
+    date?: string;
+    time?: string;
+};
+
+export const getAttendanceExcelBuffer = async (
+    logs: AttendanceExcelRow[],
+    filters: { startDate?: string; endDate?: string; shift?: string }
+): Promise<ArrayBuffer> => {
+    const workbook = new ExcelJS.Workbook();
+    const worksheet = workbook.addWorksheet('Controle de Presença');
+    const shiftLabel = filters.shift && filters.shift !== 'ALL' ? filters.shift : 'Todos os turnos';
+    const thinBorder: Partial<ExcelJS.Borders> = {
+        top: { style: 'thin' },
+        left: { style: 'thin' },
+        bottom: { style: 'thin' },
+        right: { style: 'thin' }
+    };
+
+    worksheet.columns = [
+        { header: 'Matrícula', key: 'matricula', width: 16 },
+        { header: 'Nome do Colaborador', key: 'fullName', width: 32 },
+        { header: 'Turno', key: 'shift', width: 16 },
+        { header: 'Função', key: 'role', width: 24 },
+        { header: 'Tipo', key: 'type', width: 18 },
+        { header: 'Data', key: 'date', width: 16 },
+        { header: 'Horário Informado', key: 'time', width: 18 },
+    ];
+
+    worksheet.mergeCells('A1:G1');
+    const titleCell = worksheet.getCell('A1');
+    titleCell.value = 'Controle de Presença';
+    titleCell.font = { bold: true, size: 16, color: { argb: 'FFFFFFFF' } };
+    titleCell.alignment = { vertical: 'middle', horizontal: 'center' };
+    titleCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF7F7F7F' } };
+    worksheet.getRow(1).height = 26;
+
+    const headerRow = worksheet.getRow(3);
+    ['Matrícula', 'Nome do Colaborador', 'Turno', 'Função', 'Tipo', 'Data', 'Horário Informado'].forEach((header, index) => {
+        const cell = headerRow.getCell(index + 1);
+        cell.value = header;
+        cell.font = { bold: true, color: { argb: 'FFFFFFFF' } };
+        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFA6A6A6' } };
+        cell.alignment = { vertical: 'middle', horizontal: 'center' };
+    });
+    headerRow.height = 22;
+
+    logs.forEach((log, index) => {
+        const row = worksheet.addRow({
+            matricula: log.matricula || '',
+            fullName: log.fullName || '',
+            shift: log.shift || '',
+            role: log.role || '',
+            type: log.type || '',
+            date: log.date || '',
+            time: log.time || '-',
+        });
+
+        row.eachCell((cell) => {
+            cell.alignment = { vertical: 'middle', horizontal: 'left' };
+            if (index % 2 === 0) {
+                cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF8FAFC' } };
+            }
+        });
+    });
+
+    worksheet.eachRow((row) => {
+        row.eachCell({ includeEmpty: false }, (cell) => {
+            if (cell.value !== null && cell.value !== undefined) {
+                cell.border = thinBorder;
+            }
+        });
+    });
+
+    return await workbook.xlsx.writeBuffer() as ArrayBuffer;
+};
+
+export const downloadAttendanceExcel = async (
+    logs: AttendanceExcelRow[],
+    filters: { startDate?: string; endDate?: string; shift?: string; fileName?: string }
+) => {
+    const shiftLabel = filters.shift && filters.shift !== 'ALL' ? filters.shift : 'Todos os turnos';
+    const safeShift = String(shiftLabel || 'todos').replace(/[^a-zA-Z0-9_-]+/g, '_');
+    const fileName = filters.fileName || `controle_presenca_${filters.startDate || 'inicio'}_${filters.endDate || 'fim'}_${safeShift}.xlsx`;
+    const buffer = await getAttendanceExcelBuffer(logs, filters);
+    const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+    saveAs(blob, fileName);
+};
+
 export const generateBoxLabels = async (boxId: number | string, scraps: any[], extraParams: any) => {
     // 1. Agrupar scraps pelo código
     const groups: { [code: string]: { plant: string, model: string, code: string, desc: string, qty: number, user: string } } = {};

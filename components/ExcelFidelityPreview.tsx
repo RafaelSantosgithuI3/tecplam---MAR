@@ -40,8 +40,7 @@ export const ExcelFidelityPreview: React.FC<ExcelFidelityPreviewProps> = ({ buff
 
             // Cria um link fantasma para forçar o download
             const link = document.createElement('a');
-            const safeTitle = title.replace(/[^a-z0-9]/gi, '_').toLowerCase();
-            link.download = `Preparação De Linha_${formatDate(new Date(), 'dd-MM-yy')}.jpg`;
+            link.download = `${title} - ${formatDate(new Date(), 'dd/MM/yy')}.jpg`;
             link.href = imgData;
             link.click();
         } catch (error) {
@@ -119,7 +118,7 @@ export const ExcelFidelityPreview: React.FC<ExcelFidelityPreviewProps> = ({ buff
                 const getBorderStyle = (borderDef: any) => {
                     if (!borderDef || !borderDef.style) return undefined;
                     const color = '#000000';
-                    let thickness = '1px';
+                    let thickness = 'thin';
                     if (borderDef.style === 'thick') thickness = '2px';
                     return `${thickness} solid ${color}`;
                 };
@@ -249,7 +248,7 @@ export const ExcelFidelityPreview: React.FC<ExcelFidelityPreviewProps> = ({ buff
                         const hasRealContent = cellText.length > 0 || !!cellImage;
                         if (!hasExplicitBorder) {
                             if (hasRealFill || hasRealContent) {
-                                style.border = '1px solid #000000';
+                                style.border = 'thin solid #000000';
                             } else {
                                 style.border = 'none';
                                 style.backgroundColor = 'transparent';
@@ -263,7 +262,7 @@ export const ExcelFidelityPreview: React.FC<ExcelFidelityPreviewProps> = ({ buff
                                         <img src={cellImage} alt="Logo" style={{ maxHeight: '95%', maxWidth: '95%', objectFit: 'contain' }} />
                                     </div>
                                 ) : (
-                                    <div style={{ display: 'block', height: '100%', width: '100%', padding: '4px', paddingBottom: '6px', lineHeight: '1.5', whiteSpace: 'nowrap', boxSizing: 'border-box' }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', width: '100%', padding: '4px', lineHeight: '1.5', whiteSpace: 'nowrap', boxSizing: 'border-box' }}>
                                         {cellText}
                                     </div>
                                 )}
@@ -273,14 +272,6 @@ export const ExcelFidelityPreview: React.FC<ExcelFidelityPreviewProps> = ({ buff
                     rowsRender.push(
                         <tr key={rowNumber}>
                             {cellsRender}
-                            <td
-                                key={`spacer-${rowNumber}`}
-                                style={{
-                                    minWidth: '30px',
-                                    border: 'none',
-                                    backgroundColor: 'transparent'
-                                }}
-                            />
                         </tr>
                     );
                 }
@@ -393,7 +384,7 @@ export const ExcelFidelityPreview: React.FC<ExcelFidelityPreviewProps> = ({ buff
                                 }}
                                 className="relative w-max lg:w-auto"
                             >
-                                <div ref={tableRef} className="bg-white shadow-2xl pb-4">
+                                <div ref={tableRef} className="bg-white shadow-2xl p-6 inline-block w-max">
                                     {htmlTable}
                                 </div>
                             </div>

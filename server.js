@@ -1853,10 +1853,15 @@ app.post('/api/employees', async (req, res) => {
             if (existing) return res.status(400).json({ error: "Erro: Matrícula já cadastrada no sistema (Ativa ou Inativa)." });
         }
 
+        const safeFullName = fullName || req.body.name || "Colaborador/Líder";
+        const safeSector = sector || req.body.sector || "NÃO INFORMADO";
+        const safeIdlSt = idlSt || req.body.idlSt || "INDIRETO";
+        const safeType = type || req.body.type || "EFETIVO";
+
         const employee = await prisma.employee.upsert({
             where: { matricula: String(matricula) },
             update: { photo, fullName, shift, role, sector, superiorId, idlSt, type, status, address, addressNum, neighborhood, whatsapp, gloveSize, gloveType, gloveExchanges: gloveExchanges ? Number(gloveExchanges) : null },
-            create: { matricula: String(matricula), photo, fullName, shift, role, sector, superiorId, idlSt, type, status: status || 'ATIVO', address, addressNum, neighborhood, whatsapp, gloveSize, gloveType, gloveExchanges: gloveExchanges ? Number(gloveExchanges) : null }
+            create: { matricula: String(matricula), photo, fullName: safeFullName, shift, role, sector: safeSector, superiorId, idlSt: safeIdlSt, type: safeType, status: status || 'ATIVO', address, addressNum, neighborhood, whatsapp, gloveSize, gloveType, gloveExchanges: gloveExchanges ? Number(gloveExchanges) : null }
         });
         await refreshRamCollection(CACHE_KEYS.EMPLOYEES);
         broadcastSyncDelta(CACHE_KEYS.EMPLOYEES, 'upsert', { items: [getRamItem(CACHE_KEYS.EMPLOYEES, employee.matricula) || employee] });
@@ -1971,23 +1976,40 @@ app.put('/api/employees/:matricula/transfer', async (req, res) => {
 
 app.post('/api/attendance', async (req, res) => {
     try {
-        const { employeeId, date, type, delayMinutes, loggedById } = req.body;
-        const normalizedEmployeeId = String(employeeId);
-        const normalizedDate = String(date);
+        const { id, employeeId, date, type, delayMinutes, loggedById } = req.body;
+        const normalizedEmployeeId = String(employeeId || '').trim();
+        const normalizedDate = String(date || '').trim();
+        const normalizedType = String(type || '').trim().toUpperCase();
+        const normalizedLoggedById = String(loggedById || '').trim();
 
-        const existingLog = await prisma.attendanceLog.findFirst({
-            where: {
-                employeeId: normalizedEmployeeId,
-                date: normalizedDate
-            }
-        });
+        if (!normalizedEmployeeId || !normalizedDate || !normalizedType || !normalizedLoggedById) {
+            return res.status(400).json({ error: 'employeeId, date, type e loggedById são obrigatórios.' });
+        }
+
+        const providedId = Number(id);
+        let existingLog = null;
+
+        if (Number.isInteger(providedId) && providedId > 0) {
+            existingLog = await prisma.attendanceLog.findUnique({
+                where: { id: providedId }
+            });
+        }
+
+        if (!existingLog) {
+            existingLog = await prisma.attendanceLog.findFirst({
+                where: {
+                    employeeId: normalizedEmployeeId,
+                    date: normalizedDate
+                }
+            });
+        }
 
         const payload = {
             employeeId: normalizedEmployeeId,
             date: normalizedDate,
-            type,
+            type: normalizedType,
             delayMinutes: delayMinutes ? String(delayMinutes) : null,
-            loggedById
+            loggedById: normalizedLoggedById
         };
 
         const log = existingLog
@@ -2003,6 +2025,34 @@ app.post('/api/attendance', async (req, res) => {
         broadcastSyncDelta(CACHE_KEYS.EMPLOYEES, 'replace', { items: getRamCollection(CACHE_KEYS.EMPLOYEES) });
 
         res.json({ message: existingLog ? "Apontamento atualizado" : "Apontamento salvo", log });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+app.delete('/api/attendance/:id', async (req, res) => {
+    try {
+        const logId = Number(req.params.id);
+        if (!Number.isInteger(logId) || logId <= 0) {
+            return res.status(400).json({ error: 'ID de apontamento inválido.' });
+        }
+
+        const existingLog = await prisma.attendanceLog.findUnique({
+            where: { id: logId }
+        });
+
+        if (!existingLog) {
+            return res.status(404).json({ error: 'Apontamento não encontrado.' });
+        }
+
+        await prisma.attendanceLog.delete({
+            where: { id: logId }
+        });
+
+        await refreshRamCollection(CACHE_KEYS.EMPLOYEES);
+        broadcastSyncDelta(CACHE_KEYS.EMPLOYEES, 'replace', { items: getRamCollection(CACHE_KEYS.EMPLOYEES) });
+
+        res.json({ message: 'Apontamento excluído', deletedId: logId });
     } catch (e) {
         res.status(500).json({ error: e.message });
     }

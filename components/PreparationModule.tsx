@@ -413,7 +413,7 @@ export const PreparationModule: React.FC<PreparationModuleProps> = ({ currentUse
                 <ExcelFidelityPreview
                     buffer={previewBuffer}
                     onClose={() => setPreviewBuffer(null)}
-                    title="Preview do Relatório de Preparação"
+                    title={`Preparação De Linha (turno: ${filterShift})`}
                 />
             )}
         </div>

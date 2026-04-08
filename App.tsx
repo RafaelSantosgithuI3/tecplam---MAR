@@ -879,7 +879,7 @@ const App = () => {
         if (loadedLines.length > 0) setMaintenanceLine(loadedLines[0].name);
 
         setAvailableRoles(loadedRoles);
-        if (loadedRoles.length > 0 && !user) setRegRole(loadedRoles[0].name);
+        if (!user) setRegRole('');
 
         setModels(loadedModels);
         setStations(loadedStations);
@@ -1124,6 +1124,10 @@ const App = () => {
         e.preventDefault();
         if (regPassword !== regConfirmPassword) {
             setRegError("As senhas não coincidem.");
+            return;
+        }
+        if (!regRole.trim()) {
+            setRegError("Selecione um cargo válido.");
             return;
         }
         setIsLoginLoading(true);
@@ -1978,7 +1982,8 @@ const App = () => {
                             <div>
                                 <label className="block text-xs font-medium text-slate-600 dark:text-zinc-400 mb-1.5 uppercase tracking-wide">Função</label>
                                 <select className="w-full bg-white dark:bg-zinc-950 border border-slate-300 dark:border-zinc-800 rounded-lg p-2.5 text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-600/50 outline-none" value={regRole} onChange={e => setRegRole(e.target.value)}>
-                                    {availableRoles.map(r => <option key={r.id} value={r.name}>{r.name}</option>)}
+                                    <option value="" disabled>Selecionar cargo</option>
+                                    {[...availableRoles].sort((a, b) => a.name.localeCompare(b.name)).map(r => <option key={r.id} value={r.name}>{r.name}</option>)}
                                 </select>
                             </div>
                             <div>
@@ -2093,6 +2098,58 @@ const App = () => {
                     )}
                     */}
                 </div>
+
+                <section className="mb-6 space-y-3">
+                    <div>
+                        <h2 className="text-sm font-bold uppercase tracking-wide text-slate-600 dark:text-zinc-300">Acesso Rápido</h2>
+                        <p className="text-xs text-slate-500 dark:text-zinc-400">Atalhos diretos para as rotinas mais usadas.</p>
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        {hasAccess(PERMISSIONS.VIEW_PREPARATION) && (
+                            <div
+                                onClick={() => {
+                                    sessionStorage.setItem('activeTab_PreparationModule', 'VIEW');
+                                    setView('PREPARATION');
+                                }}
+                                className="group bg-white dark:bg-zinc-900 p-4 rounded-2xl border border-slate-200 dark:border-zinc-800 hover:border-violet-600/50 hover:bg-slate-50 dark:hover:bg-zinc-800 transition-all cursor-pointer shadow-sm"
+                            >
+                                <div className="flex items-center gap-3">
+                                    <div className="w-10 h-10 bg-violet-600/10 dark:bg-violet-600/20 text-violet-600 dark:text-violet-500 rounded-xl flex items-center justify-center group-hover:scale-110 transition-transform"><FileText size={20} /></div>
+                                    <div>
+                                        <h3 className="font-bold text-slate-900 dark:text-zinc-100">Preparação de Linhas</h3>
+                                        <p className="text-xs text-slate-500 dark:text-zinc-500">Abrir direto na visualização</p>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
+                        {(hasAccess(PERMISSIONS.VIEW_PEOPLE_MANAGEMENT) || hasAccess(PERMISSIONS.VIEW_PEOPLE_MANAGEMENT_MANAGERS)) && (
+                            <div
+                                onClick={() => {
+                                    if (hasAccess(PERMISSIONS.VIEW_PEOPLE_MANAGEMENT_MANAGERS)) {
+                                        sessionStorage.setItem('activeTab_PeopleManagementManagersModule', 'PRESENCA');
+                                        setView('PEOPLE_MANAGEMENT_MANAGERS');
+                                        return;
+                                    }
+
+                                    if (hasAccess(PERMISSIONS.VIEW_PEOPLE_MANAGEMENT)) {
+                                        sessionStorage.setItem('activeTab_PeopleManagementModule', 'PRESENCA');
+                                        setView('PEOPLE_MANAGEMENT');
+                                    }
+                                }}
+                                className="group bg-white dark:bg-zinc-900 p-4 rounded-2xl border border-slate-200 dark:border-zinc-800 hover:border-cyan-600/50 hover:bg-slate-50 dark:hover:bg-zinc-800 transition-all cursor-pointer shadow-sm"
+                            >
+                                <div className="flex items-center gap-3">
+                                    <div className="w-10 h-10 bg-cyan-600/10 dark:bg-cyan-600/20 text-cyan-600 dark:text-cyan-500 rounded-xl flex items-center justify-center group-hover:scale-110 transition-transform"><Clock size={20} /></div>
+                                    <div>
+                                        <h3 className="font-bold text-slate-900 dark:text-zinc-100">Controle de Faltas/Saídas</h3>
+                                        <p className="text-xs text-slate-500 dark:text-zinc-500">Abrir direto na aba de presença</p>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                </section>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
 
