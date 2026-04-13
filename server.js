@@ -6,6 +6,9 @@ const path = require('path');
 const fs = require('fs');
 const bcrypt = require('bcrypt');
 const os = require('os');
+const jwt = require('jsonwebtoken');
+const helmet = require('helmet');
+const rateLimit = require('express-rate-limit');
 const { PrismaClient } = require('@prisma/client');
 // const sqlite3 = require('sqlite3').verbose(); // Removed
 
@@ -347,8 +350,7 @@ const CACHE_LOADERS = {
             status: true,
             gloveSize: true,
             gloveType: true,
-            gloveExchanges: true,
-            attendanceLogs: true
+            gloveExchanges: true
         }
     }),
     [CACHE_KEYS.BOXES]: async () => prisma.scrapBox.findMany({
@@ -413,6 +415,91 @@ const loadScrapCache = async () => {
 
 const PORT = 3000;
 const SALT_ROUNDS = 10;
+const GENERIC_SERVER_ERROR_MESSAGE = 'Erro interno do servidor. Contate o administrador.';
+const JWT_EXPIRES_IN = '10h';
+const JWT_SECRET = process.env.JWT_SECRET || 'change-this-secret-in-production';
+
+function getLocalIp() {
+    const interfaces = os.networkInterfaces();
+    for (const name of Object.keys(interfaces)) {
+        for (const iface of interfaces[name]) {
+            if (iface.family === 'IPv4' && !iface.internal) return iface.address;
+        }
+    }
+    return 'localhost';
+}
+
+const LOCAL_IP = getLocalIp();
+
+const rawAllowedOrigins = (process.env.CORS_ORIGINS || '')
+    .split(',')
+    .map((origin) => origin.trim())
+    .filter(Boolean);
+const allowedOrigins = rawAllowedOrigins.length > 0
+    ? rawAllowedOrigins
+    : [
+        'http://localhost:3000',
+        'https://localhost:3000',
+        'http://127.0.0.1:3000',
+        'https://127.0.0.1:3000',
+        `http://${os.hostname()}:3000`,
+        `https://${os.hostname()}:3000`,
+        `http://${os.hostname()}.local:3000`,
+        `https://${os.hostname()}.local:3000`,
+        `http://${LOCAL_IP}:3000`,
+        `https://${LOCAL_IP}:3000`
+    ];
+
+const loginRateLimiter = rateLimit({
+    windowMs: 5 * 60 * 1000,
+    max: 50,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { error: 'Muitas tentativas de login. Tente novamente em alguns minutos.' }
+});
+
+const apiRateLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    max: 300,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { error: 'Muitas requisições. Tente novamente em alguns minutos.' }
+});
+
+const isPublicApiPath = (path = '') => {
+    return path === '/login'
+        || path === '/recover'
+        || path === '/sync-stream'
+        || path === '/template-logo';
+};
+
+const verifyToken = (req, res, next) => {
+    if (req.method === 'OPTIONS' || isPublicApiPath(req.path)) {
+        return next();
+    }
+
+    const authHeader = req.headers.authorization || '';
+    if (!authHeader.startsWith('Bearer ')) {
+        return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    const token = authHeader.slice(7).trim();
+    if (!token) {
+        return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    try {
+        const decoded = jwt.verify(token, JWT_SECRET);
+        req.authUser = {
+            matricula: String(decoded?.matricula || ''),
+            role: String(decoded?.role || '')
+        };
+        return next();
+    } catch (error) {
+        return res.status(401).json({ error: 'Unauthorized' });
+    }
+};
+
 const apiCompression = compression({
     threshold: 0,
     filter: (req, res) => {
@@ -422,10 +509,19 @@ const apiCompression = compression({
 });
 
 // Middleware
+app.use(helmet());
+app.use(cors({
+    origin: (origin, callback) => {
+        if (!origin) return callback(null, true);
+        if (allowedOrigins.includes(origin)) return callback(null, true);
+        return callback(new Error('Not allowed by CORS'));
+    }
+}));
+app.use('/api', apiRateLimiter);
 app.use('/api', apiCompression); // Garante compressão mesmo para payloads JSON pequenos nas rotas de API.
-app.use(cors());
-app.use(bodyParser.json({ limit: '50mb' }));
-app.use(bodyParser.urlencoded({ limit: '50mb', extended: true }));
+app.use(bodyParser.json({ limit: '5mb' }));
+app.use(bodyParser.urlencoded({ limit: '5mb', extended: true }));
+app.use('/api', verifyToken);
 
 const sseHeartbeat = setInterval(() => {
     SSE_CLIENTS.forEach((client) => {
@@ -459,9 +555,91 @@ app.get('/api/sync-stream', (req, res) => {
     });
 });
 
+// --- ROTA: Extração de Logo dos Templates XLSX ---
+let _cachedLogoBase64 = null;
+
+app.get('/api/template-logo', async (req, res) => {
+    try {
+        // Retorna cache se já extraído
+        if (_cachedLogoBase64) {
+            return res.json({ logoBase64: _cachedLogoBase64 });
+        }
+
+        const templateName = req.query.template || 'template_checklist';
+        const safeName = String(templateName).replace(/[^a-zA-Z0-9_-]/g, '');
+        const templatePath = path.join(__dirname, 'public', `${safeName}.xlsx`);
+
+        if (!fs.existsSync(templatePath)) {
+            // Fallback: tenta logo.png estático
+            const logoPngPath = path.join(__dirname, 'public', 'logo.png');
+            if (fs.existsSync(logoPngPath)) {
+                const pngBuffer = fs.readFileSync(logoPngPath);
+                const b64 = `data:image/png;base64,${pngBuffer.toString('base64')}`;
+                _cachedLogoBase64 = b64;
+                return res.json({ logoBase64: b64 });
+            }
+            return res.status(404).json({ error: 'Template não encontrado' });
+        }
+
+        const ExcelJS = require('exceljs');
+        const workbook = new ExcelJS.Workbook();
+        await workbook.xlsx.readFile(templatePath);
+
+        // Tenta extrair imagem do modelo de mídia do workbook
+        const media = workbook.model && workbook.model.media;
+        if (media && media.length > 0) {
+            const img = media[0]; // Primeira imagem (logo)
+            const ext = img.extension || img.type || 'png';
+            const bufData = img.buffer || img.data;
+            if (bufData) {
+                const b64 = `data:image/${ext};base64,${Buffer.from(bufData).toString('base64')}`;
+                _cachedLogoBase64 = b64;
+                return res.json({ logoBase64: b64 });
+            }
+        }
+
+        // Tenta via worksheet images
+        const ws = workbook.worksheets[0];
+        if (ws) {
+            const images = ws.getImages();
+            if (images.length > 0) {
+                const imgRef = images[0];
+                const pic = workbook.getImage(Number(imgRef.imageId));
+                if (pic && pic.buffer) {
+                    const ext = pic.extension || 'png';
+                    const b64 = `data:image/${ext};base64,${Buffer.from(pic.buffer).toString('base64')}`;
+                    _cachedLogoBase64 = b64;
+                    return res.json({ logoBase64: b64 });
+                }
+            }
+        }
+
+        // Fallback final: logo.png estático
+        const logoPngPath = path.join(__dirname, 'public', 'logo.png');
+        if (fs.existsSync(logoPngPath)) {
+            const pngBuffer = fs.readFileSync(logoPngPath);
+            const b64 = `data:image/png;base64,${pngBuffer.toString('base64')}`;
+            _cachedLogoBase64 = b64;
+            return res.json({ logoBase64: b64 });
+        }
+
+        return res.status(404).json({ error: 'Nenhuma imagem encontrada no template' });
+    } catch (e) {
+        console.error('Erro ao extrair logo do template:', e);
+        // Fallback de emergência
+        const logoPngPath = path.join(__dirname, 'public', 'logo.png');
+        if (fs.existsSync(logoPngPath)) {
+            const pngBuffer = fs.readFileSync(logoPngPath);
+            const b64 = `data:image/png;base64,${pngBuffer.toString('base64')}`;
+            return res.json({ logoBase64: b64 });
+        }
+        return res.status(500).json({ error: 'Erro ao extrair logo' });
+    }
+});
+
 // --- ROTAS DE USUÁRIOS ---
 
-app.post('/api/login', async (req, res) => {
+app.post('/api/login', loginRateLimiter, async (req, res) => {
     const { matricula, password } = req.body;
     try {
         const user = await prisma.user.findUnique({
@@ -487,13 +665,23 @@ app.post('/api/login', async (req, res) => {
         const match = await bcrypt.compare(password, user.password);
         if (!match) return res.status(401).json({ error: "Senha incorreta" });
 
+        const token = jwt.sign(
+            {
+                matricula: String(user.matricula),
+                role: String(user.role || '')
+            },
+            JWT_SECRET,
+            { expiresIn: JWT_EXPIRES_IN }
+        );
+
         const userResponse = { ...user, isAdmin: !!user.isAdmin };
         delete userResponse.password; // Remove password from response
 
-        res.json({ user: userResponse });
+        res.json({ user: userResponse, token });
     } catch (e) {
         console.error("Login Error:", e);
-        res.status(500).json({ error: e.message });
+        console.error(e);
+        res.status(500).json({ error: GENERIC_SERVER_ERROR_MESSAGE });
     }
 });
 
@@ -558,7 +746,8 @@ app.post('/api/recover', async (req, res) => {
         res.json({ message: "Solicitação enviada ao Administrador. Aguarde o contato." });
     } catch (e) {
         console.error("Recover Request Error:", e);
-        res.status(500).json({ error: "Erro ao enviar solicitação" });
+        console.error(e);
+        res.status(500).json({ error: GENERIC_SERVER_ERROR_MESSAGE });
     }
 });
 
@@ -601,7 +790,8 @@ app.put('/api/users', async (req, res) => {
         res.json({ message: "Atualizado" });
     } catch (e) {
         console.error("Update User Error:", e);
-        res.status(500).json({ error: e.message });
+        console.error(e);
+        res.status(500).json({ error: GENERIC_SERVER_ERROR_MESSAGE });
     }
 });
 
@@ -610,7 +800,8 @@ app.get('/api/users', async (req, res) => {
         const safeUsers = await ensureRamCollection(CACHE_KEYS.USERS);
         res.json(safeUsers);
     } catch (e) {
-        res.status(500).json({ error: "Erro interno ao listar usuários" });
+        console.error(e);
+        res.status(500).json({ error: GENERIC_SERVER_ERROR_MESSAGE });
     }
 });
 
@@ -621,9 +812,7 @@ app.get('/api/users/matricula/:matricula', async (req, res) => {
         if (!safeUser) return res.status(404).json({ error: "Usuário não encontrado." });
 
         res.json(safeUser);
-    } catch (e) {
-        res.status(500).json({ error: e.message });
-    }
+    } catch (e) { console.error(e); res.status(500).json({ error: GENERIC_SERVER_ERROR_MESSAGE }); }
 });
 
 app.delete('/api/users/:id', async (req, res) => {
@@ -634,9 +823,7 @@ app.delete('/api/users/:id', async (req, res) => {
         removeRamItems(CACHE_KEYS.USERS, req.params.id);
         broadcastSyncDelta(CACHE_KEYS.USERS, 'remove', { ids: [String(req.params.id)] });
         res.json({ message: "Deletado" });
-    } catch (e) {
-        res.status(500).json({ error: e.message });
-    }
+    } catch (e) { console.error(e); res.status(500).json({ error: GENERIC_SERVER_ERROR_MESSAGE }); }
 });
 
 // ADMIN RECOVERY ROUTES
@@ -647,9 +834,7 @@ app.get('/api/admin/recovery-requests', async (req, res) => {
             orderBy: { createdAt: 'desc' }
         });
         res.json(requests);
-    } catch (e) {
-        res.status(500).json({ error: e.message });
-    }
+    } catch (e) { console.error(e); res.status(500).json({ error: GENERIC_SERVER_ERROR_MESSAGE }); }
 });
 
 app.post('/api/admin/reset-password', async (req, res) => {
@@ -672,7 +857,8 @@ app.post('/api/admin/reset-password', async (req, res) => {
         res.json({ message: "Senha redefinida com sucesso" });
     } catch (e) {
         console.error("Admin Reset Error:", e);
-        res.status(500).json({ error: "Erro ao redefinir senha" });
+        console.error(e);
+        res.status(500).json({ error: GENERIC_SERVER_ERROR_MESSAGE });
     }
 });
 
@@ -685,7 +871,8 @@ app.get('/api/logs', async (req, res) => {
         res.json(allLogs.slice(0, limit));
     } catch (e) {
         console.error("Get Logs Error:", e);
-        res.status(500).json({ error: e.message });
+        console.error(e);
+        res.status(500).json({ error: GENERIC_SERVER_ERROR_MESSAGE });
     }
 });
 
@@ -727,7 +914,8 @@ app.post('/api/logs', async (req, res) => {
         res.json({ message: "Salvo" });
     } catch (e) {
         console.error("Save Log Error:", e);
-        res.status(500).json({ error: e.message });
+        console.error(e);
+        res.status(500).json({ error: GENERIC_SERVER_ERROR_MESSAGE });
     }
 });
 
@@ -737,9 +925,7 @@ app.get('/api/config/items', async (req, res) => {
     try {
         const items = await ensureRamCollection(CACHE_KEYS.CONFIG_ITEMS);
         res.json(items);
-    } catch (e) {
-        res.status(500).json({ error: e.message });
-    }
+    } catch (e) { console.error(e); res.status(500).json({ error: GENERIC_SERVER_ERROR_MESSAGE }); }
 });
 
 app.post('/api/config/items', async (req, res) => {
@@ -774,7 +960,8 @@ app.post('/api/config/items', async (req, res) => {
         res.json({ message: "Salvo" });
     } catch (e) {
         console.error("Save Config Items Error:", e);
-        res.status(500).json({ error: e.message });
+        console.error(e);
+        res.status(500).json({ error: GENERIC_SERVER_ERROR_MESSAGE });
     }
 });
 
@@ -785,9 +972,7 @@ app.get('/api/line-stops', async (req, res) => {
         const limit = Math.min(parseInt(req.query.limit, 10) || 100, 100);
         const stops = await ensureRamCollection(CACHE_KEYS.LINE_STOPS);
         res.json(stops.slice(0, limit));
-    } catch (e) {
-        res.status(500).json({ error: e.message });
-    }
+    } catch (e) { console.error(e); res.status(500).json({ error: GENERIC_SERVER_ERROR_MESSAGE }); }
 });
 
 app.post('/api/line-stops', async (req, res) => {
@@ -852,7 +1037,8 @@ app.post('/api/line-stops', async (req, res) => {
         res.json({ message: "Salvo com sucesso" });
     } catch (e) {
         console.error("Save Stop Error:", e);
-        res.status(500).json({ error: e.message });
+        console.error(e);
+        res.status(500).json({ error: GENERIC_SERVER_ERROR_MESSAGE });
     }
 });
 
@@ -863,9 +1049,7 @@ app.get('/api/config/roles', async (req, res) => {
     try {
         const roles = await ensureRamCollection(CACHE_KEYS.ROLES);
         res.json(roles);
-    } catch (e) {
-        res.status(500).json({ error: e.message });
-    }
+    } catch (e) { console.error(e); res.status(500).json({ error: GENERIC_SERVER_ERROR_MESSAGE }); }
 });
 
 app.post('/api/config/roles', async (req, res) => {
@@ -878,8 +1062,11 @@ app.post('/api/config/roles', async (req, res) => {
         broadcastSyncDelta(CACHE_KEYS.ROLES, 'upsert', { items: [roleItem] });
         res.json({ message: "Cargo salvo" });
     } catch (e) {
-        // Unique constraint violation?
-        res.json({ message: "Cargo salvo/já existe" });
+        if (e.code === 'P2002') {
+            return res.status(409).json({ error: 'Cargo já existe.' });
+        }
+        console.error(e);
+        res.status(500).json({ error: GENERIC_SERVER_ERROR_MESSAGE });
     }
 });
 
@@ -893,7 +1080,8 @@ app.delete('/api/config/roles/:id', async (req, res) => {
         broadcastSyncDelta(CACHE_KEYS.ROLES, 'remove', { ids: [String(req.params.id)] });
         res.json({ message: "Cargo deletado" });
     } catch (e) {
-        res.status(500).json({ error: "Erro ao deletar: " + e.message });
+        console.error(e);
+        res.status(500).json({ error: GENERIC_SERVER_ERROR_MESSAGE });
     }
 });
 
@@ -902,7 +1090,7 @@ app.get('/api/config/lines', async (req, res) => {
     try {
         const lines = await ensureRamCollection(CACHE_KEYS.LINES);
         res.json(lines);
-    } catch (e) { res.status(500).json({ error: e.message }); }
+    } catch (e) { console.error(e); res.status(500).json({ error: GENERIC_SERVER_ERROR_MESSAGE }); }
 });
 
 app.post('/api/config/lines', async (req, res) => {
@@ -913,7 +1101,7 @@ app.post('/api/config/lines', async (req, res) => {
         upsertRamItems(CACHE_KEYS.LINES, [lineItem]);
         broadcastSyncDelta(CACHE_KEYS.LINES, 'upsert', { items: [lineItem] });
         res.json({ message: "Linha salva" });
-    } catch (e) { res.status(500).json({ error: e.message }); }
+    } catch (e) { console.error(e); res.status(500).json({ error: GENERIC_SERVER_ERROR_MESSAGE }); }
 });
 
 app.delete('/api/config/lines/:id', async (req, res) => {
@@ -924,7 +1112,7 @@ app.delete('/api/config/lines/:id', async (req, res) => {
         removeRamItems(CACHE_KEYS.LINES, req.params.id);
         broadcastSyncDelta(CACHE_KEYS.LINES, 'remove', { ids: [String(req.params.id)] });
         res.json({ message: "Linha deletada" });
-    } catch (e) { res.status(500).json({ error: e.message }); }
+    } catch (e) { console.error(e); res.status(500).json({ error: GENERIC_SERVER_ERROR_MESSAGE }); }
 });
 
 // Generic Configs (Models, Stations)
@@ -933,7 +1121,7 @@ const createConfigRoutes = (modelDelegate, pathName) => {
         try {
             const items = await modelDelegate.findMany();
             res.json(items);
-        } catch (e) { res.status(500).json({ error: e.message }); }
+        } catch (e) { console.error(e); res.status(500).json({ error: GENERIC_SERVER_ERROR_MESSAGE }); }
     });
 
     app.post(`/api/config/${pathName}`, async (req, res) => {
@@ -955,14 +1143,16 @@ const createConfigRoutes = (modelDelegate, pathName) => {
                 }
             });
             res.json({ message: "Salvo" });
-        } catch (e) { res.status(500).json({ error: e.message }); }
+        } catch (e) { console.error(e); res.status(500).json({ error: GENERIC_SERVER_ERROR_MESSAGE }); }
     });
 };
 
 // We need to define routes manually to use the string key for model
 app.get('/api/config/models', async (req, res) => {
-    const models = await ensureRamCollection(CACHE_KEYS.MODELS);
-    res.json(models);
+    try {
+        const models = await ensureRamCollection(CACHE_KEYS.MODELS);
+        res.json(models);
+    } catch (e) { console.error(e); res.status(500).json({ error: GENERIC_SERVER_ERROR_MESSAGE }); }
 });
 // POST: salva lista completa e calcula unifiedCode automaticamente
 app.post('/api/config/models', async (req, res) => {
@@ -981,7 +1171,7 @@ app.post('/api/config/models', async (req, res) => {
         const models = await refreshRamCollection(CACHE_KEYS.MODELS);
         broadcastSyncDelta(CACHE_KEYS.MODELS, 'replace', { items: models });
         res.json({ message: "Salvo" });
-    } catch (e) { res.status(500).json({ error: e.message }); }
+    } catch (e) { console.error(e); res.status(500).json({ error: GENERIC_SERVER_ERROR_MESSAGE }); }
 });
 
 // GET: retorna modelos agrupados — um por unifiedCode distinto (para selects de Layout)
@@ -998,12 +1188,14 @@ app.get('/api/config/models/unified', async (req, res) => {
             }
         }
         res.json(unified);
-    } catch (e) { res.status(500).json({ error: e.message }); }
+    } catch (e) { console.error(e); res.status(500).json({ error: GENERIC_SERVER_ERROR_MESSAGE }); }
 });
 
 app.get('/api/config/stations', async (req, res) => {
-    const stations = await ensureRamCollection(CACHE_KEYS.STATIONS);
-    res.json(stations);
+    try {
+        const stations = await ensureRamCollection(CACHE_KEYS.STATIONS);
+        res.json(stations);
+    } catch (e) { console.error(e); res.status(500).json({ error: GENERIC_SERVER_ERROR_MESSAGE }); }
 });
 app.post('/api/config/stations', async (req, res) => {
     try {
@@ -1014,7 +1206,7 @@ app.post('/api/config/stations', async (req, res) => {
         const stations = await refreshRamCollection(CACHE_KEYS.STATIONS);
         broadcastSyncDelta(CACHE_KEYS.STATIONS, 'replace', { items: stations });
         res.json({ message: "Salvo" });
-    } catch (e) { res.status(500).json({ error: e.message }); }
+    } catch (e) { console.error(e); res.status(500).json({ error: GENERIC_SERVER_ERROR_MESSAGE }); }
 });
 
 
@@ -1022,7 +1214,7 @@ app.get('/api/config/permissions', async (req, res) => {
     try {
         const perms = await ensureRamCollection(CACHE_KEYS.PERMISSIONS);
         res.json(perms);
-    } catch (e) { res.status(500).json({ error: e.message }); }
+    } catch (e) { console.error(e); res.status(500).json({ error: GENERIC_SERVER_ERROR_MESSAGE }); }
 });
 
 app.post('/api/config/permissions', async (req, res) => {
@@ -1044,7 +1236,7 @@ app.post('/api/config/permissions', async (req, res) => {
         const perms = await refreshRamCollection(CACHE_KEYS.PERMISSIONS);
         broadcastSyncDelta(CACHE_KEYS.PERMISSIONS, 'replace', { items: perms });
         res.json({ message: "Salvo" });
-    } catch (e) { res.status(500).json({ error: e.message }); }
+    } catch (e) { console.error(e); res.status(500).json({ error: GENERIC_SERVER_ERROR_MESSAGE }); }
 });
 
 // --- NOTICES ---
@@ -1075,7 +1267,8 @@ app.post('/api/notices', async (req, res) => {
         res.json(notice);
     } catch (e) {
         console.error('Create Notice Error:', e);
-        res.status(500).json({ error: e.message });
+        console.error(e);
+        res.status(500).json({ error: GENERIC_SERVER_ERROR_MESSAGE });
     }
 });
 
@@ -1085,7 +1278,8 @@ app.get('/api/notices', async (req, res) => {
         res.json(notices);
     } catch (e) {
         console.error('Get Notices Error:', e);
-        res.status(500).json({ error: e.message });
+        console.error(e);
+        res.status(500).json({ error: GENERIC_SERVER_ERROR_MESSAGE });
     }
 });
 
@@ -1101,7 +1295,8 @@ app.delete('/api/notices/:id', async (req, res) => {
         res.json({ message: 'Comunicado excluido.' });
     } catch (e) {
         console.error('Delete Notice Error:', e);
-        res.status(500).json({ error: e.message });
+        console.error(e);
+        res.status(500).json({ error: GENERIC_SERVER_ERROR_MESSAGE });
     }
 });
 
@@ -1115,7 +1310,8 @@ app.get('/api/meetings', async (req, res) => {
         res.json(meetings.slice(offset, offset + limit));
     } catch (error) {
         console.error("❌ ERRO CRÍTICO EM MEETINGS:", error);
-        res.status(500).json({ error: "Erro interno ao buscar reuniões." });
+        console.error(error);
+        res.status(500).json({ error: GENERIC_SERVER_ERROR_MESSAGE });
     }
 });
 
@@ -1141,7 +1337,7 @@ app.post('/api/meetings', async (req, res) => {
         broadcastSyncDelta(CACHE_KEYS.MEETINGS, 'upsert', { items: [formattedMeeting] });
 
         res.json({ message: "Ata Salva" });
-    } catch (e) { res.status(500).json({ error: e.message }); }
+    } catch (e) { console.error(e); res.status(500).json({ error: GENERIC_SERVER_ERROR_MESSAGE }); }
 });
 
 // --- PREPARATION LOG ---
@@ -1159,7 +1355,8 @@ app.get('/api/preparation-logs', async (req, res) => {
         res.json(logs);
     } catch (e) {
         console.error("Get Preparation Logs Error:", e);
-        res.status(500).json({ error: e.message });
+        console.error(e);
+        res.status(500).json({ error: GENERIC_SERVER_ERROR_MESSAGE });
     }
 });
 
@@ -1212,7 +1409,8 @@ app.post('/api/preparation-logs', async (req, res) => {
         res.json({ message: "Salvo" });
     } catch (e) {
         console.error("Save Preparation Log Error:", e);
-        res.status(500).json({ error: e.message });
+        console.error(e);
+        res.status(500).json({ error: GENERIC_SERVER_ERROR_MESSAGE });
     }
 });
 
@@ -1221,9 +1419,7 @@ app.get('/api/boxes', async (req, res) => {
     try {
         const boxes = await ensureRamCollection(CACHE_KEYS.BOXES);
         res.json(boxes);
-    } catch (e) {
-        res.status(500).json({ error: e.message });
-    }
+    } catch (e) { console.error(e); res.status(500).json({ error: GENERIC_SERVER_ERROR_MESSAGE }); }
 });
 
 app.post('/api/boxes', async (req, res) => {
@@ -1236,9 +1432,7 @@ app.post('/api/boxes', async (req, res) => {
         upsertRamItems(CACHE_KEYS.BOXES, [newBox]);
         broadcastSyncDelta(CACHE_KEYS.BOXES, 'upsert', { items: [newBox] });
         res.json(newBox);
-    } catch (e) {
-        res.status(500).json({ error: e.message });
-    }
+    } catch (e) { console.error(e); res.status(500).json({ error: GENERIC_SERVER_ERROR_MESSAGE }); }
 });
 
 app.put('/api/boxes/:id', async (req, res) => {
@@ -1280,9 +1474,7 @@ app.put('/api/boxes/:id', async (req, res) => {
         broadcastSyncDelta(CACHE_KEYS.BOXES, 'upsert', { items: [cachedBox || updatedBox] });
 
         res.json(updatedBox);
-    } catch (e) {
-        res.status(500).json({ error: e.message });
-    }
+    } catch (e) { console.error(e); res.status(500).json({ error: GENERIC_SERVER_ERROR_MESSAGE }); }
 });
 
 app.post('/api/boxes/:id/scraps', async (req, res) => {
@@ -1347,9 +1539,7 @@ app.post('/api/boxes/:id/scraps', async (req, res) => {
         broadcastSyncDelta(CACHE_KEYS.SCRAPS, 'upsert', { items: [updatedScrap] });
 
         res.json({ message: "Scrap vinculado com sucesso", scrap: updatedScrap });
-    } catch (e) {
-        res.status(500).json({ error: e.message });
-    }
+    } catch (e) { console.error(e); res.status(500).json({ error: GENERIC_SERVER_ERROR_MESSAGE }); }
 });
 
 app.delete('/api/boxes/:boxId/scraps/:scrapId', async (req, res) => {
@@ -1370,9 +1560,7 @@ app.delete('/api/boxes/:boxId/scraps/:scrapId', async (req, res) => {
         broadcastSyncDelta(CACHE_KEYS.SCRAPS, 'upsert', { items: [updated] });
 
         res.json({ message: "Scrap desvinculado com sucesso.", scrap: updated });
-    } catch (e) {
-        res.status(500).json({ error: e.message });
-    }
+    } catch (e) { console.error(e); res.status(500).json({ error: GENERIC_SERVER_ERROR_MESSAGE }); }
 });
 
 
@@ -1380,11 +1568,20 @@ app.delete('/api/boxes/:boxId/scraps/:scrapId', async (req, res) => {
 
 app.get('/api/scraps', async (req, res) => {
     try {
-        const scraps = await ensureRamCollection(CACHE_KEYS.SCRAPS);
+        const parsedLimit = Number(req.query.limit);
+        const take = Number.isFinite(parsedLimit) && parsedLimit > 0
+            ? Math.min(Math.floor(parsedLimit), 500)
+            : 100;
+
+        const scraps = await prisma.scrapLog.findMany({
+            take,
+            orderBy: [
+                { createdAt: 'desc' },
+                { id: 'desc' }
+            ]
+        });
         res.json(scraps);
-    } catch (e) {
-        res.status(500).json({ error: e.message });
-    }
+    } catch (e) { console.error(e); res.status(500).json({ error: GENERIC_SERVER_ERROR_MESSAGE }); }
 });
 
 app.post('/api/scraps/check-duplicate', async (req, res) => {
@@ -1412,7 +1609,7 @@ app.post('/api/scraps/check-duplicate', async (req, res) => {
         res.status(existing ? 409 : 200).json({ isDuplicate: !!existing });
     } catch (e) {
         console.error("Check Duplicate Error:", e);
-        res.status(500).json({ error: e.message, isDuplicate: false });
+        res.status(500).json({ error: GENERIC_SERVER_ERROR_MESSAGE, isDuplicate: false });
     }
 });
 
@@ -1481,7 +1678,8 @@ app.post('/api/scraps', async (req, res) => {
         res.json({ message: "Scrap salvo" });
     } catch (e) {
         console.error("Scrap Create Error:", e);
-        res.status(500).json({ error: e.message });
+        console.error(e);
+        res.status(500).json({ error: GENERIC_SERVER_ERROR_MESSAGE });
     }
 });
 
@@ -1559,7 +1757,8 @@ app.post('/api/scraps/batch-create', async (req, res) => {
         res.json({ message: `${created.length} scraps salvos com sucesso.` });
     } catch (e) {
         console.error("Batch Scrap Create Error:", e);
-        res.status(500).json({ error: e.message });
+        console.error(e);
+        res.status(500).json({ error: GENERIC_SERVER_ERROR_MESSAGE });
     }
 });
 
@@ -1632,7 +1831,8 @@ app.put('/api/scraps/:id', async (req, res) => {
         res.json({ message: "Scrap atualizado" });
     } catch (e) {
         console.error("Update Scrap Error:", e);
-        res.status(500).json({ error: e.message });
+        console.error(e);
+        res.status(500).json({ error: GENERIC_SERVER_ERROR_MESSAGE });
     }
 });
 
@@ -1652,7 +1852,8 @@ app.delete('/api/scraps/:id', async (req, res) => {
         res.json({ message: "Scrap deletado" });
     } catch (e) {
         console.error("Delete Scrap Error:", e);
-        res.status(500).json({ error: e.message });
+        console.error(e);
+        res.status(500).json({ error: GENERIC_SERVER_ERROR_MESSAGE });
     }
 });
 
@@ -1693,7 +1894,8 @@ app.post('/api/scraps/batch-process', async (req, res) => {
         res.json({ message: `${result.count} registros atualizados com a NF ${nfNumber}` });
     } catch (e) {
         console.error("Batch Process Error:", e);
-        res.status(500).json({ error: e.message });
+        console.error(e);
+        res.status(500).json({ error: GENERIC_SERVER_ERROR_MESSAGE });
     }
 });
 
@@ -1703,7 +1905,7 @@ app.get('/api/materials', async (req, res) => {
     try {
         const materials = await ensureRamCollection(CACHE_KEYS.MATERIALS);
         res.json(materials);
-    } catch (e) { res.status(500).json({ error: e.message }); }
+    } catch (e) { console.error(e); res.status(500).json({ error: GENERIC_SERVER_ERROR_MESSAGE }); }
 });
 
 app.post('/api/materials/bulk', async (req, res) => {
@@ -1741,7 +1943,8 @@ app.post('/api/materials/bulk', async (req, res) => {
         res.json({ success: true, count: materials.length });
     } catch (e) {
         console.error("Bulk Material Error:", e);
-        res.status(500).json({ error: e.message });
+        console.error(e);
+        res.status(500).json({ error: GENERIC_SERVER_ERROR_MESSAGE });
     }
 });
 
@@ -1757,7 +1960,8 @@ app.delete('/api/materials/:code', async (req, res) => {
         res.json({ success: true });
     } catch (e) {
         console.error("Material Delete Error:", e);
-        res.status(500).json({ error: e.message });
+        console.error(e);
+        res.status(500).json({ error: GENERIC_SERVER_ERROR_MESSAGE });
     }
 });
 
@@ -1776,7 +1980,8 @@ app.post('/api/materials/bulk-delete', async (req, res) => {
         res.json({ success: true, deleted: result.count });
     } catch (e) {
         console.error("Bulk Material Delete Error:", e);
-        res.status(500).json({ error: e.message });
+        console.error(e);
+        res.status(500).json({ error: GENERIC_SERVER_ERROR_MESSAGE });
     }
 });
 
@@ -1784,11 +1989,21 @@ app.post('/api/backup/save', (req, res) => {
     const { fileName, fileData } = req.body;
     const backupsDir = path.join(__dirname, 'backups');
     if (!fs.existsSync(backupsDir)) fs.mkdirSync(backupsDir);
-    const filePath = path.join(backupsDir, fileName);
+
+    // Sanitização contra Path Traversal: remove diretórios e caracteres perigosos
+    const safeName = path.basename(String(fileName || 'backup'));
+    if (!safeName || safeName === '.' || safeName === '..') {
+        return res.status(400).json({ error: 'Nome de arquivo inválido.' });
+    }
+    const filePath = path.join(backupsDir, safeName);
+
     const base64Data = fileData.split(';base64,').pop();
     fs.writeFile(filePath, base64Data, { encoding: 'base64' }, (err) => {
-        if (err) return res.status(500).json({ error: "Erro no servidor" });
-        res.json({ message: "Salvo", path: filePath });
+        if (err) {
+            console.error(err);
+            return res.status(500).json({ error: GENERIC_SERVER_ERROR_MESSAGE });
+        }
+        res.json({ message: "Salvo" });
     });
 });
 
@@ -1819,28 +2034,72 @@ const setCustomCacheControl = (res, path) => {
 
 
 
-function getLocalIp() {
-    const interfaces = os.networkInterfaces();
-    for (const name of Object.keys(interfaces)) {
-        for (const iface of interfaces[name]) {
-            if (iface.family === 'IPv4' && !iface.internal) return iface.address;
-        }
-    }
-    return 'localhost';
-}
-
 // --- PEOPLE MANAGEMENT & WORKSTATIONS ---
 
 app.get('/api/employees', async (req, res) => {
     try {
-        const { superiorId } = req.query;
+        const { superiorId, includeAttendance } = req.query;
+
+        // Se leader pede seus subordinados, busca direto do Prisma com attendanceLogs
+        if (superiorId) {
+            const teamEmployees = await prisma.employee.findMany({
+                where: { superiorId: String(superiorId) },
+                select: {
+                    matricula: true,
+                    fullName: true,
+                    shift: true,
+                    role: true,
+                    sector: true,
+                    superiorId: true,
+                    idlSt: true,
+                    type: true,
+                    status: true,
+                    gloveSize: true,
+                    gloveType: true,
+                    gloveExchanges: true,
+                    attendanceLogs: true
+                }
+            });
+            return res.json(teamEmployees);
+        }
+
+        // Gestores com includeAttendance: busca do Prisma com logs
+        if (includeAttendance === 'true') {
+            const requesterRole = String(req.authUser?.role || '').toUpperCase();
+            const isAuthorized = requesterRole.includes('ADMIN')
+                || requesterRole.includes('COORDENADOR')
+                || requesterRole.includes('SUPERVISOR')
+                || requesterRole.includes('LÍDER') || requesterRole.includes('LIDER')
+                || requesterRole.includes('TECNICO DE PROCESSO') || requesterRole.includes('TÉCNICO DE PROCESSO')
+                || requesterRole.includes('RH') || requesterRole.includes('RECURSOS HUMANOS');
+
+            if (isAuthorized) {
+                const allEmployees = await prisma.employee.findMany({
+                    select: {
+                        matricula: true,
+                        fullName: true,
+                        shift: true,
+                        role: true,
+                        sector: true,
+                        superiorId: true,
+                        idlSt: true,
+                        type: true,
+                        status: true,
+                        gloveSize: true,
+                        gloveType: true,
+                        gloveExchanges: true,
+                        attendanceLogs: true
+                    }
+                });
+                return res.json(allEmployees);
+            }
+        }
+
         const employees = await ensureRamCollection(CACHE_KEYS.EMPLOYEES);
-        const filteredEmployees = superiorId
-            ? employees.filter((employee) => employee.superiorId === String(superiorId))
-            : employees;
-        res.json(filteredEmployees);
+        res.json(employees);
     } catch (e) {
-        res.status(500).json({ error: "Erro interno no servidor ao buscar colaboradores" });
+        console.error(e);
+        res.status(500).json({ error: GENERIC_SERVER_ERROR_MESSAGE });
     }
 });
 
@@ -1868,7 +2127,8 @@ app.post('/api/employees', async (req, res) => {
         res.json({ message: "Salvo com sucesso", employee });
     } catch (e) {
         console.error("Save Employee Error:", e);
-        res.status(500).json({ error: e.message });
+        console.error(e);
+        res.status(500).json({ error: GENERIC_SERVER_ERROR_MESSAGE });
     }
 });
 
@@ -1886,31 +2146,42 @@ app.post('/api/employees/upload-photo/:matricula', async (req, res) => {
         });
         
         res.json({ message: "Foto atualizada com sucesso" });
-    } catch (e) {
-        res.status(500).json({ error: e.message });
-    }
+    } catch (e) { console.error(e); res.status(500).json({ error: GENERIC_SERVER_ERROR_MESSAGE }); }
 });
 
 app.get('/api/employees/search/:matricula', async (req, res) => {
     try {
         const queryMatricula = String(req.params.matricula).trim().toUpperCase();
-        const { superiorId } = req.query;
+        const requesterMatricula = String(req.authUser?.matricula || '').trim().toUpperCase();
+        const requesterRole = String(req.authUser?.role || '').trim().toUpperCase();
 
-        const whereClause = { matricula: queryMatricula };
-        if (superiorId) {
-            whereClause.superiorId = String(superiorId);
+        const isRH = requesterRole.includes('RH') || requesterRole.includes('RECURSOS HUMANOS');
+        const isLeadership = requesterRole.includes('ADMIN')
+            || requesterRole.includes('COORDENADOR')
+            || requesterRole.includes('SUPERVISOR')
+            || requesterRole.includes('LÍDER') || requesterRole.includes('LIDER')
+            || requesterRole.includes('TECNICO DE PROCESSO') || requesterRole.includes('TÉCNICO DE PROCESSO');
+
+        const employeeAccess = await prisma.employee.findUnique({
+            where: { matricula: queryMatricula },
+            select: { superiorId: true }
+        });
+
+        if (!employeeAccess) return res.status(404).json({ error: "Colaborador não encontrado." });
+
+        const isDirectLeader = String(employeeAccess.superiorId || '').trim().toUpperCase() === requesterMatricula;
+
+        if (!isRH && !isDirectLeader && !isLeadership) {
+            return res.status(403).json({ error: 'Acesso negado.' });
         }
 
-        const employee = await prisma.employee.findFirst({
-            where: whereClause,
+        const employee = await prisma.employee.findUnique({
+            where: { matricula: queryMatricula },
             include: { attendanceLogs: true }
         });
 
-        if (!employee) return res.status(404).json({ error: "Colaborador não encontrado ou você não tem permissão." });
         res.json(employee);
-    } catch (e) {
-        res.status(500).json({ error: e.message });
-    }
+    } catch (e) { console.error(e); res.status(500).json({ error: GENERIC_SERVER_ERROR_MESSAGE }); }
 });
 
 app.put('/api/employees/:matricula/deactivate', async (req, res) => {
@@ -1944,7 +2215,8 @@ app.put('/api/employees/:matricula/deactivate', async (req, res) => {
         res.json({ message: "Desligado com sucesso" });
     } catch (e) {
         console.error("Deactivate Error:", e);
-        res.status(500).json({ error: e.message });
+        console.error(e);
+        res.status(500).json({ error: GENERIC_SERVER_ERROR_MESSAGE });
     }
 });
 
@@ -1969,9 +2241,7 @@ app.put('/api/employees/:matricula/transfer', async (req, res) => {
         await refreshRamCollection(CACHE_KEYS.EMPLOYEES);
         broadcastSyncDelta(CACHE_KEYS.EMPLOYEES, 'upsert', { items: [getRamItem(CACHE_KEYS.EMPLOYEES, updated.matricula) || updated] });
         res.json({ message: "Transferência realizada", employee: updated });
-    } catch (e) {
-        res.status(500).json({ error: e.message });
-    }
+    } catch (e) { console.error(e); res.status(500).json({ error: GENERIC_SERVER_ERROR_MESSAGE }); }
 });
 
 app.post('/api/attendance', async (req, res) => {
@@ -2025,9 +2295,7 @@ app.post('/api/attendance', async (req, res) => {
         broadcastSyncDelta(CACHE_KEYS.EMPLOYEES, 'replace', { items: getRamCollection(CACHE_KEYS.EMPLOYEES) });
 
         res.json({ message: existingLog ? "Apontamento atualizado" : "Apontamento salvo", log });
-    } catch (e) {
-        res.status(500).json({ error: e.message });
-    }
+    } catch (e) { console.error(e); res.status(500).json({ error: GENERIC_SERVER_ERROR_MESSAGE }); }
 });
 
 app.delete('/api/attendance/:id', async (req, res) => {
@@ -2053,27 +2321,21 @@ app.delete('/api/attendance/:id', async (req, res) => {
         broadcastSyncDelta(CACHE_KEYS.EMPLOYEES, 'replace', { items: getRamCollection(CACHE_KEYS.EMPLOYEES) });
 
         res.json({ message: 'Apontamento excluído', deletedId: logId });
-    } catch (e) {
-        res.status(500).json({ error: e.message });
-    }
+    } catch (e) { console.error(e); res.status(500).json({ error: GENERIC_SERVER_ERROR_MESSAGE }); }
 });
 
 app.get('/api/workstations', async (req, res) => {
     try {
         const workstations = await ensureRamCollection(CACHE_KEYS.WORKSTATIONS);
         res.json(workstations);
-    } catch (e) {
-        res.status(500).json({ error: e.message });
-    }
+    } catch (e) { console.error(e); res.status(500).json({ error: GENERIC_SERVER_ERROR_MESSAGE }); }
 });
 
 app.get('/api/production-models', async (req, res) => {
     try {
         const models = await ensureRamCollection(CACHE_KEYS.PRODUCTION_MODELS);
         res.json(models);
-    } catch (e) {
-        res.status(500).json({ error: e.message });
-    }
+    } catch (e) { console.error(e); res.status(500).json({ error: GENERIC_SERVER_ERROR_MESSAGE }); }
 });
 
 app.post('/api/production-models', async (req, res) => {
@@ -2085,9 +2347,7 @@ app.post('/api/production-models', async (req, res) => {
         upsertRamItems(CACHE_KEYS.PRODUCTION_MODELS, [pModel]);
         broadcastSyncDelta(CACHE_KEYS.PRODUCTION_MODELS, 'upsert', { items: [pModel] });
         res.json({ message: "Modelo criado", model: pModel });
-    } catch (e) {
-        res.status(500).json({ error: e.message });
-    }
+    } catch (e) { console.error(e); res.status(500).json({ error: GENERIC_SERVER_ERROR_MESSAGE }); }
 });
 
 app.post('/api/workstations', async (req, res) => {
@@ -2106,9 +2366,7 @@ app.post('/api/workstations', async (req, res) => {
         upsertRamItems(CACHE_KEYS.WORKSTATIONS, [workstation]);
         broadcastSyncDelta(CACHE_KEYS.WORKSTATIONS, 'upsert', { items: [workstation] });
         res.json({ message: "Posto criado", workstation });
-    } catch (e) {
-        res.status(500).json({ error: e.message });
-    }
+    } catch (e) { console.error(e); res.status(500).json({ error: GENERIC_SERVER_ERROR_MESSAGE }); }
 });
 
 app.post('/api/workstations/bulk', async (req, res) => {
@@ -2161,7 +2419,8 @@ app.post('/api/workstations/bulk', async (req, res) => {
         res.json({ message: "Layouts importados com sucesso" });
     } catch (e) {
         console.error("Bulk Workstation Import Error:", e);
-        res.status(500).json({ error: e.message });
+        console.error(e);
+        res.status(500).json({ error: GENERIC_SERVER_ERROR_MESSAGE });
     }
 });
 
@@ -2187,7 +2446,8 @@ app.put('/api/workstations/:id', async (req, res) => {
         res.json({ message: "Posto atualizado com sucesso", workstation: updated });
     } catch (e) {
         console.error("Workstation Update Error:", e);
-        res.status(500).json({ error: e.message });
+        console.error(e);
+        res.status(500).json({ error: GENERIC_SERVER_ERROR_MESSAGE });
     }
 });
 
@@ -2205,7 +2465,8 @@ app.delete('/api/workstations/:id', async (req, res) => {
         res.json({ message: "Posto deletado com sucesso" });
     } catch (e) {
         console.error("Workstation Delete Error:", e);
-        res.status(500).json({ error: e.message });
+        console.error(e);
+        res.status(500).json({ error: GENERIC_SERVER_ERROR_MESSAGE });
     }
 });
 
@@ -2263,7 +2524,8 @@ app.post('/api/layout', async (req, res) => {
         res.json({ message: "Posto vinculado com sucesso", layout });
     } catch (e) {
         console.error("Create Layout Error:", e);
-        res.status(500).json({ error: e.message });
+        console.error(e);
+        res.status(500).json({ error: GENERIC_SERVER_ERROR_MESSAGE });
     }
 });
 
@@ -2280,7 +2542,8 @@ app.get('/api/layout', async (req, res) => {
         res.json(filteredLayouts);
     } catch (e) {
         console.error("Get Layout Error:", e);
-        res.status(500).json({ error: e.message });
+        console.error(e);
+        res.status(500).json({ error: GENERIC_SERVER_ERROR_MESSAGE });
     }
 });
 
@@ -2327,7 +2590,8 @@ app.put('/api/layout/:id', async (req, res) => {
         res.json({ message: "Posto atualizado com sucesso", layout: updated });
     } catch (e) {
         console.error("Update Layout Error:", e);
-        res.status(500).json({ error: e.message });
+        console.error(e);
+        res.status(500).json({ error: GENERIC_SERVER_ERROR_MESSAGE });
     }
 });
 
@@ -2345,7 +2609,8 @@ app.delete('/api/layout/:id', async (req, res) => {
         res.json({ message: "Posto removido com sucesso", layout: deleted });
     } catch (e) {
         console.error("Delete Layout Error:", e);
-        res.status(500).json({ error: e.message });
+        console.error(e);
+        res.status(500).json({ error: GENERIC_SERVER_ERROR_MESSAGE });
     }
 });
 
@@ -2404,7 +2669,8 @@ app.post('/api/employees/:matricula/workstation-slots', async (req, res) => {
         res.json({ message: "Posto vinculado com sucesso", layout });
     } catch (e) {
         console.error("Workstation Slots Error:", e);
-        res.status(500).json({ error: e.message });
+        console.error(e);
+        res.status(500).json({ error: GENERIC_SERVER_ERROR_MESSAGE });
     }
 });
 
@@ -2428,7 +2694,7 @@ warmRamCache().then(() => {
             console.log(`✅ SERVIDOR RODANDO EM HTTPS! (Prisma ORM | RAM Cache Enabled)`);
             console.log(`--------------------------------------------------`);
             console.log(`💻 ACESSO LOCAL:     https://localhost:${PORT}`);
-            console.log(`📱 ACESSO NA REDE:   https://${getLocalIp()}:${PORT}`);
+            console.log(`📱 ACESSO NA REDE:   https://${LOCAL_IP}:${PORT}`);
             console.log(`  - Rede Local (Hostname): https://${os.hostname()}:${PORT}`);
             console.log(`  - Apple/MDNS: https://${os.hostname()}.local:${PORT}`);
             console.log(`--------------------------------------------------`);
@@ -2440,7 +2706,7 @@ warmRamCache().then(() => {
             console.log(`✅ SERVIDOR RODANDO EM HTTP! (Prisma ORM | RAM Cache Enabled)`);
             console.log(`--------------------------------------------------`);
             console.log(`💻 ACESSO LOCAL:     http://localhost:${PORT}`);
-            console.log(`📱 ACESSO NA REDE:   http://${getLocalIp()}:${PORT}`);
+            console.log(`📱 ACESSO NA REDE:   http://${LOCAL_IP}:${PORT}`);
             console.log(`  - Rede Local (Hostname): http://${os.hostname()}:${PORT}`);
             console.log(`  - Apple/MDNS: http://${os.hostname()}.local:${PORT}`);
             console.log(`--------------------------------------------------`);

@@ -36,6 +36,11 @@ export const loginUser = async (matricula: string, password: string): Promise<{ 
             user.permissions = [];
         }
 
+        // Salva token JWT para autenticação nas próximas requisições
+        if (response.token) {
+            localStorage.setItem('tecplam_token', response.token);
+        }
+
         // Alterado para sessionStorage para não persistir após fechar o navegador
         sessionStorage.setItem(CURRENT_USER_KEY, JSON.stringify(user));
         return { success: true, user, message: 'Login realizado.' };
@@ -47,6 +52,7 @@ export const loginUser = async (matricula: string, password: string): Promise<{ 
 
 export const logoutUser = () => {
     sessionStorage.removeItem(CURRENT_USER_KEY);
+    localStorage.removeItem('tecplam_token');
 };
 
 export const getSessionUser = (): User | null => {

@@ -87,7 +87,7 @@ export const PeopleManagementManagersModule: React.FC<Props> = ({ onBack, curren
         try {
             const [usersList, empList, modsList, wksList, rolesList, unifiedList] = await Promise.all([
                 apiFetch('/users', { useCache: true }),
-                apiFetch('/employees', { useCache: true }),
+                apiFetch('/employees?includeAttendance=true'),
                 apiFetch('/config/models', { useCache: true }),
                 apiFetch('/workstations', { useCache: true }),
                 apiFetch('/config/roles', { useCache: true }),

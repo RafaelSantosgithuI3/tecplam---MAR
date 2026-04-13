@@ -140,8 +140,15 @@ export const apiFetch = async (endpoint: string, options: ApiFetchOptions = {}) 
 
     // Ensure endpoint starts with / if not present (safeguard)
     const safeEndpoint = endpoint.startsWith('/') ? endpoint : `/${endpoint}`;
+    const isPublicEndpoint = ['/login', '/recover', '/register'].includes(safeEndpoint);
     const url = `${baseUrl}/api${safeEndpoint}`;
     const method = (requestOptions.method || 'GET').toUpperCase();
+
+    // Guard: bloqueia requisições autenticadas se não há token (evita 401 em cascata)
+    if (!isPublicEndpoint && !localStorage.getItem('tecplam_token')) {
+        throw new Error('Sem token de autenticação.');
+    }
+
     const isGetRequest = method === 'GET';
     const shouldUseCache = isGetRequest && useCache && !isHeavyEndpoint(safeEndpoint);
     const cacheKey = `${API_CACHE_PREFIX}${safeEndpoint}`;
@@ -162,14 +169,28 @@ export const apiFetch = async (endpoint: string, options: ApiFetchOptions = {}) 
 
 
     try {
+        const authHeaders: Record<string, string> = {};
+        const token = localStorage.getItem('tecplam_token');
+        if (token) {
+            authHeaders['Authorization'] = `Bearer ${token}`;
+        }
+
         const response = await fetch(url, {
             ...requestOptions,
             cache: 'no-store',
             headers: {
                 'Content-Type': 'application/json',
+                ...authHeaders,
                 ...requestOptions.headers,
             },
         });
+
+        // Sessão expirada: limpa credenciais (o App.tsx detecta via getSessionUser)
+        if (response.status === 401 && !safeEndpoint.includes('/login')) {
+            localStorage.removeItem('tecplam_token');
+            sessionStorage.removeItem('lider_check_current_user');
+            throw new Error('Sessão expirada. Faça login novamente.');
+        }
 
         if (!response.ok) {
             const errorData = await response.json().catch(() => ({}));

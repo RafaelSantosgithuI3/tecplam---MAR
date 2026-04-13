@@ -3,7 +3,7 @@ import { apiFetch } from './networkConfig';
 
 export const getScraps = async (_forceRefresh = false): Promise<ScrapData[]> => {
     try {
-        return await apiFetch('/scraps');
+        return await apiFetch('/scraps?limit=100');
     } catch (e) {
         console.error("Erro ao buscar scraps", e);
         return [];

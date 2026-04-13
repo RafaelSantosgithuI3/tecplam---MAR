@@ -105,6 +105,7 @@ model Meeting {
 model ScrapLog {
   id              Int       @id @default(autoincrement())
   userId          String?   @map("user_id")
+  createdAt       DateTime  @default(now()) @map("created_at")
   date            String?
   time            String?
   week            Int?
@@ -139,6 +140,10 @@ model ScrapLog {
   @@index([date])
   @@index([situation])
   @@index([nfNumber])
+  @@index([createdAt])
+  @@index([qrCode])
+  @@index([code])
+  @@index([boxId])
   @@map("scrap_data")
 }
 
@@ -243,6 +248,8 @@ model ScrapBox {
   plant     String?
   scraps    ScrapLog[]
 
+  @@index([nfNumber])
+  @@index([createdAt])
   @@map("scrap_boxes")
 }
 

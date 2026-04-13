@@ -118,7 +118,7 @@ export const PeopleManagementModule = ({ onBack, currentUser, hasTabAccess }: Pe
                     )
                 );
             }
-            const emp = await apiFetch(`/employees?superiorId=${currentUser.matricula}`, { useCache: true });
+            const emp = await apiFetch(`/employees?superiorId=${currentUser.matricula}`);
             if (Array.isArray(emp)) setEmployees(sortByLocale(emp, (employee: any) => employee?.fullName));
 
             const mods = await apiFetch('/config/models', { useCache: true });

@@ -195,7 +195,7 @@ const LoadingSpinner = ({ label = 'Carregando dados...' }: { label?: string }) =
 
 const INITIAL_SCRAP_RENDER_LIMIT = 50;
 const MAX_FILTER_OPTIONS = 50;
-const FILTER_INPUT_DEBOUNCE_MS = 250;
+const FILTER_INPUT_DEBOUNCE_MS = 500;
 
 const getLimitedSortedOptions = (values: Array<unknown> = [], limit = MAX_FILTER_OPTIONS): string[] => {
     return Array.from(new Set(values.map((value) => String(value ?? '').trim()).filter(Boolean)))
@@ -3311,6 +3311,15 @@ const ScrapEditDelete = ({ scraps, users, lines, models, onUpdate, categories, s
     });
     const isAndroid = /Android/i.test(navigator.userAgent);
     const [showQRCamera, setShowQRCamera] = useState(false);
+    const [qrCodeSearch, setQrCodeSearch] = useState('');
+    const debouncedQrCodeSearch = useDebouncedText(qrCodeSearch);
+
+    useEffect(() => {
+        setFilters((prev: any) => ({
+            ...prev,
+            qrCode: debouncedQrCodeSearch
+        }));
+    }, [debouncedQrCodeSearch]);
 
     const [editingScrap, setEditingScrap] = useState<ScrapData | null>(null);
     const availableLeaderFilters = useMemo<string[]>(
@@ -3396,10 +3405,10 @@ const ScrapEditDelete = ({ scraps, users, lines, models, onUpdate, categories, s
                         {getLimitedSortedOptions(filterScraps.slice(0, 500).map((s: ScrapData) => s.item)).map((item: string) => <option key={item} value={item}>{item}</option>)}
                     </select>
                     <div className="flex gap-1 items-end">
-                        <Input label="" placeholder="Buscar por QR Code ou ID do Scrap..." value={filters.qrCode} onChange={e => setFilters({ ...filters, qrCode: e.target.value.toUpperCase() })} onKeyDown={e => e.key === 'Enter' && setFilters({ ...filters, qrCode: e.currentTarget.value.toUpperCase() })} className="text-sm flex-1" />
+                        <Input label="" placeholder="Buscar por QR Code ou ID do Scrap..." value={qrCodeSearch} onChange={e => setQrCodeSearch(e.target.value.toUpperCase())} onKeyDown={e => e.key === 'Enter' && setQrCodeSearch(e.currentTarget.value.toUpperCase())} className="text-sm flex-1" />
                         {isAndroid && <Button size="sm" onClick={() => { setShowQRCamera(true); }} className="flex-shrink-0" title="Câmera"><QrCode size={16} /></Button>}
                     </div>
-                    {showQRCamera && <QRStreamReader onScanSuccess={(text) => { setShowQRCamera(false); setFilters({ ...filters, qrCode: text.toUpperCase() }); }} onClose={() => setShowQRCamera(false)} />}
+                    {showQRCamera && <QRStreamReader onScanSuccess={(text) => { setShowQRCamera(false); setQrCodeSearch(text.toUpperCase()); }} onClose={() => setShowQRCamera(false)} />}
                     <div className="flex flex-wrap items-center gap-2 w-full md:w-auto">
                         <select className="bg-white dark:bg-zinc-950 border border-slate-300 dark:border-zinc-800 p-2 rounded text-sm outline-none w-full md:w-auto" onChange={e => setFilters({ ...filters, period: e.target.value })} value={filters.period}>
                             <option value="ALL">Todo Período</option>

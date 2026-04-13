@@ -539,9 +539,10 @@ const App = () => {
     }, []);
 
     useEffect(() => {
+        if (!localStorage.getItem('tecplam_token')) return;
         fetchActiveNotices();
         fetchUsersMap();
-    }, []);
+    }, [currentUser]);
 
     useEffect(() => {
         if (!currentUser) return;
@@ -914,12 +915,13 @@ const App = () => {
                 setView('LOGIN');
             }
 
-            runInBackground(async () => {
-                await hydrateNavigationState(user);
-            });
+            if (user && localStorage.getItem('tecplam_token')) {
+                runInBackground(async () => {
+                    await hydrateNavigationState(user);
+                });
+            }
         } catch (e) {
             console.error("Erro ao inicializar:", e);
-            alert("Não foi possível conectar ao servidor.");
             setView('LOGIN');
         } finally {
             setIsLoading(false);

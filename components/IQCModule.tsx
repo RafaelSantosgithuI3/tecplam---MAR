@@ -139,7 +139,7 @@ const LoadingSpinner = ({ label = 'Carregando dados...' }: { label?: string }) =
 
 const INITIAL_IQC_RENDER_LIMIT = 50;
 const MAX_FILTER_OPTIONS = 50;
-const FILTER_INPUT_DEBOUNCE_MS = 250;
+const FILTER_INPUT_DEBOUNCE_MS = 500;
 
 const getLimitedSortedOptions = (values: Array<unknown> = [], limit = MAX_FILTER_OPTIONS): string[] => {
     return Array.from(new Set(values.map((value) => String(value ?? '').trim()).filter(Boolean)))
@@ -866,6 +866,10 @@ const BatchProcessTab = ({ scraps, onProcess, currentUser, lines, models, users 
     const isHeaderReady = useStagedHeaderReady(isUIReady);
     const [itemSearch, setItemSearch] = useState('');
     const debouncedItemSearch = useDebouncedText(itemSearch);
+    const [qrCodeSearch, setQrCodeSearch] = useState('');
+    const [codeSearch, setCodeSearch] = useState('');
+    const debouncedQrCodeSearch = useDebouncedText(qrCodeSearch);
+    const debouncedCodeSearch = useDebouncedText(codeSearch);
     const availableModels = useMemo(
         () => Array.from(new Set(scraps.filter((item) => item.situation !== 'SENT').map((item) => item.model).filter(Boolean)))
             .sort((a, b) => String(a).localeCompare(String(b))),
@@ -882,8 +886,13 @@ const BatchProcessTab = ({ scraps, onProcess, currentUser, lines, models, users 
     useEffect(() => {
         if (!isHeaderReady) return;
         const nextItem = debouncedItemSearch.trim();
-        setFilters((prev) => ({ ...prev, item: nextItem || 'ALL' }));
-    }, [debouncedItemSearch, isHeaderReady]);
+        setFilters((prev) => ({
+            ...prev,
+            item: nextItem || 'ALL',
+            qrCode: debouncedQrCodeSearch.trim().toUpperCase(),
+            code: debouncedCodeSearch.trim().toUpperCase()
+        }));
+    }, [debouncedItemSearch, debouncedQrCodeSearch, debouncedCodeSearch, isHeaderReady]);
 
     useEffect(() => {
         if (!isUIReady) {
@@ -1017,7 +1026,7 @@ const BatchProcessTab = ({ scraps, onProcess, currentUser, lines, models, users 
                     </select>
 
                     <div className="flex-1 min-w-[200px] max-w-sm">
-                        <Input placeholder={isHeaderReady ? "Buscar por QR Code..." : "Preparando cabeçalho..."} value={filters.qrCode} onChange={e => setFilters({ ...filters, qrCode: e.target.value.toUpperCase() })} className="w-full" disabled={!isHeaderReady} />
+                        <Input placeholder={isHeaderReady ? "Buscar por QR Code..." : "Preparando cabeçalho..."} value={qrCodeSearch} onChange={e => setQrCodeSearch(e.target.value.toUpperCase())} className="w-full" disabled={!isHeaderReady} />
                     </div>
 
                     <select className="bg-slate-50 dark:bg-zinc-950 border border-slate-300 dark:border-zinc-800 p-2 rounded text-sm outline-none w-auto flex-none" value={filters.model} onChange={e => setFilters({ ...filters, model: e.target.value })} disabled={!isHeaderReady}>
@@ -1039,8 +1048,8 @@ const BatchProcessTab = ({ scraps, onProcess, currentUser, lines, models, users 
                             type="text"
                             placeholder="Filtrar por Código do Item"
                             className="bg-slate-50 dark:bg-zinc-950 border border-slate-300 dark:border-zinc-800 p-2 rounded text-sm outline-none w-full"
-                            value={filters.code || ''}
-                            onChange={e => setFilters({ ...filters, code: e.target.value.toUpperCase() })}
+                            value={codeSearch}
+                            onChange={e => setCodeSearch(e.target.value.toUpperCase())}
                             disabled={!isHeaderReady}
                         />
                     </div>
@@ -1152,13 +1161,16 @@ const HistorySentTab = ({ scraps, users, onRefresh }: { scraps: ScrapData[], use
     const [filters, setFilters] = useState({ item: 'ALL', model: 'ALL', qrCode: '' });
     const [groupBy, setGroupBy] = useState<'NF' | 'BOX'>('NF');
     const [searchQuery, setSearchQuery] = useState('');
+    const debouncedSearchQuery = useDebouncedText(searchQuery);
     const [expandedGroups, setExpandedGroups] = useState<string[]>([]);
     const [previewBoxNf, setPreviewBoxNf] = useState<string | null>(null);
     const [selectedScrap, setSelectedScrap] = useState<ScrapData | null>(null);
     const isUIReady = useDeferredUIReady(true);
     const isHeaderReady = useStagedHeaderReady(isUIReady);
     const [itemSearch, setItemSearch] = useState('');
+    const [qrCodeSearch, setQrCodeSearch] = useState('');
     const debouncedItemSearch = useDebouncedText(itemSearch);
+    const debouncedQrCodeSearch = useDebouncedText(qrCodeSearch);
     const availableModels = useMemo(
         () => Array.from(new Set(scraps.filter((item) => item.situation === 'SENT').map((item) => item.model).filter(Boolean)))
             .sort((a, b) => String(a).localeCompare(String(b))),
@@ -1172,8 +1184,12 @@ const HistorySentTab = ({ scraps, users, onRefresh }: { scraps: ScrapData[], use
     useEffect(() => {
         if (!isHeaderReady) return;
         const nextItem = debouncedItemSearch.trim();
-        setFilters((prev) => ({ ...prev, item: nextItem || 'ALL' }));
-    }, [debouncedItemSearch, isHeaderReady]);
+        setFilters((prev) => ({
+            ...prev,
+            item: nextItem || 'ALL',
+            qrCode: debouncedQrCodeSearch.trim().toUpperCase()
+        }));
+    }, [debouncedItemSearch, debouncedQrCodeSearch, isHeaderReady]);
 
     useEffect(() => {
         if (!isUIReady) {
@@ -1218,7 +1234,7 @@ const HistorySentTab = ({ scraps, users, onRefresh }: { scraps: ScrapData[], use
                         <option value="ALL">Todos Modelos</option>
                         {availableModels.map((model) => <option key={model} value={model}>{model}</option>)}
                     </select>
-                    <Input placeholder={isHeaderReady ? "Buscar por QR Code / ID..." : "Preparando busca..."} value={filters.qrCode} onChange={e => setFilters({ ...filters, qrCode: e.target.value.toUpperCase() })} className="h-fit" disabled={!isHeaderReady} />
+                    <Input placeholder={isHeaderReady ? "Buscar por QR Code / ID..." : "Preparando busca..."} value={qrCodeSearch} onChange={e => setQrCodeSearch(e.target.value.toUpperCase())} className="h-fit" disabled={!isHeaderReady} />
                     <select className="bg-slate-50 dark:bg-zinc-950 border border-slate-300 dark:border-zinc-800 p-2 rounded text-sm outline-none h-fit" value={groupBy} onChange={e => setGroupBy(e.target.value as 'NF' | 'BOX')} disabled={!isHeaderReady}>
                         <option value="NF">Agrupar por NF</option>
                         <option value="BOX">Agrupar por Caixa</option>
@@ -1246,8 +1262,8 @@ const HistorySentTab = ({ scraps, users, onRefresh }: { scraps: ScrapData[], use
                     {!isHistoryPreparing && Object.entries(groups)
                         .filter(([key]) => key !== 'SEM_CAIXA' && key !== 'SEM_NF')
                         .filter(([key, items]) => {
-                            if (!searchQuery) return true;
-                            const query = searchQuery.toLowerCase();
+                            if (!debouncedSearchQuery) return true;
+                            const query = debouncedSearchQuery.toLowerCase();
                             if (key.toLowerCase().includes(query)) return true;
                             if (groupBy === 'BOX' && items[0]?.nfNumber?.toLowerCase().includes(query)) return true;
                             return false;

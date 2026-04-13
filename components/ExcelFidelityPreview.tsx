@@ -73,6 +73,8 @@ export const ExcelFidelityPreview: React.FC<ExcelFidelityPreviewProps> = ({ buff
 
                 // 2. Extrair Imagens
                 const imageMap: Record<string, string> = {};
+                let logoBase64: string | null = null;
+
                 ws.getImages().forEach((img) => {
                     const pic = wb.getImage(Number(img.imageId));
                     if (pic && pic.buffer) {
@@ -89,8 +91,53 @@ export const ExcelFidelityPreview: React.FC<ExcelFidelityPreviewProps> = ({ buff
                             }
                         });
                         imageMap[`${r}-${c}`] = url;
+
+                        // Captura a primeira imagem como logo candidata
+                        if (!logoBase64) {
+                            const reader = new FileReader();
+                            reader.onloadend = () => { logoBase64 = reader.result as string; };
+                            reader.readAsDataURL(blob);
+                        }
                     }
                 });
+
+                // 2b. Extrair logo de workbook.model.media (imagens embedded que não pertencem a células)
+                if (!logoBase64) {
+                    try {
+                        const media = (wb as any).model?.media;
+                        if (Array.isArray(media) && media.length > 0) {
+                            const img = media[0];
+                            const bufData = img.buffer || img.data;
+                            if (bufData) {
+                                const ext = img.extension || img.type || 'png';
+                                const blob = new Blob([bufData], { type: `image/${ext}` });
+                                logoBase64 = URL.createObjectURL(blob);
+                            }
+                        }
+                    } catch (_) { /* silencioso */ }
+                }
+
+                // 2c. Fallback: buscar logo do servidor (extração do template original)
+                if (!logoBase64) {
+                    try {
+                        const resp = await fetch('/api/template-logo');
+                        if (resp.ok) {
+                            const data = await resp.json();
+                            if (data.logoBase64) logoBase64 = data.logoBase64;
+                        }
+                    } catch (_) { /* silencioso */ }
+                }
+
+                // 2d. Fallback final: logo.png estático
+                if (!logoBase64) {
+                    try {
+                        const resp = await fetch('/logo.png');
+                        if (resp.ok) {
+                            const blob = await resp.blob();
+                            logoBase64 = URL.createObjectURL(blob);
+                        }
+                    } catch (_) { /* silencioso */ }
+                }
 
                 // 3. Tradutores de Estilo
                 const getRgba = (colorObj: any, isFont = false) => {
@@ -260,6 +307,10 @@ export const ExcelFidelityPreview: React.FC<ExcelFidelityPreviewProps> = ({ buff
                                 {cellImage ? (
                                     <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%', width: '100%' }}>
                                         <img src={cellImage} alt="Logo" style={{ maxHeight: '95%', maxWidth: '95%', objectFit: 'contain' }} />
+                                    </div>
+                                ) : (cellText.toUpperCase() === 'LOGO' && logoBase64) ? (
+                                    <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%', width: '100%' }}>
+                                        <img src={logoBase64} alt="Logo" style={{ maxWidth: '200px', maxHeight: '95%', objectFit: 'contain' }} />
                                     </div>
                                 ) : (
                                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', width: '100%', padding: '4px', lineHeight: '1.5', whiteSpace: 'nowrap', boxSizing: 'border-box' }}>
