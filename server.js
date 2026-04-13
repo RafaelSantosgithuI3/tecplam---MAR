@@ -2429,6 +2429,8 @@ warmRamCache().then(() => {
             console.log(`--------------------------------------------------`);
             console.log(`💻 ACESSO LOCAL:     https://localhost:${PORT}`);
             console.log(`📱 ACESSO NA REDE:   https://${getLocalIp()}:${PORT}`);
+            console.log(`  - Rede Local (Hostname): https://${os.hostname()}:${PORT}`);
+            console.log(`  - Apple/MDNS: https://${os.hostname()}.local:${PORT}`);
             console.log(`--------------------------------------------------`);
             console.log(`Conectado ao database via Prisma.`);
         });
@@ -2439,6 +2441,8 @@ warmRamCache().then(() => {
             console.log(`--------------------------------------------------`);
             console.log(`💻 ACESSO LOCAL:     http://localhost:${PORT}`);
             console.log(`📱 ACESSO NA REDE:   http://${getLocalIp()}:${PORT}`);
+            console.log(`  - Rede Local (Hostname): http://${os.hostname()}:${PORT}`);
+            console.log(`  - Apple/MDNS: http://${os.hostname()}.local:${PORT}`);
             console.log(`--------------------------------------------------`);
             console.log(`Conectado ao database via Prisma.`);
         });

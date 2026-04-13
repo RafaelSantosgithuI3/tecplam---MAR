@@ -1021,37 +1021,38 @@ const ScrapForm = ({ users, models, stations, lines, materials, onSuccess, curre
     };
 
     const handleQRScanSuccess = async (text: string) => {
+        const normalizedText = String(text || '').toUpperCase();
         setShowQRReader(false);
 
         if (multiScanMode) {
             // In multi-scan mode, add to list
-            if (text && !multiQRs.includes(text)) {
+            if (normalizedText && !multiQRs.includes(normalizedText)) {
                 // Validate duplicates in batch
-                const parsed = parseQRData(text);
-                const { isDuplicate } = await checkDuplicateScrap(text, formData.code, formData.qty, formData.date);
+                const parsed = parseQRData(normalizedText);
+                const { isDuplicate } = await checkDuplicateScrap(normalizedText, formData.code, formData.qty, formData.date);
                 if (isDuplicate) {
-                    setDuplicateMessage(`QR Code ${text} já está registrado no sistema.`);
+                    setDuplicateMessage(`QR Code ${normalizedText} já está registrado no sistema.`);
                     setIsDuplicateAlertVisible(true);
                     return;
                 }
-                setMultiQRs(prev => [...prev, text]);
-            } else if (multiQRs.includes(text)) {
+                setMultiQRs(prev => [...prev, normalizedText]);
+            } else if (multiQRs.includes(normalizedText)) {
                 setDuplicateMessage('Este QR Code já foi lido neste lote.');
                 setIsDuplicateAlertVisible(true);
             }
             // Also auto-fill code/material from first scan if list is empty
-            if (multiQRs.length === 0 && text) {
-                const parsed = parseQRData(text);
+            if (multiQRs.length === 0 && normalizedText) {
+                const parsed = parseQRData(normalizedText);
                 handleCodeChange(parsed.material);
             }
             return;
         }
 
         // Single-scan: validate duplicate first
-        const parsed = parseQRData(text);
-        const { isDuplicate } = await checkDuplicateScrap(text, formData.code, formData.qty, formData.date);
+        const parsed = parseQRData(normalizedText);
+        const { isDuplicate } = await checkDuplicateScrap(normalizedText, formData.code, formData.qty, formData.date);
         if (isDuplicate) {
-            setDuplicateMessage(`QR Code ${text} já está registrado no sistema com material, quantidade ou data correspondente.`);
+            setDuplicateMessage(`QR Code ${normalizedText} já está registrado no sistema com material, quantidade ou data correspondente.`);
             setIsDuplicateAlertVisible(true);
             return;
         }
@@ -1073,17 +1074,17 @@ const ScrapForm = ({ users, models, stations, lines, materials, onSuccess, curre
 
         setFormData((prev: any) => ({
             ...prev,
-            qrCode: text,
+            qrCode: normalizedText,
             ...(extractedDate ? { date: extractedDate } : {}),
             ...(extractedQty !== undefined ? { qty: extractedQty } : {})
         }));
 
-        if (text) {
+        if (normalizedText) {
             handleCodeChange(parsed.material);
         }
 
         // Trigger multi-scan prompt
-        setPendingQR(text);
+        setPendingQR(normalizedText);
         setShowMultiScanPrompt(true);
     };
 
@@ -1136,10 +1137,11 @@ const ScrapForm = ({ users, models, stations, lines, materials, onSuccess, curre
     };
 
     const handleCodeChange = (code: string) => {
-        const found = materials.find((m: Material) => String(m.code || '').trim() === String(code || '').trim());
+        const normalizedCode = String(code || '').toUpperCase();
+        const found = materials.find((m: Material) => String(m.code || '').trim() === normalizedCode.trim());
         setFormData(prev => ({
             ...prev,
-            code,
+            code: normalizedCode,
             description: found ? found.description : '',
             unitValue: found ? found.price : 0,
             usedModel: found ? found.model : prev.usedModel
@@ -1152,7 +1154,7 @@ const ScrapForm = ({ users, models, stations, lines, materials, onSuccess, curre
             return;
         }
 
-        const normalizedMaterialCode = String(formData.code || '').trim();
+        const normalizedMaterialCode = String(formData.code || '').toUpperCase().trim();
         const isValidMaterialCode = materials.some((m: Material) => String(m.code || '').trim() === normalizedMaterialCode);
 
         if (!normalizedMaterialCode || !isValidMaterialCode) {
@@ -1308,7 +1310,7 @@ const ScrapForm = ({ users, models, stations, lines, materials, onSuccess, curre
                                     type="text"
                                     className="w-full bg-blue-50/50 dark:bg-blue-900/10 border-2 border-blue-400/50 dark:border-blue-500/50 rounded-lg p-2.5 text-sm outline-none focus:ring-2 focus:ring-blue-500 font-mono text-slate-900 dark:text-zinc-100 transition-all placeholder-blue-300 dark:placeholder-blue-700"
                                     value={formData.qrCode || ''}
-                                    onChange={(e) => setFormData((prev: any) => ({ ...prev, qrCode: e.target.value }))}
+                                    onChange={(e) => setFormData((prev: any) => ({ ...prev, qrCode: e.target.value.toUpperCase() }))}
                                     onKeyDown={(e) => {
                                         if (e.key === 'Enter') {
                                             e.preventDefault();
@@ -1337,7 +1339,7 @@ const ScrapForm = ({ users, models, stations, lines, materials, onSuccess, curre
                                         onKeyDown={(e) => {
                                             if (e.key === 'Enter') {
                                                 e.preventDefault();
-                                                const val = (e.target as HTMLInputElement).value;
+                                                const val = (e.target as HTMLInputElement).value.toUpperCase();
                                                 if (val) {
                                                     handleQRScanSuccess(val);
                                                     (e.target as HTMLInputElement).value = '';
@@ -3394,10 +3396,10 @@ const ScrapEditDelete = ({ scraps, users, lines, models, onUpdate, categories, s
                         {getLimitedSortedOptions(filterScraps.slice(0, 500).map((s: ScrapData) => s.item)).map((item: string) => <option key={item} value={item}>{item}</option>)}
                     </select>
                     <div className="flex gap-1 items-end">
-                        <Input label="" placeholder="Buscar por QR Code ou ID do Scrap..." value={filters.qrCode} onChange={e => setFilters({ ...filters, qrCode: e.target.value })} onKeyDown={e => e.key === 'Enter' && setFilters({ ...filters, qrCode: e.currentTarget.value })} className="text-sm flex-1" />
+                        <Input label="" placeholder="Buscar por QR Code ou ID do Scrap..." value={filters.qrCode} onChange={e => setFilters({ ...filters, qrCode: e.target.value.toUpperCase() })} onKeyDown={e => e.key === 'Enter' && setFilters({ ...filters, qrCode: e.currentTarget.value.toUpperCase() })} className="text-sm flex-1" />
                         {isAndroid && <Button size="sm" onClick={() => { setShowQRCamera(true); }} className="flex-shrink-0" title="Câmera"><QrCode size={16} /></Button>}
                     </div>
-                    {showQRCamera && <QRStreamReader onScanSuccess={(text) => { setShowQRCamera(false); setFilters({ ...filters, qrCode: text }); }} onClose={() => setShowQRCamera(false)} />}
+                    {showQRCamera && <QRStreamReader onScanSuccess={(text) => { setShowQRCamera(false); setFilters({ ...filters, qrCode: text.toUpperCase() }); }} onClose={() => setShowQRCamera(false)} />}
                     <div className="flex flex-wrap items-center gap-2 w-full md:w-auto">
                         <select className="bg-white dark:bg-zinc-950 border border-slate-300 dark:border-zinc-800 p-2 rounded text-sm outline-none w-full md:w-auto" onChange={e => setFilters({ ...filters, period: e.target.value })} value={filters.period}>
                             <option value="ALL">Todo Período</option>
@@ -3523,10 +3525,11 @@ const ScrapEditModal = ({ scrap, users, lines, models, categories, statusOptions
     };
 
     const handleQRScanSuccess = (text: string) => {
+        const normalizedText = String(text || '').toUpperCase();
         setShowQRReader(false);
-        const parsed = parseQRData(text);
-        setFormData((prev: any) => ({ ...prev, qrCode: text }));
-        if (text) {
+        const parsed = parseQRData(normalizedText);
+        setFormData((prev: any) => ({ ...prev, qrCode: normalizedText }));
+        if (normalizedText) {
             handleCodeChange(parsed.material);
         }
     };
@@ -3549,10 +3552,11 @@ const ScrapEditModal = ({ scrap, users, lines, models, categories, statusOptions
 
     // 3. Handle Code Change (Material)
     const handleCodeChange = (code: string) => {
-        const found = materials.find((m: Material) => String(m.code || '').trim() === String(code || '').trim());
+        const normalizedCode = String(code || '').toUpperCase();
+        const found = materials.find((m: Material) => String(m.code || '').trim() === normalizedCode.trim());
         setFormData(prev => ({
             ...prev,
-            code,
+            code: normalizedCode,
             description: found ? found.description : '',
             unitValue: found ? found.price : 0, // Keep number
             usedModel: found ? found.model : prev.usedModel
@@ -3703,7 +3707,7 @@ const ScrapEditModal = ({ scrap, users, lines, models, categories, statusOptions
                                     type="text"
                                     className="w-full bg-blue-50/50 dark:bg-blue-900/10 border-2 border-blue-400/50 dark:border-blue-500/50 rounded-lg p-2.5 text-sm outline-none focus:ring-2 focus:ring-blue-500 font-mono text-slate-900 dark:text-zinc-100 transition-all placeholder-blue-300 dark:placeholder-blue-700 disabled:opacity-50"
                                     value={formData.qrCode || ''}
-                                    onChange={(e) => setFormData((prev: any) => ({ ...prev, qrCode: e.target.value }))}
+                                    onChange={(e) => setFormData((prev: any) => ({ ...prev, qrCode: e.target.value.toUpperCase() }))}
                                     onKeyDown={(e) => {
                                         if (e.key === 'Enter') {
                                             e.preventDefault();
@@ -4064,7 +4068,7 @@ const NewAdvancedDashboard = ({ scraps, users, isLoading = false, isHydrating = 
                     </div>
                 </Card>
             </div>
-            {showQRCamera && <QRStreamReader onScanSuccess={(text) => { setShowQRCamera(false); setFilters({ ...filters, qrCode: text }); }} onClose={() => setShowQRCamera(false)} />}
+            {showQRCamera && <QRStreamReader onScanSuccess={(text) => { setShowQRCamera(false); setFilters({ ...filters, qrCode: text.toUpperCase() }); }} onClose={() => setShowQRCamera(false)} />}
 
             {/* Group Preview Modal */}
             {groupPreviewModal.isOpen && (
@@ -4168,9 +4172,10 @@ export const ScrapConsulta = ({ scraps, users }: { scraps: ScrapData[], users: U
     };
 
     const handleQRScan = (text: string) => {
+        const normalizedText = String(text || '').toUpperCase();
         setShowQRReader(false);
-        setQrInput(text);
-        handleSearch(text);
+        setQrInput(normalizedText);
+        handleSearch(normalizedText);
     };
 
     const registeredBy = result && result !== 'NOT_FOUND'
@@ -4188,7 +4193,7 @@ export const ScrapConsulta = ({ scraps, users }: { scraps: ScrapData[], users: U
                             className="flex-1 bg-blue-50/50 dark:bg-blue-900/10 border-2 border-blue-400/50 dark:border-blue-500/50 rounded-lg p-2.5 text-sm outline-none focus:ring-2 focus:ring-blue-500 font-mono text-slate-900 dark:text-zinc-100 transition-all"
                             placeholder="Bipe ou digite o QR Code..."
                             value={qrInput}
-                            onChange={e => setQrInput(e.target.value)}
+                            onChange={e => setQrInput(e.target.value.toUpperCase())}
                             onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); handleSearch(); } }}
                             autoFocus
                         />

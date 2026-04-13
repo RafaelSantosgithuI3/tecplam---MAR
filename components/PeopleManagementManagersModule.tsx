@@ -624,16 +624,24 @@ export const PeopleManagementManagersModule: React.FC<Props> = ({ onBack, curren
                 const currentMonth = now.getMonth();
                 const currentYear = now.getFullYear();
                 let misses = 0;
+                let rank = 10;
                 res.attendanceLogs?.forEach((log: any) => {
                     const d = new Date(log.date);
-                    if (d.getMonth() === currentMonth && d.getFullYear() === currentYear && (log.type === 'FALTA' || log.type === 'ATESTADO')) misses++;
+                    if (d.getMonth() === currentMonth && d.getFullYear() === currentYear) {
+                        const logType = String(log.type || '').toUpperCase();
+                        if (['FALTA', 'ATESTADO', 'ATRASO', 'SAIDA'].includes(logType)) {
+                            misses++;
+                            if (logType === 'FALTA') rank -= 1;
+                            if (logType === 'ATESTADO' || logType === 'ATRASO' || logType === 'SAIDA') rank -= 0.5;
+                        }
+                    }
                 });
 
                 // Carregando layouts do colaborador
                 const layouts = await apiFetch(`/layout?matricula=${res.matricula}`);
                 const allocatedWorkstations = Array.isArray(layouts) ? layouts.map((l: any) => `${l.modelo} — ${l.ordemPosto}`) : [];
 
-                setConsultResult({ ...res, misses, rank: Math.max(0, 10 - misses * 0.5), allocatedWorkstations });
+                setConsultResult({ ...res, misses, rank: Math.max(0, rank), allocatedWorkstations });
             } else {
                 setConsultResult(null);
                 alert('Não encontrado');
@@ -838,7 +846,7 @@ export const PeopleManagementManagersModule: React.FC<Props> = ({ onBack, curren
                     })()}
                     {showMissesModal && (() => {
                         const allLogs = consultResult.attendanceLogs || [];
-                        const validLogs = allLogs.filter((l: any) => l.type === 'FALTA' || l.type === 'ATESTADO' || l.type === 'ATRASO');
+                        const validLogs = allLogs.filter((l: any) => l.type === 'FALTA' || l.type === 'ATESTADO' || l.type === 'ATRASO' || l.type === 'SAIDA');
 
                         const filteredLogs = validLogs.filter((log: any) => {
                             const d = new Date(log.date);
@@ -871,7 +879,7 @@ export const PeopleManagementManagersModule: React.FC<Props> = ({ onBack, curren
                         let dynamicRank = 10;
                         filteredLogs.forEach((log: any) => {
                             if (log.type === 'FALTA') dynamicRank -= 1;
-                            if (log.type === 'ATESTADO') dynamicRank -= 0.5;
+                            if (log.type === 'ATESTADO' || log.type === 'ATRASO' || log.type === 'SAIDA') dynamicRank -= 0.5;
                         });
                         dynamicRank = Math.max(0, dynamicRank);
 

@@ -1017,7 +1017,7 @@ const BatchProcessTab = ({ scraps, onProcess, currentUser, lines, models, users 
                     </select>
 
                     <div className="flex-1 min-w-[200px] max-w-sm">
-                        <Input placeholder={isHeaderReady ? "Buscar por QR Code..." : "Preparando cabeçalho..."} value={filters.qrCode} onChange={e => setFilters({ ...filters, qrCode: e.target.value })} className="w-full" disabled={!isHeaderReady} />
+                        <Input placeholder={isHeaderReady ? "Buscar por QR Code..." : "Preparando cabeçalho..."} value={filters.qrCode} onChange={e => setFilters({ ...filters, qrCode: e.target.value.toUpperCase() })} className="w-full" disabled={!isHeaderReady} />
                     </div>
 
                     <select className="bg-slate-50 dark:bg-zinc-950 border border-slate-300 dark:border-zinc-800 p-2 rounded text-sm outline-none w-auto flex-none" value={filters.model} onChange={e => setFilters({ ...filters, model: e.target.value })} disabled={!isHeaderReady}>
@@ -1040,7 +1040,7 @@ const BatchProcessTab = ({ scraps, onProcess, currentUser, lines, models, users 
                             placeholder="Filtrar por Código do Item"
                             className="bg-slate-50 dark:bg-zinc-950 border border-slate-300 dark:border-zinc-800 p-2 rounded text-sm outline-none w-full"
                             value={filters.code || ''}
-                            onChange={e => setFilters({ ...filters, code: e.target.value })}
+                            onChange={e => setFilters({ ...filters, code: e.target.value.toUpperCase() })}
                             disabled={!isHeaderReady}
                         />
                     </div>
@@ -1218,7 +1218,7 @@ const HistorySentTab = ({ scraps, users, onRefresh }: { scraps: ScrapData[], use
                         <option value="ALL">Todos Modelos</option>
                         {availableModels.map((model) => <option key={model} value={model}>{model}</option>)}
                     </select>
-                    <Input placeholder={isHeaderReady ? "Buscar por QR Code / ID..." : "Preparando busca..."} value={filters.qrCode} onChange={e => setFilters({ ...filters, qrCode: e.target.value })} className="h-fit" disabled={!isHeaderReady} />
+                    <Input placeholder={isHeaderReady ? "Buscar por QR Code / ID..." : "Preparando busca..."} value={filters.qrCode} onChange={e => setFilters({ ...filters, qrCode: e.target.value.toUpperCase() })} className="h-fit" disabled={!isHeaderReady} />
                     <select className="bg-slate-50 dark:bg-zinc-950 border border-slate-300 dark:border-zinc-800 p-2 rounded text-sm outline-none h-fit" value={groupBy} onChange={e => setGroupBy(e.target.value as 'NF' | 'BOX')} disabled={!isHeaderReady}>
                         <option value="NF">Agrupar por NF</option>
                         <option value="BOX">Agrupar por Caixa</option>

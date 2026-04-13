@@ -21,11 +21,11 @@ import {
     getChecklistItems, saveChecklistItems, saveLog, getLogs,
     getLines, addLine, deleteLine, getLogsByWeekNumber,
     getRoles, addRole, deleteRole, fileToBase64, getManausDate,
-    saveMeeting, getMeetings, getMaintenanceItems,
+    saveMeeting, getMaintenanceItems,
     getAllChecklistItemsRaw, getPermissions, savePermissions,
     saveLineStop, getLineStops,
     getModels, saveModels, getStations, saveStations, getMissingLeadersForToday,
-    getCachedLogs, getCachedMeetings, hydrateHeavyCollectionsInBackground, subscribeToSyncStream
+    subscribeToSyncStream
 } from './services/storageService';
 import { saveServerUrl, getServerUrl, isServerConfigured, apiFetch } from './services/networkConfig';
 import {
@@ -787,50 +787,46 @@ const App = () => {
     }, [auditTab, linesWeekFilter, linesShiftFilter, historyDateFilter, historyShiftFilter, usersList, view]);
 
     useEffect(() => {
-        const fetchAlerts = async () => {
-            if (view === 'MENU') {
-                try {
-                    const stops = await getLineStops();
-                    // Filter: Only show alert if user can justify the stop
-                    const visibleStops = stops.filter(s =>
-                        s.status === 'WAITING_JUSTIFICATION' &&
-                        canUserJustify(currentUser, s)
-                    );
-                    setPendingLineStopsCount(visibleStops.length);
+        if (view !== 'MENU' || !hasAccess(PERMISSIONS.VIEW_AUDIT)) return;
 
-                    if (hasAccess(PERMISSIONS.VIEW_AUDIT)) {
-                        // TODO: Reativar quando necessário.
-                        // const all = await getAllUsers();
-                        // let missing = await getMissingLeadersForToday(all);
-                        //
-                        // const now = getManausDate();
-                        // const currentMinutes = now.getHours() * 60 + now.getMinutes();
-                        // missing = missing.filter(leader => {
-                        //     const role = (leader.role || '').toLowerCase();
-                        //     return role.includes('líder de produção') ||
-                        //         role.includes('líder do reparo/retrabalho') ||
-                        //         role.includes('tecnico de processo') ||
-                        //         role.includes('técnico de processo') ||
-                        //         role.includes('coordenador');
-                        // });
-                        // missing = missing.filter(leader => {
-                        //     const shift = leader.shift || '1';
-                        //     if (shift === '1') {
-                        //         return currentMinutes >= 450;
-                        //     } else if (shift === '2') {
-                        //         return currentMinutes >= 1040 || currentMinutes < 480;
-                        //     }
-                        //     return true;
-                        // });
-                        //
-                        // setMissingLeadersNames(missing.map(u => u.name));
-                    }
-                } catch (e) {
-                    console.error("Erro ao buscar alertas", e);
-                }
+        let cancelled = false;
+
+        runInBackground(async () => {
+            try {
+                if (cancelled) return;
+                // TODO: Refatorar para rota específica de contagem no backend.
+                // const all = await getAllUsers();
+                // let missing = await getMissingLeadersForToday(all);
+                //
+                // const now = getManausDate();
+                // const currentMinutes = now.getHours() * 60 + now.getMinutes();
+                // missing = missing.filter(leader => {
+                //     const role = (leader.role || '').toLowerCase();
+                //     return role.includes('líder de produção') ||
+                //         role.includes('líder do reparo/retrabalho') ||
+                //         role.includes('tecnico de processo') ||
+                //         role.includes('técnico de processo') ||
+                //         role.includes('coordenador');
+                // });
+                // missing = missing.filter(leader => {
+                //     const shift = leader.shift || '1';
+                //     if (shift === '1') {
+                //         return currentMinutes >= 450;
+                //     } else if (shift === '2') {
+                //         return currentMinutes >= 1040 || currentMinutes < 480;
+                //     }
+                //     return true;
+                // });
+                //
+                // if (!cancelled) setMissingLeadersNames(missing.map(u => u.name));
+            } catch (e) {
+                console.error("Erro ao buscar alertas", e);
             }
+        });
+
+        return () => {
+            cancelled = true;
         };
-        fetchAlerts();
     }, [view, currentUser]);
 
     useEffect(() => {
@@ -865,6 +861,7 @@ const App = () => {
     };
 
     const hydrateNavigationState = async (user: User | null) => {
+        // Boot inicial restrito a metadados leves de navegação e formulários-base.
         const [loadedLines, loadedRoles, loadedModels, loadedStations, loadedMaterials, loadedPermissions, loadedUsers] = await Promise.all([
             getLines(),
             getRoles(),
@@ -891,31 +888,11 @@ const App = () => {
         setLinesWeekFilter(`${now.getFullYear()}-W${getWeekNumber(now).toString().padStart(2, '0')}`);
     };
 
-    const fetchInitialData = async (user: User) => {
-        const [logs, meetings] = await Promise.all([getLogs(), getMeetings()]);
-        startTransition(() => {
-            setPersonalLogs(logs.filter(l => l.userId === user.matricula));
-            setMeetingHistory(meetings);
-            setProfileData({ ...user });
-        });
-    }
-
     const hydrateUserDataInBackground = async (user: User) => {
-        const [cachedLogs, cachedMeetings] = await Promise.all([getCachedLogs(), getCachedMeetings()]);
-
         startTransition(() => {
-            if (cachedLogs.length > 0) {
-                setPersonalLogs(cachedLogs.filter(l => l.userId === user.matricula));
-            }
-            if (cachedMeetings.length > 0) {
-                setMeetingHistory(cachedMeetings);
-            }
             setProfileData({ ...user });
-        });
-
-        runInBackground(async () => {
-            hydrateHeavyCollectionsInBackground();
-            await fetchInitialData(user);
+            setPersonalLogs([]);
+            setMeetingHistory([]);
         });
     };
 
@@ -955,24 +932,40 @@ const App = () => {
         };
         loadConfigs();
 
-        const fetchAlerts = async () => {
-            if (view === 'MENU') {
-                try {
-                    const stops = await getLineStops();
-                    // Filter: Only show alert if user can justify the stop
-                    const visibleStops = stops.filter(s =>
-                        s.status === 'WAITING_JUSTIFICATION' &&
-                        canUserJustify(currentUser, s)
-                    );
-                    setPendingLineStopsCount(visibleStops.length);
+        if (view !== 'MENU') return;
 
-                    const allScraps = await getScraps();
-                    const myPending = allScraps.filter(s => s.leaderName === currentUser?.name && !s.countermeasure && isCriticalItem(s.item));
-                    setPendingScrapCount(myPending.length);
-                } catch (e) { console.error(e); }
+        let cancelled = false;
+
+        // TODO: Refatorar para rota específica de contagem no backend.
+        runInBackground(async () => {
+            try {
+                const stops = await getLineStops();
+                if (cancelled) return;
+                const visibleStops = stops.filter(s =>
+                    s.status === 'WAITING_JUSTIFICATION' &&
+                    canUserJustify(currentUser, s)
+                );
+                setPendingLineStopsCount(visibleStops.length);
+            } catch (e) {
+                console.error(e);
             }
+        });
+
+        // TODO: Refatorar para rota específica de contagem no backend.
+        runInBackground(async () => {
+            try {
+                const allScraps = await getScraps();
+                if (cancelled) return;
+                const myPending = allScraps.filter(s => s.leaderName === currentUser?.name && !s.countermeasure && isCriticalItem(s.item));
+                setPendingScrapCount(myPending.length);
+            } catch (e) {
+                console.error(e);
+            }
+        });
+
+        return () => {
+            cancelled = true;
         };
-        fetchAlerts();
     }, [view, currentUser]);
 
     useEffect(() => {
