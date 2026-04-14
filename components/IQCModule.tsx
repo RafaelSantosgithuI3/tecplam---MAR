@@ -1202,7 +1202,6 @@ const HistorySentTab = ({ scraps, users, onRefresh }: { scraps: ScrapData[], use
 
         setIsHistoryPreparing(true);
         return scheduleDashboardMacrotask(() => {
-            // Aceita status SENT ou itens legados com NF atrelada
             let result = scraps.filter(s => s.situation === 'SENT' || !!s.nfNumber || !!(s as any).nf_number);
             if (filters.item !== 'ALL') result = result.filter(s => matchesTextFilter(s.item, filters.item));
             if (filters.model !== 'ALL') result = result.filter(s => matchesTextFilter(s.model, filters.model));
@@ -1212,7 +1211,7 @@ const HistorySentTab = ({ scraps, users, onRefresh }: { scraps: ScrapData[], use
 
             const grouped: Record<string, ScrapData[]> = {};
             result.forEach(s => {
-                const key = groupBy === 'NF' ? (s.nfNumber || 'SEM_NF') : String(s.boxId || 'SEM_CAIXA');
+                const key = groupBy === 'NF' ? String(s.nfNumber || (s as any).nf_number || 'SEM_NF') : String(s.boxId || (s as any).box_id || 'SEM_CAIXA');
                 if (!grouped[key]) grouped[key] = [];
                 grouped[key].push(s);
             });
@@ -1261,7 +1260,6 @@ const HistorySentTab = ({ scraps, users, onRefresh }: { scraps: ScrapData[], use
                     {!isHistoryPreparing && Object.keys(groups).length === 0 && <p className="text-center text-slate-500 py-10">Nenhum envio registrado.</p>}
 
                     {!isHistoryPreparing && Object.entries(groups)
-                        // LINHA REMOVIDA AQUI: .filter(([key]) => key !== 'SEM_CAIXA' && key !== 'SEM_NF')
                         .filter(([key, items]) => {
                             if (!debouncedSearchQuery) return true;
                             const query = debouncedSearchQuery.toLowerCase();
@@ -1269,7 +1267,11 @@ const HistorySentTab = ({ scraps, users, onRefresh }: { scraps: ScrapData[], use
                             if (groupBy === 'BOX' && items[0]?.nfNumber?.toLowerCase().includes(query)) return true;
                             return false;
                         })
-                        .sort((a, b) => (new Date(b[1][0].sentAt || 0).getTime() || 0) - (new Date(a[1][0].sentAt || 0).getTime() || 0))
+                        .sort((a, b) => {
+                            const timeA = new Date(a[1][0]?.sentAt || 0).getTime() || 0;
+                            const timeB = new Date(b[1][0]?.sentAt || 0).getTime() || 0;
+                            return timeB - timeA;
+                        })
                         .map(([keyVal, items]) => (
                             <HistoryGroupCard
                                 key={`group-${groupBy}-${keyVal}`}
