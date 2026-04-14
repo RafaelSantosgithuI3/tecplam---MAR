@@ -509,7 +509,22 @@ const apiCompression = compression({
 });
 
 // Middleware
-app.use(helmet());
+app.use(helmet({
+    contentSecurityPolicy: {
+        directives: {
+            defaultSrc: ["'self'"],
+            scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'"],
+            styleSrc: ["'self'", "'unsafe-inline'"],
+            imgSrc: ["'self'", "data:", "blob:"],
+            connectSrc: ["'self'", "blob:"],
+            fontSrc: ["'self'", "data:"],
+            objectSrc: ["'none'"],
+            mediaSrc: ["'self'", "blob:"],
+            workerSrc: ["'self'", "blob:"]
+        }
+    },
+    crossOriginEmbedderPolicy: false
+}));
 app.use(cors({
     origin: (origin, callback) => {
         if (!origin) return callback(null, true);
@@ -521,6 +536,21 @@ app.use('/api', apiRateLimiter);
 app.use('/api', apiCompression); // Garante compressão mesmo para payloads JSON pequenos nas rotas de API.
 app.use(bodyParser.json({ limit: '5mb' }));
 app.use(bodyParser.urlencoded({ limit: '5mb', extended: true }));
+
+// --- STATIC FILES: Registrados ANTES do verifyToken para não exigir JWT ---
+const distPath = path.join(__dirname, 'dist');
+const setCustomCacheControl = (res, filePath) => {
+    if (express.static.mime.lookup(filePath) === 'text/html') {
+        res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+        res.setHeader('Pragma', 'no-cache');
+        res.setHeader('Expires', '0');
+    } else {
+        res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+    }
+};
+app.use(express.static(path.join(__dirname, 'public'), { maxAge: '7d' }));
+app.use(express.static(distPath, { setHeaders: setCustomCacheControl }));
+
 app.use('/api', verifyToken);
 
 const sseHeartbeat = setInterval(() => {
@@ -1568,20 +1598,19 @@ app.delete('/api/boxes/:boxId/scraps/:scrapId', async (req, res) => {
 
 app.get('/api/scraps', async (req, res) => {
     try {
+        // Puxa do cache global em RAM (super rápido e traz a base inteira para o histórico)
+        const scraps = await ensureRamCollection(CACHE_KEYS.SCRAPS);
+        
         const parsedLimit = Number(req.query.limit);
-        const take = Number.isFinite(parsedLimit) && parsedLimit > 0
-            ? Math.min(Math.floor(parsedLimit), 500)
-            : 100;
-
-        const scraps = await prisma.scrapLog.findMany({
-            take,
-            orderBy: [
-                { createdAt: 'desc' },
-                { id: 'desc' }
-            ]
-        });
+        if (Number.isFinite(parsedLimit) && parsedLimit > 0) {
+            return res.json(scraps.slice(0, Math.floor(parsedLimit)));
+        }
+        
         res.json(scraps);
-    } catch (e) { console.error(e); res.status(500).json({ error: GENERIC_SERVER_ERROR_MESSAGE }); }
+    } catch (e) { 
+        console.error("Get Scraps Error:", e); 
+        res.status(500).json({ error: GENERIC_SERVER_ERROR_MESSAGE }); 
+    }
 });
 
 app.post('/api/scraps/check-duplicate', async (req, res) => {
@@ -2013,24 +2042,7 @@ app.get('/api/admin/backup', (req, res) => {
     else res.status(404).json({ error: "DB não encontrado" });
 });
 
-// --- STATIC SERVER (OTIMIZAÇÃO 3: Cache Estático Longo) ---
-const distPath = path.join(__dirname, 'dist');
-
-// Servir arquivos estáticos com Cache Longo (1 ano) para aliviar o HD
-// Configuração de Cache Inteligente
-const setCustomCacheControl = (res, path) => {
-    if (express.static.mime.lookup(path) === 'text/html') {
-        // Para HTML (index.html): Nunca fazer cache.
-        // Isso garante que o usuário sempre pegue a versão mais nova do JS/CSS.
-        res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
-        res.setHeader('Pragma', 'no-cache');
-        res.setHeader('Expires', '0');
-    } else {
-        // Para JS, CSS, Imagens (Assets do Vite): Cache Longo (1 ano)
-        // O Vite muda o nome do arquivo se o conteúdo mudar, então é seguro.
-        res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
-    }
-};
+// (distPath e setCustomCacheControl movidos para o topo, antes do verifyToken)
 
 
 
@@ -2677,9 +2689,6 @@ app.post('/api/employees/:matricula/workstation-slots', async (req, res) => {
 console.log("🚀 Iniciando servidor...");
 // Warm-up do cache global em RAM antes de expor o app
 warmRamCache().then(() => {
-    app.use(express.static(distPath, {
-        setHeaders: setCustomCacheControl
-    }));
     app.get('*', (req, res) => {
         const indexFile = path.join(distPath, 'index.html');
         if (fs.existsSync(indexFile)) res.sendFile(indexFile);

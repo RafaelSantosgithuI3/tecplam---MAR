@@ -1172,7 +1172,7 @@ const HistorySentTab = ({ scraps, users, onRefresh }: { scraps: ScrapData[], use
     const debouncedItemSearch = useDebouncedText(itemSearch);
     const debouncedQrCodeSearch = useDebouncedText(qrCodeSearch);
     const availableModels = useMemo(
-        () => Array.from(new Set(scraps.filter((item) => item.situation === 'SENT').map((item) => item.model).filter(Boolean)))
+        () => Array.from(new Set(scraps.filter((item) => item.situation === 'SENT' || !!item.nfNumber || !!(item as any).nf_number).map((item) => item.model).filter(Boolean)))
             .sort((a, b) => String(a).localeCompare(String(b))),
         [scraps]
     );
@@ -1202,7 +1202,8 @@ const HistorySentTab = ({ scraps, users, onRefresh }: { scraps: ScrapData[], use
 
         setIsHistoryPreparing(true);
         return scheduleDashboardMacrotask(() => {
-            let result = scraps.filter(s => s.situation === 'SENT');
+            // Aceita status SENT ou itens legados com NF atrelada
+            let result = scraps.filter(s => s.situation === 'SENT' || !!s.nfNumber || !!(s as any).nf_number);
             if (filters.item !== 'ALL') result = result.filter(s => matchesTextFilter(s.item, filters.item));
             if (filters.model !== 'ALL') result = result.filter(s => matchesTextFilter(s.model, filters.model));
             if (filters.qrCode) {
@@ -1260,7 +1261,7 @@ const HistorySentTab = ({ scraps, users, onRefresh }: { scraps: ScrapData[], use
                     {!isHistoryPreparing && Object.keys(groups).length === 0 && <p className="text-center text-slate-500 py-10">Nenhum envio registrado.</p>}
 
                     {!isHistoryPreparing && Object.entries(groups)
-                        .filter(([key]) => key !== 'SEM_CAIXA' && key !== 'SEM_NF')
+                        // LINHA REMOVIDA AQUI: .filter(([key]) => key !== 'SEM_CAIXA' && key !== 'SEM_NF')
                         .filter(([key, items]) => {
                             if (!debouncedSearchQuery) return true;
                             const query = debouncedSearchQuery.toLowerCase();
@@ -1268,7 +1269,7 @@ const HistorySentTab = ({ scraps, users, onRefresh }: { scraps: ScrapData[], use
                             if (groupBy === 'BOX' && items[0]?.nfNumber?.toLowerCase().includes(query)) return true;
                             return false;
                         })
-                        .sort((a, b) => new Date(b[1][0].sentAt || '').getTime() - new Date(a[1][0].sentAt || '').getTime())
+                        .sort((a, b) => (new Date(b[1][0].sentAt || 0).getTime() || 0) - (new Date(a[1][0].sentAt || 0).getTime() || 0))
                         .map(([keyVal, items]) => (
                             <HistoryGroupCard
                                 key={`group-${groupBy}-${keyVal}`}

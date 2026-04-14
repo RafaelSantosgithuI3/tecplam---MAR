@@ -21,7 +21,7 @@ import {
     getChecklistItems, saveChecklistItems, saveLog, getLogs,
     getLines, addLine, deleteLine, getLogsByWeekNumber,
     getRoles, addRole, deleteRole, fileToBase64, getManausDate,
-    saveMeeting, getMaintenanceItems,
+    saveMeeting, getMeetings, getMaintenanceItems,
     getAllChecklistItemsRaw, getPermissions, savePermissions,
     saveLineStop, getLineStops,
     getModels, saveModels, getStations, saveStations, getMissingLeadersForToday,
@@ -893,8 +893,15 @@ const App = () => {
         startTransition(() => {
             setProfileData({ ...user });
             setPersonalLogs([]);
-            setMeetingHistory([]);
         });
+
+        // Carrega atas existentes do servidor
+        try {
+            const meetings = await getMeetings();
+            startTransition(() => { setMeetingHistory(meetings); });
+        } catch (e) {
+            console.error('Erro ao carregar histórico de atas:', e);
+        }
     };
 
     const initApp = async () => {
