@@ -1172,7 +1172,10 @@ const HistorySentTab = ({ scraps, users, onRefresh }: { scraps: ScrapData[], use
     const debouncedItemSearch = useDebouncedText(itemSearch);
     const debouncedQrCodeSearch = useDebouncedText(qrCodeSearch);
     const availableModels = useMemo(
-        () => Array.from(new Set(scraps.filter((item) => item.situation === 'SENT' || !!item.nfNumber || !!(item as any).nf_number).map((item) => item.model).filter(Boolean)))
+        () => Array.from(new Set(scraps.filter((item) => 
+            (item.nfNumber && String(item.nfNumber).trim() !== '') || 
+            ((item as any).nf_number && String((item as any).nf_number).trim() !== '')
+        ).map((item) => item.model).filter(Boolean)))
             .sort((a, b) => String(a).localeCompare(String(b))),
         [scraps]
     );
@@ -1202,7 +1205,11 @@ const HistorySentTab = ({ scraps, users, onRefresh }: { scraps: ScrapData[], use
 
         setIsHistoryPreparing(true);
         return scheduleDashboardMacrotask(() => {
-            let result = scraps.filter(s => s.situation === 'SENT' || !!s.nfNumber || !!(s as any).nf_number);
+            // Regra estrita: O item OBRIGATORIAMENTE precisa ter a NF (novo ou legado). O status SENT sozinho é ignorado.
+            let result = scraps.filter(s => 
+                (s.nfNumber && String(s.nfNumber).trim() !== '') || 
+                ((s as any).nf_number && String((s as any).nf_number).trim() !== '')
+            );
             if (filters.item !== 'ALL') result = result.filter(s => matchesTextFilter(s.item, filters.item));
             if (filters.model !== 'ALL') result = result.filter(s => matchesTextFilter(s.model, filters.model));
             if (filters.qrCode) {
