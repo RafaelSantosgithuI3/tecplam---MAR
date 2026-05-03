@@ -466,15 +466,23 @@ const apiRateLimiter = rateLimit({
     message: { error: 'Muitas requisições. Tente novamente em alguns minutos.' }
 });
 
-const isPublicApiPath = (path = '') => {
-    return path === '/login'
-        || path === '/recover'
-        || path === '/sync-stream'
-        || path === '/template-logo';
+const isPublicApiPath = (path = '', method = '') => {
+    const safePath = path.toLowerCase();
+    
+    // Libera as rotas de Autenticação e Registro
+    if (safePath.includes('/login') || safePath.includes('/register') || safePath.includes('/recover')) return true;
+    
+    // Libera rotas do sistema/streaming
+    if (safePath.includes('/sync-stream') || safePath.includes('/template-logo')) return true;
+    
+    // Libera APENAS LEITURA para popular o formulário de cadastro
+    if (safePath.includes('/config/roles') && method === 'GET') return true;
+
+    return false;
 };
 
 const verifyToken = (req, res, next) => {
-    if (req.method === 'OPTIONS' || isPublicApiPath(req.path)) {
+    if (req.method === 'OPTIONS' || isPublicApiPath(req.path, req.method)) {
         return next();
     }
 
@@ -525,12 +533,17 @@ app.use(helmet({
     },
     crossOriginEmbedderPolicy: false
 }));
+// Configuração de CORS permissiva para rede local e desenvolvimento
 app.use(cors({
-    origin: (origin, callback) => {
-        if (!origin) return callback(null, true);
-        if (allowedOrigins.includes(origin)) return callback(null, true);
-        return callback(new Error('Not allowed by CORS'));
-    }
+    origin: function (origin, callback) {
+        // Permite requisições sem origin (como apps mobile, Postman, curl)
+        // e reflete a própria origin que está fazendo a requisição, permitindo
+        // qualquer IP da rede local sem precisar engessar uma lista.
+        callback(null, origin || true);
+    },
+    credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept']
 }));
 app.use('/api', apiRateLimiter);
 app.use('/api', apiCompression); // Garante compressão mesmo para payloads JSON pequenos nas rotas de API.
@@ -1444,6 +1457,68 @@ app.post('/api/preparation-logs', async (req, res) => {
     }
 });
 
+app.put('/api/preparation-logs/:id', async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { current, rfCal, ...data } = req.body;
+
+        const parseIntOrNull = (val) => (val === "" || val === null || val === undefined) ? null : parseInt(val);
+        const parseFloatOrNull = (val) => (val === "" || val === null || val === undefined) ? null : parseFloat(val);
+
+        const cleanData = {};
+        const intFields = ['plate', 'rear', 'btFt', 'pba', 'input', 'preKey', 'lcia', 'audio', 'radiation', 'imei', 'vct', 'revision', 'desmonte', 'oven', 'repair'];
+
+        for (const key in data) {
+            if (intFields.includes(key)) {
+                cleanData[key] = parseIntOrNull(data[key]);
+            } else if (key === 'currentRfCal') {
+                cleanData[key] = parseFloatOrNull(data[key]);
+            } else if (key === 'observation' || key === 'model' || key === 'line' || key === 'date' || key === 'shift' || key === 'responsible' || key === 'sku') {
+                if (key === 'sku' || key === 'observation') {
+                    cleanData[key] = (data[key] === "") ? null : data[key];
+                } else {
+                    cleanData[key] = data[key];
+                }
+            }
+        }
+
+        if (cleanData.currentRfCal === undefined || cleanData.currentRfCal === null) {
+            if (current) cleanData.currentRfCal = parseFloatOrNull(current);
+            else if (rfCal) cleanData.currentRfCal = parseFloatOrNull(rfCal);
+        }
+
+        const updated = await prisma.preparationLog.update({
+            where: { id: parseInt(id) },
+            data: {
+                ...cleanData,
+                date: data.date,
+                shift: data.shift,
+                line: data.line,
+                model: data.model,
+                sku: data.sku || null,
+                responsible: data.responsible
+            }
+        });
+        res.json({ message: "Atualizado com sucesso", log: updated });
+    } catch (e) {
+        console.error("Update Preparation Log Error:", e);
+        res.status(500).json({ error: GENERIC_SERVER_ERROR_MESSAGE });
+    }
+});
+
+app.delete('/api/preparation-logs/:id', async (req, res) => {
+    try {
+        const { id } = req.params;
+        await prisma.preparationLog.delete({
+            where: { id: parseInt(id) }
+        });
+        res.json({ message: "Registro excluído com sucesso" });
+    } catch (e) {
+        console.error("Delete Preparation Log Error:", e);
+        res.status(500).json({ error: GENERIC_SERVER_ERROR_MESSAGE });
+    }
+});
+
 // --- SCRAP BOXES ---
 app.get('/api/boxes', async (req, res) => {
     try {
@@ -1551,7 +1626,7 @@ app.post('/api/boxes/:id/scraps', async (req, res) => {
                 error: `Item '${scrap.item}' não pertence à categoria '${box.type}'. Verifique a caixa correta.`
             });
         }
-        
+
         if (box.plant && scrap.plant !== box.plant) {
             return res.status(400).json({
                 error: `A planta do item (${scrap.plant || 'Não definida'}) não corresponde à planta da caixa (${box.plant}).`
@@ -1593,6 +1668,40 @@ app.delete('/api/boxes/:boxId/scraps/:scrapId', async (req, res) => {
     } catch (e) { console.error(e); res.status(500).json({ error: GENERIC_SERVER_ERROR_MESSAGE }); }
 });
 
+app.delete('/api/boxes/:id', async (req, res) => {
+    try {
+        const { id } = req.params;
+        const numericId = parseInt(id, 10);
+        if (isNaN(numericId)) return res.status(400).json({ error: "Invalid ID" });
+
+        // 1. Segurança: Desvincula todos os scraps que estavam na caixa antes de apagá-la
+        // Isso evita erros de chave estrangeira (Foreign Key Constraint) no Prisma
+        await prisma.scrapLog.updateMany({
+            where: { boxId: numericId },
+            data: { boxId: null }
+        });
+
+        // 2. Apaga a caixa vazia
+        await prisma.scrapBox.delete({
+            where: { id: numericId }
+        });
+
+        // 3. Atualiza o Cache em RAM
+        await refreshRamCollection(CACHE_KEYS.SCRAPS);
+        removeRamItems(CACHE_KEYS.BOXES, numericId);
+
+        // 4. Emite a atualização via Server-Sent Events (SSE) para atualizar as telas ao vivo
+        broadcastSyncDelta(CACHE_KEYS.BOXES, 'remove', { ids: [String(numericId)] });
+        broadcastSyncDelta(CACHE_KEYS.SCRAPS, 'replace', { items: getRamCollection(CACHE_KEYS.SCRAPS) });
+
+        res.json({ message: "Caixa deletada com sucesso" });
+    } catch (e) {
+        console.error("Delete Box Error:", e);
+        console.error(e);
+        res.status(500).json({ error: GENERIC_SERVER_ERROR_MESSAGE });
+    }
+});
+
 
 // --- SCRAP ---
 
@@ -1600,16 +1709,16 @@ app.get('/api/scraps', async (req, res) => {
     try {
         // Puxa do cache global em RAM (super rápido e traz a base inteira para o histórico)
         const scraps = await ensureRamCollection(CACHE_KEYS.SCRAPS);
-        
+
         const parsedLimit = Number(req.query.limit);
         if (Number.isFinite(parsedLimit) && parsedLimit > 0) {
             return res.json(scraps.slice(0, Math.floor(parsedLimit)));
         }
-        
+
         res.json(scraps);
-    } catch (e) { 
-        console.error("Get Scraps Error:", e); 
-        res.status(500).json({ error: GENERIC_SERVER_ERROR_MESSAGE }); 
+    } catch (e) {
+        console.error("Get Scraps Error:", e);
+        res.status(500).json({ error: GENERIC_SERVER_ERROR_MESSAGE });
     }
 });
 
@@ -2148,7 +2257,7 @@ app.post('/api/employees/upload-photo/:matricula', async (req, res) => {
     try {
         const matricula = String(req.params.matricula).trim().toUpperCase();
         const { photo } = req.body;
-        
+
         const employee = await prisma.employee.findUnique({ where: { matricula } });
         if (!employee) return res.status(404).json({ error: "Matrícula não encontrada" });
 
@@ -2156,7 +2265,7 @@ app.post('/api/employees/upload-photo/:matricula', async (req, res) => {
             where: { matricula },
             data: { photo }
         });
-        
+
         res.json({ message: "Foto atualizada com sucesso" });
     } catch (e) { console.error(e); res.status(500).json({ error: GENERIC_SERVER_ERROR_MESSAGE }); }
 });
@@ -2500,8 +2609,8 @@ app.post('/api/layout', async (req, res) => {
 
         // Validar duplicata
         const existing = await prisma.layout.findFirst({
-            where: { 
-                matricula: String(matricula), 
+            where: {
+                matricula: String(matricula),
                 modelo: String(modelo),
                 ordemPosto: String(ordemPosto)
             }
@@ -2630,7 +2739,7 @@ app.post('/api/employees/:matricula/workstation-slots', async (req, res) => {
     try {
         const { modelText, workstationName } = req.body;
         const matricula = String(req.params.matricula);
-        
+
         if (!modelText || !workstationName) {
             return res.status(400).json({ error: "Modelo e Posto são obrigatórios" });
         }
@@ -2645,7 +2754,7 @@ app.post('/api/employees/:matricula/workstation-slots', async (req, res) => {
 
         // Validar duplicata
         const existing = await prisma.layout.findFirst({
-            where: { 
+            where: {
                 matricula,
                 modelo: String(modelText),
                 ordemPosto: String(workstationName)

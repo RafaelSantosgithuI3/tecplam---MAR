@@ -40,7 +40,7 @@ export const ExcelFidelityPreview: React.FC<ExcelFidelityPreviewProps> = ({ buff
 
             // Cria um link fantasma para forçar o download
             const link = document.createElement('a');
-            link.download = `${title} - ${formatDate(new Date(), 'dd/MM/yy')}.jpg`;
+            link.download = `${title}.jpg`;
             link.href = imgData;
             link.click();
         } catch (error) {

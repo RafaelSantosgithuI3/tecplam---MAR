@@ -13,3 +13,26 @@ export const savePreparationLog = async (log: PreparationLog): Promise<void> => 
         body: JSON.stringify(log)
     });
 };
+
+export const updatePreparationLog = async (id: number, data: any): Promise<void> => {
+    try {
+        await apiFetch(`/preparation-logs/${id}`, {
+            method: 'PUT',
+            body: JSON.stringify(data)
+        });
+    } catch (e) {
+        console.error("Erro ao atualizar log de preparação:", e);
+        throw e;
+    }
+};
+
+export const deletePreparationLog = async (id: number): Promise<void> => {
+    try {
+        await apiFetch(`/preparation-logs/${id}`, {
+            method: 'DELETE'
+        });
+    } catch (e) {
+        console.error("Erro ao deletar log de preparação:", e);
+        throw e;
+    }
+};

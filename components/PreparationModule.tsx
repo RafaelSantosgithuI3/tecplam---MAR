@@ -4,8 +4,8 @@ import { User, ConfigModel, PreparationLog, ConfigItem } from '../types';
 import { Card } from './Card';
 import { Button } from './Button';
 import { Input } from './Input';
-import { Download, Save, Eye, Plus, ArrowLeft, Table, FileText } from 'lucide-react';
-import { getPreparationLogs, savePreparationLog } from '../services/preparationService';
+import { Download, Save, Eye, Plus, ArrowLeft, Table, FileText, Pencil, Trash2 } from 'lucide-react';
+import { getPreparationLogs, savePreparationLog, updatePreparationLog, deletePreparationLog } from '../services/preparationService';
 import { downloadPreparationExcel, getPreparationExcelBuffer } from '../services/excelService';
 import { getLines, getModelsFull } from '../services/storageService';
 import { ExcelFidelityPreview } from './ExcelFidelityPreview';
@@ -109,16 +109,41 @@ export const PreparationModule: React.FC<PreparationModuleProps> = ({ currentUse
 
         setLoading(true);
         try {
-            await savePreparationLog(form as PreparationLog);
-            alert('Preparação salva com sucesso!');
+            if (form.id) {
+                await updatePreparationLog(form.id, form);
+                alert('Preparação atualizada com sucesso!');
+            } else {
+                await savePreparationLog(form as PreparationLog);
+                alert('Preparação salva com sucesso!');
+            }
             setForm({ ...initialForm, date: getProductionDate() }); // Reset preserve automated fields
             loadData();
+            if (form.id) setTab('VIEW');
         } catch (e) {
             alert('Erro ao salvar');
         } finally {
             setLoading(false);
         }
     };
+
+    const handleEdit = (log: PreparationLog) => {
+        setForm(log);
+        setTab('LAUNCH');
+    };
+
+    const handleDelete = async (id: number) => {
+        if (window.confirm('Tem certeza que deseja excluir este registro?')) {
+            try {
+                await deletePreparationLog(id);
+                alert('Registro excluído com sucesso!');
+                loadData();
+            } catch (e) {
+                alert('Erro ao excluir registro.');
+            }
+        }
+    };
+
+    const formatDate = (dateStr: string) => (!dateStr ? '' : dateStr.split('-').reverse().join('/'));
 
     const getFilteredLogsForExcel = () => {
         return logs.filter(l => {
@@ -356,6 +381,8 @@ export const PreparationModule: React.FC<PreparationModuleProps> = ({ currentUse
                                 'desmonte', 'oven', 'repair' // Defects
                             );
 
+                            const canManage = currentUser?.isAdmin || currentUser?.role?.toUpperCase().includes('SUPERVISOR') || currentUser?.role?.toUpperCase().includes('ADMIN') || currentUser?.name === l.responsible;
+
                             return (
                                 <div key={l.id} className="bg-white dark:bg-zinc-900 rounded-xl border border-slate-200 dark:border-zinc-800 p-4 shadow-sm hover:border-blue-500 transition-colors">
                                     {/* Header */}
@@ -364,11 +391,19 @@ export const PreparationModule: React.FC<PreparationModuleProps> = ({ currentUse
                                             <h4 className="font-bold text-lg text-slate-900 dark:text-white leading-tight">{l.model}</h4>
                                             <p className="text-sm text-slate-500 dark:text-zinc-400">{l.line}</p>
                                         </div>
-                                        <span className={`px-2 py-1 rounded text-xs font-bold border ${l.shift.includes('1')
-                                            ? 'bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-900/20 dark:text-blue-300 dark:border-blue-800'
-                                            : 'bg-purple-50 text-purple-700 border-purple-200 dark:bg-purple-900/20 dark:text-purple-300 dark:border-purple-800'}`}>
-                                            {l.shift}º Turno
-                                        </span>
+                                        <div className="flex items-center gap-2">
+                                            <span className={`px-2 py-1 rounded text-xs font-bold border ${l.shift.includes('1')
+                                                ? 'bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-900/20 dark:text-blue-300 dark:border-blue-800'
+                                                : 'bg-purple-50 text-purple-700 border-purple-200 dark:bg-purple-900/20 dark:text-purple-300 dark:border-purple-800'}`}>
+                                                {l.shift}º Turno
+                                            </span>
+                                            {canManage && (
+                                                <div className="flex gap-1 ml-2">
+                                                    <button onClick={() => handleEdit(l)} className="p-1.5 text-blue-600 hover:bg-blue-100 rounded-md transition-colors"><Pencil size={14} /></button>
+                                                    <button onClick={() => l.id && handleDelete(l.id)} className="p-1.5 text-red-600 hover:bg-red-100 rounded-md transition-colors"><Trash2 size={14} /></button>
+                                                </div>
+                                            )}
+                                        </div>
                                     </div>
 
                                     {/* Calculated Totals Summary */}
@@ -413,7 +448,7 @@ export const PreparationModule: React.FC<PreparationModuleProps> = ({ currentUse
                 <ExcelFidelityPreview
                     buffer={previewBuffer}
                     onClose={() => setPreviewBuffer(null)}
-                    title={`Preparação De Linha (turno: ${filterShift})`}
+                    title={`Preparação De Linha (turno_ ${filterShift === 'ALL' ? 'Ambos' : filterShift}) - ${formatDate(filterDate)}`.replace(/\//g, '_')}
                 />
             )}
         </div>

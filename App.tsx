@@ -926,6 +926,11 @@ const App = () => {
                 runInBackground(async () => {
                     await hydrateNavigationState(user);
                 });
+            } else {
+                // MODO PÚBLICO: Carrega estritamente a lista de cargos para popular o Select do formulário de Cadastro/Recuperação
+                getRoles()
+                    .then(roles => setAvailableRoles(roles))
+                    .catch(e => console.error("Falha ao carregar cargos públicos:", e));
             }
         } catch (e) {
             console.error("Erro ao inicializar:", e);

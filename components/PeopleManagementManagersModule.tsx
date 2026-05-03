@@ -1602,6 +1602,37 @@ export const PeopleManagementManagersModule: React.FC<Props> = ({ onBack, curren
                     </div>
                 </div>
 
+                {/* Dashboard: Resumo por Função */}
+                <div className="bg-white dark:bg-zinc-900 p-4 rounded-xl shadow-sm border border-slate-200 dark:border-zinc-800 mb-6 mt-4">
+                    <h3 className="text-sm font-bold text-slate-700 dark:text-zinc-300 uppercase tracking-wider mb-3">Resumo por Função</h3>
+                    <div className="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-5 gap-3">
+                        {Object.entries(
+                            (()=>{
+                                const leaderObj = selectedLeaderId ? (leaders.find(l => l.matricula === selectedLeaderId) || (currentUser?.matricula === selectedLeaderId ? currentUser : null)) : null;
+                                const displayList = leaderObj ? [{...leaderObj, role: leaderObj.role || 'Líder de Produção'}, ...subordinados] : subordinados;
+                                return displayList.reduce((acc, emp) => {
+                                    const role = emp.role || 'Não Definida';
+                                    acc[role] = (acc[role] || 0) + 1;
+                                    return acc;
+                                }, {} as Record<string, number>);
+                            })()
+                        )
+                        .sort(([roleA], [roleB]) => roleA.localeCompare(roleB))
+                        .map(([role, count]) => (
+                            <div key={role} className="flex justify-between items-center p-3 bg-slate-50 dark:bg-zinc-800 rounded-lg border border-slate-100 dark:border-zinc-700">
+                                <span className="text-xs text-slate-600 dark:text-zinc-400 font-semibold">{role}</span>
+                                <span className="text-lg font-bold text-cyan-600 dark:text-cyan-400">{count as React.ReactNode}</span>
+                            </div>
+                        ))}
+                        
+                        {/* Card Totalizador */}
+                        <div className="flex justify-between items-center p-3 bg-cyan-50 dark:bg-cyan-900/30 rounded-lg border border-cyan-200 dark:border-cyan-800/50 shadow-sm">
+                            <span className="text-sm text-cyan-800 dark:text-cyan-300 font-black uppercase">TOTAL</span>
+                            <span className="text-xl font-black text-cyan-700 dark:text-cyan-400">{subordinados.length + (selectedLeaderId ? 1 : 0)}</span>
+                        </div>
+                    </div>
+                </div>
+
                 <div className="bg-white dark:bg-zinc-900 rounded-xl border border-slate-200 dark:border-zinc-800 overflow-hidden text-sm mt-4">
                     {subordinados.length === 0 ? (
                         <p className="p-4 text-slate-500">{selectedLeaderId ? 'Nenhum colaborador nesta linha.' : 'Selecione um líder.'}</p>

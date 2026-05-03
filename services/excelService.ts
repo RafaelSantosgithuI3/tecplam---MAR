@@ -1658,7 +1658,9 @@ export const getPreparationExcelBuffer = async (logs: PreparationLog[], filters:
 export const downloadPreparationExcel = async (logs: PreparationLog[], filters: { date: string, shift: string }) => {
     const buffer = await getPreparationExcelBuffer(logs, filters);
     const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
-    saveAs(blob, `Relatorio_Preparacao_${filters.date}.xlsx`);
+    const shiftLabel = filters.shift === 'ALL' ? 'Ambos' : filters.shift;
+    const dateLabel = (filters.date || '').split('-').reverse().join('_');
+    saveAs(blob, `Preparação De Linha (turno_ ${shiftLabel}) - ${dateLabel}.xlsx`);
 }
 
 type AttendanceExcelRow = {
@@ -1972,6 +1974,12 @@ export const exportLeaderLayout = async (leader: any, subordinados: any[]) => {
     }
 
     const sheet = workbook.getWorksheet(1) || workbook.addWorksheet('Layout por Líder');
+    // Injeta o nome do líder dinamicamente no cabeçalho da planilha
+    try {
+        const titleCell = sheet.getCell('A1');
+        const leaderName = String(leader?.name || leader?.fullName || 'GERAL').toUpperCase();
+        titleCell.value = `MANPOWER DO LÍDER: ${leaderName}`;
+    } catch (e) { console.warn('Falha ao injetar título do líder', e); }
 
     const sortedSubordinados = [...(Array.isArray(subordinados) ? subordinados : [])]
         .sort((a, b) => {
@@ -1988,8 +1996,19 @@ export const exportLeaderLayout = async (leader: any, subordinados: any[]) => {
     };
     let maxPostosTextLength = 0;
 
-    for (let i = 0; i < sortedSubordinados.length; i++) {
-        const subordinado = sortedSubordinados[i];
+    // Normaliza o objeto do líder (User usa .name, Employee usa .fullName)
+    const leaderFormatted = leader ? {
+        matricula: leader.matricula || '',
+        fullName: leader.fullName || leader.name || '',
+        role: leader.role || 'Líder de Produção',
+        shift: leader.shift || ''
+    } : null;
+
+    // Injeta o líder ESTRITAMENTE na primeira posição
+    const finalTeamList = leaderFormatted ? [leaderFormatted, ...sortedSubordinados] : sortedSubordinados;
+
+    for (let i = 0; i < finalTeamList.length; i++) {
+        const subordinado = finalTeamList[i];
         const rowNumber = 3 + i;
 
         let postosText = '';
@@ -2049,6 +2068,11 @@ export const exportModelLayout = async (model: string, workstations: any[], empl
         await workbook.xlsx.load(buffer);
         const sheet = workbook.worksheets[0];
         if (!sheet) throw new Error('Aba 1 não encontrada');
+        // Injeta o nome do modelo dinamicamente no cabeçalho da planilha
+        try {
+            const titleCell = sheet.getCell('A1');
+            titleCell.value = `LAYOUT DO MODELO: ${String(model || 'N/A').toUpperCase()}`;
+        } catch (e) { console.warn('Falha ao injetar título do modelo', e); }
 
         const normalize = (value: any) => String(value || '').trim();
         const workstationMatchesModel = (workstation: any) => {
