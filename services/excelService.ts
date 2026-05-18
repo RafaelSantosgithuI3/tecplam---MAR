@@ -2171,6 +2171,40 @@ export const exportModelLayout = async (model: string, workstations: any[], empl
             rowNumber++;
         });
 
+        // ── ZEBRA STRIPING DINÂMICO (Azul → Laranja) ──
+        let useOrangeTheme = false;
+        let rowsSincePostoADefinir = 0;
+
+        for (let ri = 4; ri < rowNumber; ri++) {
+            const row = sheet.getRow(ri);
+            const cellCValue = String(row.getCell(3).value || '').toUpperCase();
+
+            if (cellCValue.includes('Posto a Definir')) {
+                useOrangeTheme = true;
+                rowsSincePostoADefinir = 1;
+            }
+
+            const isZebraRow = (ri % 2 === 0);
+
+            if (isZebraRow) {
+                if (!useOrangeTheme) {
+                    // Azul Escuro, Texto 2, Mais Claro 80%
+                    row.eachCell((cell) => {
+                        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFDCE6F1' } };
+                    });
+                } else if (rowsSincePostoADefinir > 1) {
+                    // Laranja, Ênfase 6, Mais Claro 80%
+                    row.eachCell((cell) => {
+                        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFCE4D6' } };
+                    });
+                }
+            }
+
+            if (useOrangeTheme && rowsSincePostoADefinir === 1) {
+                rowsSincePostoADefinir = 2;
+            }
+        }
+
         const outputBuffer = await workbook.xlsx.writeBuffer();
         const blob = new Blob([outputBuffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
         const firstName = String(leaderName || 'LIDER').trim().split(/\s+/)[0] || 'LIDER';
@@ -2346,10 +2380,10 @@ export const exportGloveControlTemplate = async (employees: any[], leaderName: s
         applyBorder(sizeTotalRow.getCell(9));
         sizeTotalRow.getCell(8).alignment = centerAlignment;
         sizeTotalRow.getCell(9).alignment = centerAlignment;
-            sizeTotalRow.getCell(8).font = { bold: true };
-            sizeTotalRow.getCell(8).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFD9D9D9' } };
-            sizeTotalRow.getCell(9).font = { bold: true };
-            sizeTotalRow.getCell(9).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFD9D9D9' } };
+        sizeTotalRow.getCell(8).font = { bold: true };
+        sizeTotalRow.getCell(8).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFD9D9D9' } };
+        sizeTotalRow.getCell(9).font = { bold: true };
+        sizeTotalRow.getCell(9).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFD9D9D9' } };
 
         // Role summary K:L from row 3
         const roleMap: Record<string, number> = {};
@@ -2385,10 +2419,10 @@ export const exportGloveControlTemplate = async (employees: any[], leaderName: s
         applyBorder(roleTotalRow.getCell(12));
         roleTotalRow.getCell(11).alignment = centerAlignment;
         roleTotalRow.getCell(12).alignment = centerAlignment;
-            roleTotalRow.getCell(11).font = { bold: true };
-            roleTotalRow.getCell(11).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFD9D9D9' } };
-            roleTotalRow.getCell(12).font = { bold: true };
-            roleTotalRow.getCell(12).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFD9D9D9' } };
+        roleTotalRow.getCell(11).font = { bold: true };
+        roleTotalRow.getCell(11).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFD9D9D9' } };
+        roleTotalRow.getCell(12).font = { bold: true };
+        roleTotalRow.getCell(12).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFD9D9D9' } };
 
         const outputBuffer = await workbook.xlsx.writeBuffer();
         const blob = new Blob([outputBuffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
@@ -2401,3 +2435,197 @@ export const exportGloveControlTemplate = async (employees: any[], leaderName: s
     }
 };
 
+export const exportGloveConsolidatedReport = async (employeesData: any[], usersData: any[]) => {
+    try {
+        const workbook = new ExcelJS.Workbook();
+        const response = await fetch('/template_luvas-ttl.xlsx');
+        if (!response.ok) throw new Error('Erro 404: template_luvas-ttl.xlsx não encontrado na pasta public');
+        const buffer = await response.arrayBuffer();
+        await workbook.xlsx.load(buffer);
+
+        const sheet = workbook.worksheets[0];
+        if (!sheet) throw new Error('Aba 1 não encontrada');
+
+        sheet.getColumn(1).width = 15;
+        sheet.getColumn(2).width = 15;
+        sheet.getColumn(3).width = 15;
+        sheet.getColumn(4).width = 15;
+
+        const thinBorder: Partial<ExcelJS.Borders> = {
+            top: { style: 'thin' }, left: { style: 'thin' },
+            bottom: { style: 'thin' }, right: { style: 'thin' },
+        };
+        const applyBorder = (cell: ExcelJS.Cell) => { cell.border = thinBorder; };
+        const centerAlign: Partial<ExcelJS.Alignment> = { vertical: 'middle', horizontal: 'center' };
+        const headerFill: ExcelJS.Fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFBFBFBF' } };
+
+        const leaderMap = new Map(usersData.map(u => [u.matricula, u.name]));
+
+        const shifts = ['1º TURNO', '2º TURNO'];
+        let currentRow = 2; // start row
+
+        for (const shift of shifts) {
+            const shiftEmployees = employeesData.filter(emp => emp.shift === shift && emp.superiorId);
+
+            const groups: Record<string, { sizes: Record<string, number>, roles: Record<string, number>, totalGloves: number, totalPeople: number }> = {};
+            const excludedRoles = ['SUPERVISOR', 'TÉCNICO DE PROCESSO', 'TECNICO DE PROCESSO', 'COORDENADOR'];
+
+            shiftEmployees.forEach(emp => {
+                // 1. Identifica o líder
+                const leaderId = emp.superiorId || emp.leader;
+                if (!leaderId) return;
+
+                const leaderObj = usersData.find(u => u.matricula === leaderId);
+
+                // BARREIRA 1: Se o líder for um Supervisor ou Técnico, ignora a criação deste grupo
+                if (leaderObj && excludedRoles.includes(leaderObj.role?.toUpperCase() || '')) {
+                    return;
+                }
+
+                // BARREIRA 2: Se o colaborador atual for Supervisor ou Técnico, não contabiliza
+                if (excludedRoles.includes(emp.role?.toUpperCase() || '')) {
+                    return;
+                }
+
+                const leaderName = leaderObj ? leaderObj.name : leaderId;
+
+                // INJEÇÃO DA LUVA DO LÍDER (Executa apenas 1x na criação do container da equipe)
+                if (!groups[leaderName]) {
+                    groups[leaderName] = { sizes: {}, roles: {}, totalGloves: 0, totalPeople: 0 };
+
+                    // Puxa o cadastro do PRÓPRIO líder para contar sua luva e cargo
+                    const leaderEmployeeObj = employeesData.find(e => e.matricula === leaderId);
+                    if (leaderEmployeeObj) {
+                        const gloveType = String(leaderEmployeeObj.gloveType || '').toLowerCase();
+                        const gloveSize = String(leaderEmployeeObj.gloveSize || '').trim();
+                        const leaderSize = gloveSize ? `${gloveSize}${gloveType.includes('dedinho') ? ' (D)' : ''}` : 'Não informado';
+
+                        const exchanges = isNaN(Number(leaderEmployeeObj.gloveExchanges)) ? 0 : Number(leaderEmployeeObj.gloveExchanges);
+                        const leaderQty = 1 + exchanges;
+                        const leaderRole = leaderEmployeeObj.role || 'LÍDER';
+
+                        groups[leaderName].sizes[leaderSize] = leaderQty;
+                        groups[leaderName].roles[leaderRole] = 1;
+                        groups[leaderName].totalGloves = leaderQty;
+                        groups[leaderName].totalPeople = 1;
+                    }
+                }
+
+                // CONTABILIZA O LIDERADO ATUAL
+                const gloveTypeLower = (emp?.gloveType || '').toLowerCase();
+                const sizeDisplayRaw = String(emp?.gloveSize || '').trim();
+                const size = sizeDisplayRaw ? `${sizeDisplayRaw}${gloveTypeLower.includes('dedinho') ? ' (D)' : ''}` : 'Não informado';
+
+                const exchanges = isNaN(Number(emp?.gloveExchanges)) ? 0 : Number(emp?.gloveExchanges);
+                const qty = 1 + exchanges;
+                const role = emp.role || 'Não informada';
+
+                groups[leaderName].sizes[size] = (groups[leaderName].sizes[size] || 0) + qty;
+                groups[leaderName].roles[role] = (groups[leaderName].roles[role] || 0) + 1;
+                groups[leaderName].totalGloves += qty;
+                groups[leaderName].totalPeople += 1;
+            });
+
+            const leaderNames = Object.keys(groups).sort((a, b) => a.localeCompare(b));
+
+            for (const lName of leaderNames) {
+                const leaderGroup = groups[lName];
+
+                // Leader Header
+                sheet.mergeCells(currentRow, 1, currentRow, 4);
+                const lCell = sheet.getCell(currentRow, 1);
+                lCell.value = `LÍDER: ${lName.toUpperCase()} / ${shift}`;
+                lCell.font = { bold: true };
+                lCell.fill = headerFill;
+                lCell.alignment = centerAlign;
+                applyBorder(lCell);
+                sheet.getCell(currentRow, 2).border = thinBorder;
+                sheet.getCell(currentRow, 3).border = thinBorder;
+                sheet.getCell(currentRow, 4).border = thinBorder;
+                currentRow += 2; // skip 1 row
+
+                // Section Titles
+                sheet.mergeCells(currentRow, 1, currentRow, 2);
+                const s1 = sheet.getCell(currentRow, 1);
+                s1.value = 'QTY DE LUVAS';
+                s1.font = { bold: true }; s1.fill = headerFill; s1.alignment = centerAlign;
+                applyBorder(s1); applyBorder(sheet.getCell(currentRow, 2));
+
+                sheet.mergeCells(currentRow, 3, currentRow, 4);
+                const s2 = sheet.getCell(currentRow, 3);
+                s2.value = 'QTY DE PESSOAS';
+                s2.font = { bold: true }; s2.fill = headerFill; s2.alignment = centerAlign;
+                applyBorder(s2); applyBorder(sheet.getCell(currentRow, 4));
+                currentRow++;
+
+                // Subtitles
+                const subtitles = ['TAMANHO', 'QTY', 'CARGO', 'QTY'];
+                subtitles.forEach((text, idx) => {
+                    const c = sheet.getCell(currentRow, idx + 1);
+                    c.value = text;
+                    c.font = { bold: true }; c.fill = headerFill; c.alignment = centerAlign;
+                    applyBorder(c);
+                });
+                currentRow++;
+
+                const gloves = Object.entries(leaderGroup.sizes).sort((a, b) => a[0].localeCompare(b[0]));
+                const roles = Object.entries(leaderGroup.roles).sort((a, b) => a[0].localeCompare(b[0]));
+
+                const maxRows = Math.max(gloves.length, roles.length);
+
+                let totalGloves = 0;
+                let totalPeople = 0;
+
+                for (let i = 0; i < maxRows; i++) {
+                    // Gloves side
+                    if (i < gloves.length) {
+                        sheet.getCell(currentRow, 1).value = gloves[i][0];
+                        sheet.getCell(currentRow, 2).value = gloves[i][1];
+                        totalGloves += gloves[i][1];
+                    } else {
+                        sheet.getCell(currentRow, 1).value = '';
+                        sheet.getCell(currentRow, 2).value = '';
+                    }
+                    applyBorder(sheet.getCell(currentRow, 1));
+                    applyBorder(sheet.getCell(currentRow, 2));
+                    sheet.getCell(currentRow, 1).alignment = centerAlign;
+                    sheet.getCell(currentRow, 2).alignment = centerAlign;
+
+                    // Roles side
+                    if (i < roles.length) {
+                        sheet.getCell(currentRow, 3).value = roles[i][0];
+                        sheet.getCell(currentRow, 4).value = roles[i][1];
+                        totalPeople += roles[i][1];
+                    } else {
+                        sheet.getCell(currentRow, 3).value = '';
+                        sheet.getCell(currentRow, 4).value = '';
+                    }
+                    applyBorder(sheet.getCell(currentRow, 3));
+                    applyBorder(sheet.getCell(currentRow, 4));
+                    sheet.getCell(currentRow, 3).alignment = centerAlign;
+                    sheet.getCell(currentRow, 4).alignment = centerAlign;
+
+                    currentRow++;
+                }
+
+                // Totals
+                const totalsText = ['TOTAL', totalGloves, 'TOTAL', totalPeople];
+                totalsText.forEach((text, idx) => {
+                    const c = sheet.getCell(currentRow, idx + 1);
+                    c.value = text;
+                    c.font = { bold: true }; c.fill = headerFill; c.alignment = centerAlign;
+                    applyBorder(c);
+                });
+
+                currentRow += 2; // 1 blank row between blocks
+            }
+        }
+
+        const outputBuffer = await workbook.xlsx.writeBuffer();
+        const blob = new Blob([outputBuffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+        saveAs(blob, `Relatorio_TTL_Luvas.xlsx`);
+    } catch (error) {
+        console.error('Erro na exportação consolidada de luvas:', error);
+        throw error;
+    }
+};

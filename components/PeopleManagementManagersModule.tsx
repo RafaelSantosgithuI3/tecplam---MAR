@@ -6,7 +6,7 @@ import { Shield, Plus, Search, User as UserIcon, List, ArrowLeft, CheckCircle, C
 import { apiFetch } from '../services/networkConfig';
 import { QRStreamReader } from './QRStreamReader';
 import { ExcelFidelityPreview } from './ExcelFidelityPreview';
-import { exportLeaderLayout, exportModelLayout, exportGloveControl, exportEmployeeTemplate, exportEmployeeListForManagers, downloadAttendanceExcel, getAttendanceExcelBuffer } from '../services/excelService';
+import { exportLeaderLayout, exportModelLayout, exportGloveControl, exportEmployeeTemplate, exportEmployeeListForManagers, downloadAttendanceExcel, getAttendanceExcelBuffer, exportGloveConsolidatedReport } from '../services/excelService';
 import * as XLSX from 'xlsx';
 
 import { EmployeeData, User, ConfigModel, Workstation, ConfigRole } from '../types';
@@ -22,6 +22,32 @@ type Tab = 'CADASTRO' | 'CONSULTA' | 'PRESENCA' | 'LAYOUT' | 'LUVAS' | 'EDICAO';
 const toTitleCase = (str: string) => {
     if (!str) return '';
     return str.toLowerCase().split(' ').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ');
+};
+
+const compressImage = (file: File, maxWidth = 400): Promise<string> => {
+    return new Promise((resolve) => {
+        const reader = new FileReader();
+        reader.readAsDataURL(file);
+        reader.onload = (event) => {
+            const img = new Image();
+            img.src = event.target?.result as string;
+            img.onload = () => {
+                const canvas = document.createElement('canvas');
+                const ratio = maxWidth / img.width;
+                const width = img.width > maxWidth ? maxWidth : img.width;
+                const height = img.width > maxWidth ? img.height * ratio : img.height;
+                canvas.width = width;
+                canvas.height = height;
+                const ctx = canvas.getContext('2d');
+                if (ctx) {
+                    ctx.fillStyle = '#FFFFFF';
+                    ctx.fillRect(0, 0, width, height);
+                    ctx.drawImage(img, 0, 0, width, height);
+                }
+                resolve(canvas.toDataURL('image/jpeg', 0.6));
+            };
+        };
+    });
 };
 
 export const PeopleManagementManagersModule: React.FC<Props> = ({ onBack, currentUser, hasTabAccess }) => {
@@ -88,6 +114,8 @@ export const PeopleManagementManagersModule: React.FC<Props> = ({ onBack, curren
     const [layoutsList, setLayoutsList] = useState<any[]>([]);
     const [viewMode, setViewMode] = useState<'posto' | 'colaborador'>('colaborador');
     const [showInactive, setShowInactive] = useState(false);
+    
+    const [gloveActiveLeader, setGloveActiveLeader] = useState('ALL');
 
     const loadBaseData = useCallback(async () => {
         try {
@@ -258,24 +286,25 @@ export const PeopleManagementManagersModule: React.FC<Props> = ({ onBack, curren
     };
 
     const gloveDashboardData = useMemo(() => {
-        const team = selectedLeaderId ? employees.filter((employee) => employee.superiorId === selectedLeaderId && isActiveEmployee(employee)) : [];
-        const leaderSource = selectedLeaderId
-            ? (leaders.find((leader) => leader.matricula === selectedLeaderId) || (currentUser?.matricula === selectedLeaderId ? currentUser : null))
+        const activeId = gloveActiveLeader === 'ALL' ? '' : gloveActiveLeader;
+        const team = activeId ? employees.filter((employee) => employee.superiorId === activeId && isActiveEmployee(employee)) : [];
+        const leaderSource = activeId
+            ? (leaders.find((leader) => leader.matricula === activeId) || (currentUser?.matricula === activeId ? currentUser : null))
             : null;
         const normalizedLeaderName = (leaderSource as any)?.fullName || leaderSource?.name || currentUser?.name || (currentUser as any)?.fullName || 'Colaborador Sem Nome';
-        const selfEmployee = selectedLeaderId ? (employees.find((employee) => employee.matricula === selectedLeaderId && isActiveEmployee(employee)) || (leaderSource ? {
+        const selfEmployee = activeId ? (employees.find((employee) => employee.matricula === activeId && isActiveEmployee(employee)) || (leaderSource ? {
             ...leaderSource,
-            matricula: leaderSource.matricula || selectedLeaderId,
+            matricula: leaderSource.matricula || activeId,
             fullName: normalizedLeaderName,
             name: normalizedLeaderName,
             gloveSize: (leaderSource as any).gloveSize ?? (currentUser as any)?.gloveSize ?? '',
             gloveType: (leaderSource as any).gloveType ?? (currentUser as any)?.gloveType ?? '',
             gloveExchanges: Number((leaderSource as any).gloveExchanges ?? (currentUser as any)?.gloveExchanges ?? 0),
             role: leaderSource.role || currentUser?.role || '',
-            superiorId: (leaderSource as any).superiorId || (currentUser as any)?.superiorId || selectedLeaderId,
+            superiorId: (leaderSource as any).superiorId || (currentUser as any)?.superiorId || activeId,
             status: (leaderSource as any).status || currentUser?.status || 'ATIVO',
         } : null)) : null;
-        const baseList = selfEmployee ? [selfEmployee, ...team.filter((employee) => employee.matricula !== selectedLeaderId)] : team;
+        const baseList = selfEmployee ? [selfEmployee, ...team.filter((employee) => employee.matricula !== activeId)] : team;
         const processedList = [...baseList].sort((a, b) => {
             const priorityDiff = getGloveRolePriority(a?.role || '') - getGloveRolePriority(b?.role || '');
             if (priorityDiff !== 0) return priorityDiff;
@@ -287,21 +316,20 @@ export const PeopleManagementManagersModule: React.FC<Props> = ({ onBack, curren
         let totalQty = 0;
 
         processedList.forEach((employee) => {
-            const extraExchanges = Number(employee?.gloveExchanges || 0);
-            const qty = 1 + (Number.isFinite(extraExchanges) ? extraExchanges : 0);
+            const quantidadeSemanal = 1 + Number(employee?.gloveExchanges || 0);
             const gloveType = String(employee?.gloveType || '').toLowerCase();
             const gloveSize = String(employee?.gloveSize || '').trim();
             const role = String(employee?.role || '').trim();
             const sizeLabel = gloveSize ? `${gloveSize}${gloveType.includes('dedinho') ? ' (D)' : ''}` : '';
 
-            totalQty += qty;
+            totalQty += quantidadeSemanal;
 
             if (sizeLabel) {
-                sizeTotals.set(sizeLabel, (sizeTotals.get(sizeLabel) || 0) + qty);
+                sizeTotals.set(sizeLabel, (sizeTotals.get(sizeLabel) || 0) + quantidadeSemanal);
             }
 
             if (role) {
-                roleTotals.set(role, (roleTotals.get(role) || 0) + 1);
+                roleTotals.set(role, (roleTotals.get(role) || 0) + quantidadeSemanal);
             }
         });
 
@@ -311,7 +339,69 @@ export const PeopleManagementManagersModule: React.FC<Props> = ({ onBack, curren
             roleSummary: Array.from(roleTotals.entries()),
             totalQty,
         };
-    }, [employees, leaders, selectedLeaderId, currentUser]);
+    }, [employees, leaders, gloveActiveLeader, currentUser]);
+
+    const glovesByLeader = useMemo(() => {
+        if (gloveActiveLeader !== 'ALL') return null; // Só agrupa se "Todos os líderes" estiver selecionado
+
+        const groups: Record<string, { id: string; sizes: Record<string, number>, roles: Record<string, number>, totalGloves: number, totalPeople: number }> = {};
+        const excludedRoles = ['SUPERVISOR', 'TÉCNICO DE PROCESSO', 'TECNICO DE PROCESSO', 'COORDENADOR'];
+
+        employees.filter(isActiveEmployee).forEach(emp => {
+            const leaderId = emp.superiorId || emp.leader;
+            if (!leaderId) return;
+
+            const leaderObj = leaders.find(u => u.matricula === leaderId) || users.find(u => u.matricula === leaderId || u.username === leaderId);
+
+            // BARREIRA 1: Se o líder for um Supervisor ou Técnico, ignora a criação deste grupo
+            if (leaderObj && excludedRoles.includes(leaderObj.role?.toUpperCase() || '')) {
+                return;
+            }
+
+            // BARREIRA 2: Se o colaborador atual for Supervisor ou Técnico, não contabiliza
+            if (excludedRoles.includes(emp.role?.toUpperCase() || '')) {
+                return;
+            }
+
+            const leaderName = leaderObj ? (leaderObj.name || leaderObj.fullName) : leaderId;
+
+            // INJEÇÃO DA LUVA DO LÍDER (Executa apenas 1x na criação do container da equipe)
+            if (!groups[leaderName]) {
+                groups[leaderName] = { id: leaderId, sizes: {}, roles: {}, totalGloves: 0, totalPeople: 0 };
+
+                // Puxa o cadastro do PRÓPRIO líder para contar sua luva e cargo
+                const leaderEmployeeObj = employees.find(e => e.matricula === leaderId);
+                if (leaderEmployeeObj) {
+                    const gloveType = String(leaderEmployeeObj.gloveType || '').toLowerCase();
+                    const gloveSize = String(leaderEmployeeObj.gloveSize || '').trim();
+                    const leaderSize = gloveSize ? `${gloveSize}${gloveType.includes('dedinho') ? ' (D)' : ''}` : 'Não informado';
+
+                    const leaderQty = 1 + Number(leaderEmployeeObj.gloveExchanges || 0);
+                    const leaderRole = leaderEmployeeObj.role || 'LÍDER';
+
+                    groups[leaderName].sizes[leaderSize] = leaderQty;
+                    groups[leaderName].roles[leaderRole] = 1;
+                    groups[leaderName].totalGloves = leaderQty;
+                    groups[leaderName].totalPeople = 1;
+                }
+            }
+
+            // CONTABILIZA O LIDERADO ATUAL
+            const gloveType = String(emp.gloveType || '').toLowerCase();
+            const gloveSize = String(emp.gloveSize || '').trim();
+            const sizeLabel = gloveSize ? `${gloveSize}${gloveType.includes('dedinho') ? ' (D)' : ''}` : 'Não informado';
+
+            const qty = 1 + Number(emp.gloveExchanges || 0);
+            const role = emp.role || 'Não informada';
+
+            groups[leaderName].sizes[sizeLabel] = (groups[leaderName].sizes[sizeLabel] || 0) + qty;
+            groups[leaderName].roles[role] = (groups[leaderName].roles[role] || 0) + 1;
+            groups[leaderName].totalGloves += qty;
+            groups[leaderName].totalPeople += 1;
+        });
+
+        return Object.entries(groups).sort((a, b) => a[0].localeCompare(b[0]));
+    }, [employees, selectedLeaderId, leaders, users]);
 
     // TAB 1: CADASTRO
     const [formData, setFormData] = useState({
@@ -407,11 +497,7 @@ export const PeopleManagementManagersModule: React.FC<Props> = ({ onBack, curren
             fileNameParts.pop();
             const matriculaStr = fileNameParts.join('.').toUpperCase();
 
-            const b64 = await new Promise<string>((resolve) => {
-                const reader = new FileReader();
-                reader.onload = (ev) => resolve(ev.target?.result as string);
-                reader.readAsDataURL(file);
-            });
+            const b64 = await compressImage(file, 400);
 
             try {
                 await apiFetch(`/employees/upload-photo/${matriculaStr}`, {
@@ -429,13 +515,10 @@ export const PeopleManagementManagersModule: React.FC<Props> = ({ onBack, curren
         if (e.target) e.target.value = '';
     };
 
-    const handlePhotoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const handlePhotoChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
         if (e.target.files && e.target.files[0]) {
-            const reader = new FileReader();
-            reader.onload = (ev) => {
-                if (ev.target?.result) setFormData(prev => ({ ...prev, photo: ev.target!.result as string }));
-            };
-            reader.readAsDataURL(e.target.files[0]);
+            const compressedBase64 = await compressImage(e.target.files[0]);
+            setFormData(prev => ({ ...prev, photo: compressedBase64 }));
         }
     };
 
@@ -579,6 +662,7 @@ export const PeopleManagementManagersModule: React.FC<Props> = ({ onBack, curren
     const [filterRole, setFilterRole] = useState('ALL');
     const [filterSector, setFilterSector] = useState('ALL');
     const [filterLeader, setFilterLeader] = useState('ALL');
+    const [showInactiveConsulta, setShowInactiveConsulta] = useState(false);
 
     const safeEmployees = Array.isArray(employees) ? employees : [];
     const uniqueTypes = useMemo(() => Array.from(new Set(safeEmployees.map(e => e.type).filter(Boolean))).sort(), [employees]);
@@ -589,7 +673,8 @@ export const PeopleManagementManagersModule: React.FC<Props> = ({ onBack, curren
 
     const filteredEmployees = useMemo(() => {
         const baseList = selectedLeaderId ? subordinados : employees;
-        return baseList.filter((emp: any) => {
+        const list = baseList.filter(emp => showInactiveConsulta ? true : emp.status !== 'INATIVO');
+        return list.filter((emp: any) => {
             const matchesShift = !consultShiftFilter || emp.shift === consultShiftFilter;
             const matchesSearch = !searchQuery || emp.matricula.toLowerCase().includes(searchQuery.toLowerCase()) || emp.fullName.toLowerCase().includes(searchQuery.toLowerCase());
             const matchesType = filterType === 'ALL' || emp.type === filterType;
@@ -597,10 +682,10 @@ export const PeopleManagementManagersModule: React.FC<Props> = ({ onBack, curren
             const matchesRole = filterRole === 'ALL' || emp.role === filterRole;
             const matchesSector = filterSector === 'ALL' || emp.sector === filterSector;
             const matchesLeader = filterLeader === 'ALL' || emp.superiorId === filterLeader || emp.leader === filterLeader;
-            
+
             return matchesShift && matchesSearch && matchesType && matchesIdlSt && matchesRole && matchesSector && matchesLeader;
         }).sort((a: any, b: any) => String(a.fullName || a.name || '').localeCompare(String(b.fullName || b.name || '')));
-    }, [employees, subordinados, selectedLeaderId, filterType, filterIdlSt, filterRole, filterSector, filterLeader, searchQuery, consultShiftFilter]);
+    }, [employees, subordinados, selectedLeaderId, filterType, filterIdlSt, filterRole, filterSector, filterLeader, searchQuery, consultShiftFilter, showInactiveConsulta]);
 
     const countByType = useMemo(() => filteredEmployees.reduce((acc, emp) => {
         const key = emp.type || 'Não Definido';
@@ -689,7 +774,7 @@ export const PeopleManagementManagersModule: React.FC<Props> = ({ onBack, curren
                     <Input label="Buscar Matrícula/Nome" value={searchQuery} onChange={e => setSearchQuery(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleConsult()} />
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-4 gap-4 items-end w-full">
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 lg:grid-cols-5 xl:grid-cols-5 gap-4 items-end w-full">
                     <div className="flex flex-col gap-1 w-full">
                         <label className="text-xs font-bold text-slate-500 dark:text-zinc-400 uppercase tracking-wide">Turno</label>
                         <select
@@ -728,6 +813,19 @@ export const PeopleManagementManagersModule: React.FC<Props> = ({ onBack, curren
                                 return <option key={t as string} value={t as string}>{leaderObj ? leaderObj.name : t as React.ReactNode}</option>
                             })}
                         </select>
+                    </div>
+
+                    <div className="flex items-center gap-2 h-10 mt-auto select-none">
+                        <input
+                            type="checkbox"
+                            id="showInactiveConsulta"
+                            checked={showInactiveConsulta}
+                            onChange={e => setShowInactiveConsulta(e.target.checked)}
+                            className="w-4 h-4 rounded bg-gray-900 border-gray-700 text-cyan-500 focus:ring-cyan-500/20"
+                        />
+                        <label htmlFor="showInactiveConsulta" className="text-xs font-bold text-gray-400 uppercase cursor-pointer">
+                            Mostrar Desligados
+                        </label>
                     </div>
                 </div>
 
@@ -800,7 +898,7 @@ export const PeopleManagementManagersModule: React.FC<Props> = ({ onBack, curren
                         {filteredEmployees
                             .map((emp: any) => (
                                 <div key={emp.matricula} onClick={() => { setSearchQuery(emp.matricula); handleConsult(emp.matricula); }} className="flex items-center gap-3 p-3 rounded-xl border border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 hover:border-cyan-500 cursor-pointer transition-all">
-                                    {emp.photo ? <img src={emp.photo} className="w-10 h-10 rounded-full object-cover shrink-0" /> : <div className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center shrink-0"><UserIcon size={20} className="text-slate-400" /></div>}
+                                    {emp.photo ? <img src={emp.photo} loading="lazy" decoding="async" className="w-10 h-10 rounded-full object-cover shrink-0" /> : <div className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center shrink-0"><UserIcon size={20} className="text-slate-400" /></div>}
                                     <div className="min-w-0">
                                         <p className="font-bold text-sm text-slate-800 dark:text-zinc-100 truncate">{emp.fullName}</p>
                                         <p className="text-xs text-slate-500 font-mono truncate">{emp.matricula}</p>
@@ -817,10 +915,12 @@ export const PeopleManagementManagersModule: React.FC<Props> = ({ onBack, curren
                     <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-stretch">
                         <Card className="flex flex-col items-center text-center w-full">
                             {consultResult.photo ? (
-                                <img 
-                                    src={consultResult.photo} 
-                                    alt="Colaborador" 
-                                    className="w-48 h-64 object-cover object-center rounded-2xl border border-slate-200 dark:border-zinc-700 mx-auto shadow-md" 
+                                <img
+                                    src={consultResult.photo}
+                                    alt="Colaborador"
+                                    loading="lazy"
+                                    decoding="async"
+                                    className="w-48 h-64 object-cover object-center rounded-2xl border border-slate-200 dark:border-zinc-700 mx-auto shadow-md"
                                 />
                             ) : (
                                 <div className="w-48 h-64 bg-slate-200 dark:bg-zinc-800 rounded-2xl flex items-center justify-center shrink-0 mx-auto border border-slate-300 dark:border-zinc-700 shadow-md">
@@ -1154,8 +1254,8 @@ export const PeopleManagementManagersModule: React.FC<Props> = ({ onBack, curren
     }, [employees, users]);
 
     const filteredAttendanceLogs = useMemo(() => {
-        const attendanceEmployees = employees.filter((employee: any) => 
-            isActiveEmployee(employee) && 
+        const attendanceEmployees = employees.filter((employee: any) =>
+            isActiveEmployee(employee) &&
             (attendanceLeaderFilter === 'ALL' || employee.superiorId === attendanceLeaderFilter || employee.leader === attendanceLeaderFilter)
         );
         const [rangeStart, rangeEnd] = getDateRange(absenceFilterMode, startDate, endDate);
@@ -1227,7 +1327,7 @@ export const PeopleManagementManagersModule: React.FC<Props> = ({ onBack, curren
         setAttType(normalizedType);
         setAttTime(['ATRASO', 'SAIDA'].includes(normalizedType) ? String(log?.delayMinutes || '') : '');
         setAttDate(normalizeAttendanceDate(log?.date) || todayAttendanceDate());
-        
+
         const formElement = document.getElementById('form-cadastro-falta');
         if (formElement) {
             formElement.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -1424,7 +1524,7 @@ export const PeopleManagementManagersModule: React.FC<Props> = ({ onBack, curren
                                 <div className="w-full">
                                     <Input label="Filtrar por Nome ou Matrícula" value={attSearchQuery} onChange={e => setAttSearchQuery(e.target.value)} />
                                 </div>
-                                
+
                                 <div className="flex flex-col xl:flex-row gap-3 w-full">
                                     <div className="flex flex-col gap-1 min-w-[160px]">
                                         <label className="text-xs font-bold text-slate-500 dark:text-zinc-400 uppercase tracking-wide">Modo de Período</label>
@@ -1508,11 +1608,10 @@ export const PeopleManagementManagersModule: React.FC<Props> = ({ onBack, curren
                                     <div
                                         key={item.key}
                                         onClick={() => setAttTypeFilter(prev => prev === item.key ? 'ALL' : item.key)}
-                                        className={`flex flex-col justify-center items-center p-3 rounded-lg border cursor-pointer transition-colors ${
-                                            attTypeFilter === item.key
-                                                ? `border-${item.color}-500 bg-${item.color}-950 ring-2 ring-${item.color}-500/30`
-                                                : `border-${item.color}-200 dark:border-${item.color}-900/40 bg-${item.color}-50 dark:bg-${item.color}-900/10 hover:border-${item.color}-400`
-                                        }`}
+                                        className={`flex flex-col justify-center items-center p-3 rounded-lg border cursor-pointer transition-colors ${attTypeFilter === item.key
+                                            ? `border-${item.color}-500 bg-${item.color}-950 ring-2 ring-${item.color}-500/30`
+                                            : `border-${item.color}-200 dark:border-${item.color}-900/40 bg-${item.color}-50 dark:bg-${item.color}-900/10 hover:border-${item.color}-400`
+                                            }`}
                                     >
                                         <p className={`text-[10px] font-bold uppercase tracking-wide ${attTypeFilter === item.key ? `text-${item.color}-300` : `text-${item.color}-600 dark:text-${item.color}-400`}`}>Total {item.label}</p>
                                         <p className={`text-xl font-black mt-1 ${attTypeFilter === item.key ? 'text-white' : 'text-slate-900 dark:text-zinc-100'}`}>{item.count}</p>
@@ -2187,11 +2286,94 @@ export const PeopleManagementManagersModule: React.FC<Props> = ({ onBack, curren
         </div>
     );
 
-    // TAB 5: LUVAS — usa selectedLeaderId
+    // TAB 5: LUVAS — usa gloveActiveLeader
     const renderLuvas = () => {
+        if (gloveActiveLeader === 'ALL') {
+            const generateGlobalSpreadsheet = () => {
+                const rows: any[] = [];
+                const reportGroups: Record<string, Record<string, Record<string, number>>> = {};
+
+                employees.filter(isActiveEmployee).forEach(emp => {
+                    const leaderId = emp.superiorId || emp.leader;
+                    if (!leaderId) return;
+                    const leaderObj = leaders.find(u => u.matricula === leaderId) || users.find(u => u.matricula === leaderId || u.username === leaderId);
+                    if (!leaderObj) return;
+
+                    const leaderName = leaderObj.name || leaderObj.fullName;
+                    const shift = emp.shift || 'NÃO DEFINIDO';
+
+                    const quantidadeSemanal = 1 + Number(emp.gloveExchanges || 0);
+
+                    const gloveType = String(emp.gloveType || '').toLowerCase();
+                    const gloveSize = String(emp.gloveSize || '').trim();
+                    const sizeLabel = gloveSize ? `${gloveSize}${gloveType.includes('dedinho') ? ' (D)' : ''}` : 'Não informado';
+
+                    if (!reportGroups[shift]) reportGroups[shift] = {};
+                    if (!reportGroups[shift][leaderName]) reportGroups[shift][leaderName] = {};
+                    reportGroups[shift][leaderName][sizeLabel] = (reportGroups[shift][leaderName][sizeLabel] || 0) + quantidadeSemanal;
+                });
+
+                for (const shift of Object.keys(reportGroups).sort()) {
+                    for (const leader of Object.keys(reportGroups[shift]).sort()) {
+                        for (const size of Object.keys(reportGroups[shift][leader]).sort()) {
+                            rows.push({ 'Turno': shift, 'Líder': leader, 'Tamanho da Luva': size, 'Quantidade': reportGroups[shift][leader][size] });
+                        }
+                    }
+                }
+
+                const worksheet = XLSX.utils.json_to_sheet(rows);
+                const workbook = XLSX.utils.book_new();
+                XLSX.utils.book_append_sheet(workbook, worksheet, 'Luvas Total');
+                XLSX.writeFile(workbook, `Luvas_TOTAL.xlsx`);
+            };
+
+            return (
+                <div className="space-y-4">
+                    <div className="flex justify-between items-center mb-4">
+                        <h3 className="font-bold text-slate-800 dark:text-zinc-100 flex items-center gap-2">
+                            Visão Geral de Luvas por Líder
+                        </h3>
+                        <Button
+                            variant="secondary"
+                            onClick={() => {
+                                exportGloveConsolidatedReport(employees.filter(isActiveEmployee), users);
+                            }}
+                            className="w-full md:w-auto"
+                        >
+                            <Download size={16} /> Baixar
+                        </Button>
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-3 gap-4">
+                        {glovesByLeader && glovesByLeader.length > 0 ? glovesByLeader.map(([leaderName, data]) => {
+                            const totalLeaderQty = Object.values(data.sizes).reduce((acc, qty) => acc + qty, 0);
+                            return (
+                                <Card key={leaderName} onClick={() => setGloveActiveLeader(data.id)} className="flex flex-col gap-3 cursor-pointer hover:border-cyan-500/50 transition-all hover:bg-gray-850">
+                                    <h4 className="font-bold text-slate-800 dark:text-zinc-100 text-sm border-b border-slate-100 dark:border-zinc-800 pb-2">{leaderName}</h4>
+                                    <div className="flex flex-col gap-2">
+                                        {Object.entries(data.sizes).sort().map(([size, qty]) => (
+                                            <div key={size} className="flex justify-between items-center text-sm">
+                                                <span className="text-slate-600 dark:text-zinc-400 font-medium">{size}</span>
+                                                <span className="font-bold text-slate-900 dark:text-zinc-100 bg-slate-100 dark:bg-zinc-800 px-2 py-0.5 rounded">{qty}</span>
+                                            </div>
+                                        ))}
+                                    </div>
+                                    <div className="flex justify-between items-center mt-auto pt-2 border-t border-slate-100 dark:border-zinc-800">
+                                        <span className="text-xs font-bold text-slate-500 uppercase">Total Geral</span>
+                                        <span className="font-black text-cyan-600 dark:text-cyan-400">{totalLeaderQty}</span>
+                                    </div>
+                                </Card>
+                            );
+                        }) : (
+                            <p className="text-sm text-slate-500">Nenhum dado encontrado.</p>
+                        )}
+                    </div>
+                </div>
+            );
+        }
+
         const { processedList, sizeSummary, roleSummary, totalQty } = gloveDashboardData;
         const totalRoles = roleSummary.reduce((acc, [, qty]) => acc + qty, 0);
-        const leaderObj = leaders.find(l => l.matricula === selectedLeaderId);
+        const leaderObj = leaders.find(l => l.matricula === gloveActiveLeader);
 
         const handleUpdateGlove = async (matricula: string, field: 'gloveSize' | 'gloveType' | 'gloveExchanges', value: string | number) => {
             const empToUpdate = employees.find(e => e.matricula === matricula)
@@ -2217,7 +2399,7 @@ export const PeopleManagementManagersModule: React.FC<Props> = ({ onBack, curren
                     if (exists) {
                         return prev.map(e => e.matricula === matricula ? { ...e, ...normalizedProfile } : e);
                     }
-                    return matricula === selectedLeaderId || isLeadershipRole(normalizedProfile?.role)
+                    return matricula === gloveActiveLeader || isLeadershipRole(normalizedProfile?.role)
                         ? [...prev, normalizedProfile]
                         : prev;
                 });
@@ -2231,11 +2413,13 @@ export const PeopleManagementManagersModule: React.FC<Props> = ({ onBack, curren
 
         return (
             <Card>
-                {!selectedLeaderId && (
-                    <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-900/40 rounded-xl p-4 text-amber-800 dark:text-amber-300 text-sm font-medium mb-4">
-                        ⚠️ Selecione um líder no cabeçalho para visualizar o controle de luvas.
-                    </div>
-                )}
+                {/* Botão de navegação intermediária */}
+                <button
+                    onClick={() => setGloveActiveLeader('ALL')}
+                    className="flex items-center gap-2 px-4 py-2 mb-4 text-xs font-bold text-gray-400 hover:text-cyan-400 bg-gray-900 rounded-xl border border-gray-800 transition-colors uppercase w-fit"
+                >
+                    <ArrowLeft size={14} /> Voltar para Distribuição por Líder
+                </button>
                 <div className="flex justify-between items-center mb-4">
                     <h3 className="font-bold text-slate-800 dark:text-zinc-100">
                         Controle de Luvas — Equipe de {leaderObj?.name || '...'}
@@ -2339,6 +2523,14 @@ export const PeopleManagementManagersModule: React.FC<Props> = ({ onBack, curren
     };
 
     // TAB 6: EDIÇÃO
+    const [editFilterLeader, setEditFilterLeader] = useState('ALL');
+    const [editFilterRole, setEditFilterRole] = useState('ALL'); // Mantido pois é usado no dashboard de resumo
+    const [editFilterSector, setEditFilterSector] = useState('ALL');
+    const [editFilterShift, setEditFilterShift] = useState('ALL');
+    const [editFilterType, setEditFilterType] = useState('ALL'); // Mantido pois é usado no dashboard de resumo
+    const [editFilterIdlSt, setEditFilterIdlSt] = useState('ALL');
+    const [showInactiveEdicao, setShowInactiveEdicao] = useState(false);
+
     const [editQuery, setEditQuery] = useState('');
     const [editFound, setEditFound] = useState(false);
     const [editSaving, setEditSaving] = useState(false);
@@ -2348,13 +2540,13 @@ export const PeopleManagementManagersModule: React.FC<Props> = ({ onBack, curren
         if (!editQuery.trim()) return;
         try {
             const res = await apiFetch('/employees/search/' + encodeURIComponent(editQuery.trim()));
-            if (res && res.matricula && (showInactive || isActiveEmployee(res))) {
+            if (res && res.matricula && (showInactiveEdicao || isActiveEmployee(res))) {
                 setFormData({ ...res, photo: res.photo || '', superiorId: res.superiorId || '' });
                 setOriginalEditMatricula(res.matricula);
                 setEditFound(true);
             } else {
                 setEditFound(false);
-                alert(showInactive ? 'Colaborador não encontrado.' : 'Colaborador não encontrado ou está desligado.');
+                alert(showInactiveEdicao ? 'Colaborador não encontrado.' : 'Colaborador não encontrado ou está desligado.');
             }
         } catch { setEditFound(false); alert('Erro na busca.'); }
     };
@@ -2373,25 +2565,153 @@ export const PeopleManagementManagersModule: React.FC<Props> = ({ onBack, curren
         }
     };
 
+    const editFilteredEmployees = useMemo(() => {
+        return employees
+            .filter(emp => showInactiveEdicao || isActiveEmployee(emp))
+            .filter(emp => editFilterLeader === 'ALL' || emp.superiorId === editFilterLeader)
+            .filter(emp => editFilterSector === 'ALL' || emp.sector === editFilterSector)
+            .filter(emp => editFilterShift === 'ALL' || emp.shift === editFilterShift)
+            .filter(emp => editFilterIdlSt === 'ALL' || emp.idlSt === editFilterIdlSt)
+            .filter(emp => !editQuery || emp.matricula.toLowerCase().includes(editQuery.toLowerCase()) || emp.fullName.toLowerCase().includes(editQuery.toLowerCase()))
+            .sort((a, b) => String(a.fullName || '').localeCompare(String(b.fullName || '')));
+    }, [employees, showInactiveEdicao, editFilterLeader, editFilterSector, editFilterShift, editFilterIdlSt, editQuery]);
+
+    const editCountByType = useMemo(() => {
+        const counts: Record<string, number> = {};
+        editFilteredEmployees.forEach(emp => {
+            const t = emp.type || 'NÃO DEFINIDO';
+            counts[t] = (counts[t] || 0) + 1;
+        });
+        return counts;
+    }, [editFilteredEmployees]);
+
+    const editCountByRole = useMemo(() => {
+        const counts: Record<string, number> = {};
+        editFilteredEmployees.forEach(emp => {
+            const r = emp.role || 'NÃO DEFINIDA';
+            counts[r] = (counts[r] || 0) + 1;
+        });
+        return counts;
+    }, [editFilteredEmployees]);
+
     const renderEdicao = () => (
         <div className="space-y-4">
-            <Card className="flex flex-col gap-3 md:flex-row md:items-end">
-                <div className="flex-1"><Input label="Buscar Matrícula para Editar" value={editQuery} onChange={e => setEditQuery(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleEditSearch()} /></div>
-                <label className="flex items-center gap-2 text-sm font-medium text-slate-600 dark:text-zinc-300 select-none">
-                    <input type="checkbox" checked={showInactive} onChange={e => setShowInactive(e.target.checked)} className="rounded border-slate-300 text-cyan-600 focus:ring-cyan-500" />
-                    Mostrar Desligados
-                </label>
-                <Button onClick={handleEditSearch}><Search size={16} /> Buscar</Button>
-            </Card>
+            {/* CABEÇALHO DE BUSCA E FILTROS - CÓPIA FIEL DA ABA DE CONSULTA */}
+            <div className="space-y-4 mb-6">
+                <div className="flex flex-col gap-4 bg-white dark:bg-zinc-900 p-4 rounded-lg border border-slate-200 dark:border-zinc-800">
+
+                    {/* Input de Busca */}
+                    <div className="w-full">
+                        <Input
+                            label="Buscar Matrícula/Nome"
+                            value={editQuery}
+                            onChange={e => setEditQuery(e.target.value)}
+                        />
+                    </div>
+
+                    {/* Grade de Filtros (5 colunas) */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4 items-end w-full">
+
+                        {/* 1. Turno */}
+                        <div className="flex flex-col gap-1 w-full">
+                            <label className="text-xs font-bold text-slate-500 dark:text-zinc-400 uppercase tracking-wide">Turno</label>
+                            <select
+                                className="w-full bg-slate-50 dark:bg-zinc-950 border border-slate-200 dark:border-zinc-800 rounded-xl px-4 py-2.5 text-slate-900 dark:text-zinc-100 text-sm focus:outline-none focus:ring-2 focus:ring-cyan-500/20 focus:border-cyan-500"
+                                value={editFilterShift}
+                                onChange={e => setEditFilterShift(e.target.value)}
+                            >
+                                <option value="ALL">Todos</option>
+                                <option value="1º TURNO">1º TURNO</option>
+                                <option value="2º TURNO">2º TURNO</option>
+                            </select>
+                        </div>
+
+                        {/* 2. Setor */}
+                        <div className="flex flex-col gap-1 w-full">
+                            <label className="text-xs font-bold text-slate-500 dark:text-zinc-400 uppercase tracking-wide">Setor</label>
+                            <select value={editFilterSector} onChange={e => setEditFilterSector(e.target.value)} className="w-full bg-slate-50 dark:bg-zinc-950 border border-slate-200 dark:border-zinc-800 rounded-xl px-4 py-2.5 text-slate-900 dark:text-zinc-100 text-sm focus:outline-none focus:ring-2 focus:ring-cyan-500/20 focus:border-cyan-500">
+                                <option value="ALL">Todos</option>
+                                {['PRODUÇÃO', 'LOGISTICA', 'ASG', 'MANUTENÇÃO', 'RETRABALHO', 'QUALIDADE', 'REPARO', 'PCP'].map(s => <option key={s} value={s}>{s}</option>)}
+                            </select>
+                        </div>
+
+                        {/* 3. Líder */}
+                        <div className="flex flex-col gap-1 w-full">
+                            <label className="text-xs font-bold text-slate-500 dark:text-zinc-400 uppercase tracking-wide">Líder</label>
+                            <select value={editFilterLeader} onChange={e => setEditFilterLeader(e.target.value)} className="w-full bg-slate-50 dark:bg-zinc-950 border border-slate-200 dark:border-zinc-800 rounded-xl px-4 py-2.5 text-slate-900 dark:text-zinc-100 text-sm focus:outline-none focus:ring-2 focus:ring-cyan-500/20 focus:border-cyan-500">
+                                <option value="ALL">Todos</option>
+                                {leaders.map(l => <option key={l.matricula} value={l.matricula}>{l.name}</option>)}
+                            </select>
+                        </div>
+
+                        {/* NOVO FILTRO: IDL-ST */}
+                        <div className="flex flex-col gap-1 w-full">
+                            <label className="text-xs font-bold text-slate-500 dark:text-zinc-400 uppercase tracking-wide">IDL-ST</label>
+                            <select value={editFilterIdlSt} onChange={e => setEditFilterIdlSt(e.target.value)} className="w-full bg-slate-50 dark:bg-zinc-950 border border-slate-200 dark:border-zinc-800 rounded-xl px-4 py-2.5 text-slate-900 dark:text-zinc-100 text-sm focus:outline-none focus:ring-2 focus:ring-cyan-500/20 focus:border-cyan-500">
+                                <option value="ALL">Todos</option>
+                                {uniqueIdlSt.map(t => <option key={t as string} value={t as string}>{t as React.ReactNode}</option>)}
+                            </select>
+                        </div>
+
+                        {/* Checkbox de Inativos */}
+                        <div className="flex items-center gap-2 h-10 mt-auto select-none">
+                            <input
+                                type="checkbox"
+                                id="showInactiveEdicao"
+                                checked={showInactiveEdicao}
+                                onChange={e => setShowInactiveEdicao(e.target.checked)}
+                                className="w-4 h-4 rounded bg-slate-100 dark:bg-zinc-900 border-slate-300 dark:border-zinc-700 text-cyan-500 focus:ring-cyan-500/20"
+                            />
+                            <label htmlFor="showInactiveEdicao" className="text-xs font-bold text-slate-500 dark:text-zinc-400 uppercase cursor-pointer">
+                                Mostrar Desligados
+                            </label>
+                        </div>
+                    </div>
+                </div>
+            </div>
 
             {!editFound && (
-                <Card>
-                    <p className="text-sm font-bold text-slate-500 uppercase tracking-wide mb-3">Selecione um colaborador para editar</p>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                        {employees
-                            .filter(emp => showInactive || isActiveEmployee(emp))
-                            .filter(emp => !editQuery || emp.matricula.toLowerCase().includes(editQuery.toLowerCase()) || emp.fullName.toLowerCase().includes(editQuery.toLowerCase()))
-                            .map(emp => (
+                <>
+                    <div className="mt-4">
+                        <div className="bg-white dark:bg-zinc-900 p-4 rounded-lg shadow-sm border border-gray-200 dark:border-zinc-800 mb-6">
+                            <h3 className="text-sm font-bold text-gray-700 dark:text-zinc-100 uppercase tracking-wider mb-3">Resumo da Edição</h3>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                <div>
+                                    <h4 className="text-xs font-semibold text-gray-500 dark:text-zinc-400 mb-2 uppercase">Por Tipo</h4>
+                                    <div className="grid grid-cols-2 lg:grid-cols-3 gap-2">
+                                        {Object.entries(editCountByType || {}).sort().map(([t, c]) => (
+                                            <div key={t} onClick={() => setEditFilterType(prev => prev === t ? 'ALL' : t)} className={`flex justify-between items-center p-2 rounded border transition-colors cursor-pointer select-none ${editFilterType === t ? 'bg-cyan-950/40 border-cyan-500 text-cyan-400' : 'bg-gray-50 dark:bg-zinc-800/50 border-gray-100 dark:border-zinc-700 hover:bg-gray-100 dark:hover:bg-zinc-800'}`}>
+                                                <span className={`text-xs font-semibold truncate mr-2 ${editFilterType === t ? 'text-cyan-300' : 'text-gray-600 dark:text-zinc-300'}`}>{t}</span>
+                                                <span className={`text-sm font-bold ${editFilterType === t ? 'text-cyan-400' : 'text-blue-600 dark:text-cyan-400'}`}>{c as React.ReactNode}</span>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                                <div>
+                                    <h4 className="text-xs font-semibold text-gray-500 dark:text-zinc-400 mb-2 uppercase">Por Função</h4>
+                                    <div className="grid grid-cols-2 lg:grid-cols-3 gap-2">
+                                        {Object.entries(editCountByRole || {}).sort().map(([r, c]) => (
+                                            <div key={r} onClick={() => setEditFilterRole(prev => prev === r ? 'ALL' : r)} className={`flex justify-between items-center p-2 rounded border transition-colors cursor-pointer select-none ${editFilterRole === r ? 'bg-cyan-950/40 border-cyan-500 text-cyan-400' : 'bg-gray-50 dark:bg-zinc-800/50 border-gray-100 dark:border-zinc-700 hover:bg-gray-100 dark:hover:bg-zinc-800'}`}>
+                                                <span className={`text-xs font-semibold truncate mr-2 ${editFilterRole === r ? 'text-cyan-300' : 'text-gray-600 dark:text-zinc-300'}`}>{r}</span>
+                                                <span className={`text-sm font-bold ${editFilterRole === r ? 'text-cyan-400' : 'text-blue-600 dark:text-cyan-400'}`}>{c as React.ReactNode}</span>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            </div>
+                            <div className="mt-4 flex justify-end">
+                                <div className="flex justify-between items-center p-3 bg-blue-50 dark:bg-cyan-900/20 rounded border border-blue-200 dark:border-cyan-900/40 shadow-sm w-full md:w-1/4">
+                                    <span className="text-sm text-blue-800 dark:text-cyan-400 font-black uppercase">TOTAL GERAL</span>
+                                    <span className="text-xl font-black text-blue-700 dark:text-cyan-300">{editFilteredEmployees.length}</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <Card>
+                        <p className="text-sm font-bold text-slate-500 uppercase tracking-wide mb-3">Selecione um colaborador para editar</p>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                            {editFilteredEmployees.map(emp => (
                                 <div
                                     key={emp.matricula}
                                     onClick={() => {
@@ -2409,8 +2729,9 @@ export const PeopleManagementManagersModule: React.FC<Props> = ({ onBack, curren
                                     </div>
                                 </div>
                             ))}
-                    </div>
-                </Card>
+                        </div>
+                    </Card>
+                </>
             )}
 
             {editFound && (
@@ -2485,8 +2806,8 @@ export const PeopleManagementManagersModule: React.FC<Props> = ({ onBack, curren
                     <Button variant="outline" onClick={onBack}><ArrowLeft size={16} /> Voltar</Button>
                 </div>
 
-                {/* FILTRO GLOBAL DE LÍDER - APENAS EM LAYOUT E LUVAS */}
-                {(tab === 'LAYOUT' || tab === 'LUVAS') && <LeaderFilter />}
+                {/* FILTRO GLOBAL DE LÍDER - APENAS EM LAYOUT */}
+                {(tab === 'LAYOUT') && <LeaderFilter />}
 
                 <div className="flex gap-2 overflow-x-auto pb-2 custom-scrollbar">
                     {(!hasTabAccess || hasTabAccess('PEOPLE_MANAGEMENT_MANAGERS', 'CADASTRO')) && <Button variant={tab === 'CADASTRO' ? 'primary' : 'secondary'} onClick={() => setTab('CADASTRO')}><UserIcon size={16} /> Cadastro</Button>}

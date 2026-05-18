@@ -21,6 +21,32 @@ const toTitleCase = (str: string) => {
     return str.toLowerCase().split(' ').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ');
 };
 
+const compressImage = (file: File, maxWidth = 400): Promise<string> => {
+    return new Promise((resolve) => {
+        const reader = new FileReader();
+        reader.readAsDataURL(file);
+        reader.onload = (event) => {
+            const img = new Image();
+            img.src = event.target?.result as string;
+            img.onload = () => {
+                const canvas = document.createElement('canvas');
+                const ratio = maxWidth / img.width;
+                const width = img.width > maxWidth ? maxWidth : img.width;
+                const height = img.width > maxWidth ? img.height * ratio : img.height;
+                canvas.width = width;
+                canvas.height = height;
+                const ctx = canvas.getContext('2d');
+                if (ctx) {
+                    ctx.fillStyle = '#FFFFFF';
+                    ctx.fillRect(0, 0, width, height);
+                    ctx.drawImage(img, 0, 0, width, height);
+                }
+                resolve(canvas.toDataURL('image/jpeg', 0.6));
+            };
+        };
+    });
+};
+
 export const PeopleManagementModule = ({ onBack, currentUser, hasTabAccess }: PeopleManagementModuleProps) => {
     const PEOPLE_MANAGEMENT_ACTIVE_TAB_KEY = 'activeTab_PeopleManagementModule';
     const sortByLocale = <T,>(items: T[], getValue: (item: T) => unknown) => {
@@ -151,13 +177,10 @@ export const PeopleManagementModule = ({ onBack, currentUser, hasTabAccess }: Pe
     });
     const [isEdit, setIsEdit] = useState(false);
 
-    const handlePhotoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const handlePhotoChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
         if (e.target.files && e.target.files[0]) {
-            const reader = new FileReader();
-            reader.onload = (ev) => {
-                if (ev.target?.result) setFormData(prev => ({ ...prev, photo: ev.target!.result as string }));
-            };
-            reader.readAsDataURL(e.target.files[0]);
+            const compressedBase64 = await compressImage(e.target.files[0]);
+            setFormData(prev => ({ ...prev, photo: compressedBase64 }));
         }
     };
 
@@ -302,6 +325,7 @@ export const PeopleManagementModule = ({ onBack, currentUser, hasTabAccess }: Pe
     const [filterIdlSt, setFilterIdlSt] = useState('ALL');
     const [filterRole, setFilterRole] = useState('ALL');
     const [filterSector, setFilterSector] = useState('ALL');
+    const [showInactiveConsulta, setShowInactiveConsulta] = useState(false);
 
     const safeEmployees = Array.isArray(employees) ? employees : [];
     const uniqueTypes = useMemo(() => Array.from(new Set(safeEmployees.map(e => e.type).filter(Boolean))).sort(), [employees]);
@@ -310,7 +334,7 @@ export const PeopleManagementModule = ({ onBack, currentUser, hasTabAccess }: Pe
     const uniqueSectors = useMemo(() => Array.from(new Set(safeEmployees.map(e => e.sector).filter(Boolean))).sort(), [employees]);
 
     const filteredEmployees = useMemo(() => {
-        const list = employees.filter(e => e.superiorId === currentUser.matricula && isActiveEmployee(e));
+        const list = employees.filter(e => e.superiorId === currentUser.matricula).filter(emp => showInactiveConsulta ? true : emp.status !== 'INATIVO');
         return list.filter((emp: any) => {
             const matchesShift = !consultShiftFilter || emp.shift === consultShiftFilter;
             const matchesSearch = !searchQuery || emp.matricula.toLowerCase().includes(searchQuery.toLowerCase()) || emp.fullName.toLowerCase().includes(searchQuery.toLowerCase());
@@ -321,7 +345,7 @@ export const PeopleManagementModule = ({ onBack, currentUser, hasTabAccess }: Pe
             
             return matchesShift && matchesSearch && matchesType && matchesIdlSt && matchesRole && matchesSector;
         }).sort((a: any, b: any) => String(a.fullName || a.name || '').localeCompare(String(b.fullName || b.name || '')));
-    }, [employees, currentUser.matricula, filterType, filterIdlSt, filterRole, filterSector, searchQuery, consultShiftFilter]);
+    }, [employees, currentUser.matricula, filterType, filterIdlSt, filterRole, filterSector, searchQuery, consultShiftFilter, showInactiveConsulta]);
 
     const countByType = useMemo(() => filteredEmployees.reduce((acc, emp) => {
         const key = emp.type || 'Não Definido';
@@ -412,7 +436,7 @@ export const PeopleManagementModule = ({ onBack, currentUser, hasTabAccess }: Pe
                     <Input label="Buscar Matrícula/Nome" value={searchQuery} onChange={e => setSearchQuery(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleConsult()} />
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-3 xl:grid-cols-3 gap-4 items-end w-full">
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 lg:grid-cols-4 xl:grid-cols-4 gap-4 items-end w-full">
                     <div className="flex flex-col gap-1 w-full">
                         <label className="text-xs font-bold text-slate-500 dark:text-zinc-400 uppercase tracking-wide">Turno</label>
                         <select
@@ -440,6 +464,19 @@ export const PeopleManagementModule = ({ onBack, currentUser, hasTabAccess }: Pe
                             <option value="ALL">Todos</option>
                             {uniqueSectors.map(t => <option key={t as string} value={t as string}>{t as React.ReactNode}</option>)}
                         </select>
+                    </div>
+
+                    <div className="flex items-center gap-2 h-10 mt-auto select-none">
+                        <input 
+                            type="checkbox" 
+                            id="showInactiveConsulta"
+                            checked={showInactiveConsulta} 
+                            onChange={e => setShowInactiveConsulta(e.target.checked)}
+                            className="w-4 h-4 rounded bg-gray-900 border-gray-700 text-cyan-500 focus:ring-cyan-500/20"
+                        />
+                        <label htmlFor="showInactiveConsulta" className="text-xs font-bold text-gray-400 uppercase cursor-pointer">
+                            Mostrar Desligados
+                        </label>
                     </div>
                 </div>
 
@@ -505,7 +542,7 @@ export const PeopleManagementModule = ({ onBack, currentUser, hasTabAccess }: Pe
                         {filteredEmployees
                             .map(emp => (
                                 <div key={emp.matricula} onClick={() => { setSearchQuery(emp.matricula); handleConsult(emp.matricula); }} className="flex items-center gap-3 p-3 rounded-xl border border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 hover:border-cyan-500 cursor-pointer">
-                                    {emp.photo ? <img src={emp.photo} className="w-10 h-10 rounded-full object-cover shrink-0" /> : <div className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center shrink-0"><UserIcon size={20} className="text-slate-400" /></div>}
+                                    {emp.photo ? <img src={emp.photo} loading="lazy" decoding="async" className="w-10 h-10 rounded-full object-cover shrink-0" /> : <div className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center shrink-0"><UserIcon size={20} className="text-slate-400" /></div>}
                                     <div className="min-w-0">
                                         <p className="font-bold text-sm text-slate-800 dark:text-zinc-100 truncate">{emp.fullName}</p>
                                         <p className="text-xs text-slate-500 font-mono truncate">{emp.matricula}</p>
@@ -525,6 +562,8 @@ export const PeopleManagementModule = ({ onBack, currentUser, hasTabAccess }: Pe
                                 <img 
                                     src={consultResult.photo} 
                                     alt="Colaborador" 
+                                    loading="lazy" 
+                                    decoding="async" 
                                     className="w-48 h-64 object-cover object-center rounded-2xl border border-slate-200 dark:border-zinc-700 mx-auto shadow-md" 
                                 />
                             ) : (
@@ -2238,6 +2277,14 @@ export const PeopleManagementModule = ({ onBack, currentUser, hasTabAccess }: Pe
         );
     };
     // TAB 6: EDIÇÃO
+    const [editFilterLeader, setEditFilterLeader] = useState('ALL');
+    const [editFilterRole, setEditFilterRole] = useState('ALL');
+    const [editFilterSector, setEditFilterSector] = useState('ALL');
+    const [editFilterShift, setEditFilterShift] = useState('ALL');
+    const [editFilterType, setEditFilterType] = useState('ALL');
+    const [editFilterIdlSt, setEditFilterIdlSt] = useState('ALL');
+    const [showInactiveEdicao, setShowInactiveEdicao] = useState(false);
+
     const [editQuery, setEditQuery] = useState('');
     const [editFound, setEditFound] = useState(false);
     const [editSaving, setEditSaving] = useState(false);
@@ -2246,12 +2293,12 @@ export const PeopleManagementModule = ({ onBack, currentUser, hasTabAccess }: Pe
         if (!editQuery.trim()) return;
         try {
             const res = await apiFetch(`/employees/search/${encodeURIComponent(editQuery.trim())}?superiorId=${currentUser.matricula}`);
-            if (res && res.matricula && (showInactive || isActiveEmployee(res))) {
+            if (res && res.matricula && (showInactiveEdicao || isActiveEmployee(res))) {
                 setFormData({ ...res, photo: res.photo || '', superiorId: res.superiorId || '' });
                 setEditFound(true);
             } else {
                 setEditFound(false);
-                alert(showInactive ? 'Colaborador não encontrado.' : 'Colaborador não encontrado ou está desligado.');
+                alert(showInactiveEdicao ? 'Colaborador não encontrado.' : 'Colaborador não encontrado ou está desligado.');
             }
         } catch { setEditFound(false); alert('Erro na busca.'); }
     };
@@ -2267,26 +2314,155 @@ export const PeopleManagementModule = ({ onBack, currentUser, hasTabAccess }: Pe
         setEditSaving(false);
     };
 
+    const editFilteredEmployees = useMemo(() => {
+        return employees
+            .filter(e => e.superiorId === currentUser.matricula)
+            .filter(emp => showInactiveEdicao || isActiveEmployee(emp))
+            .filter(emp => editFilterLeader === 'ALL' || emp.superiorId === editFilterLeader)
+            .filter(emp => editFilterSector === 'ALL' || emp.sector === editFilterSector)
+            .filter(emp => editFilterShift === 'ALL' || emp.shift === editFilterShift)
+            .filter(emp => editFilterIdlSt === 'ALL' || emp.idlSt === editFilterIdlSt)
+            .filter(emp => editFilterType === 'ALL' || emp.type === editFilterType)
+            .filter(emp => editFilterRole === 'ALL' || emp.role === editFilterRole)
+            .filter(emp => !editQuery || emp.matricula.toLowerCase().includes(editQuery.toLowerCase()) || emp.fullName.toLowerCase().includes(editQuery.toLowerCase()))
+            .sort((a, b) => String(a.fullName || '').localeCompare(String(b.fullName || '')));
+    }, [employees, currentUser.matricula, showInactiveEdicao, editFilterLeader, editFilterSector, editFilterShift, editFilterIdlSt, editQuery, editFilterType, editFilterRole]);
+
+    const editCountByType = useMemo(() => editFilteredEmployees.reduce((acc, emp) => {
+        const key = emp.type || 'Não Definido';
+        acc[key] = (acc[key] || 0) + 1;
+        return acc;
+    }, {} as Record<string, number>), [editFilteredEmployees]);
+
+    const editCountByRole = useMemo(() => editFilteredEmployees.reduce((acc, emp) => {
+        const key = emp.role || 'Não Definida';
+        acc[key] = (acc[key] || 0) + 1;
+        return acc;
+    }, {} as Record<string, number>), [editFilteredEmployees]);
+
     const renderEdicao = () => (
         <div className="space-y-4">
-            <Card className="flex flex-col gap-3 md:flex-row md:items-end">
-                <div className="flex-1"><Input label="Buscar Matrícula para Editar" value={editQuery} onChange={e => setEditQuery(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleEditSearch()} /></div>
-                <label className="flex items-center gap-2 text-sm font-medium text-slate-600 dark:text-zinc-300 select-none">
-                    <input type="checkbox" checked={showInactive} onChange={e => setShowInactive(e.target.checked)} className="rounded border-slate-300 text-cyan-600 focus:ring-cyan-500" />
-                    Mostrar Desligados
-                </label>
-                <Button onClick={handleEditSearch}><Search size={16} /> Buscar</Button>
-            </Card>
+            {/* CABEÇALHO DE BUSCA E FILTROS - CÓPIA FIEL DA ABA DE CONSULTA */}
+            <div className="space-y-4 mb-6">
+                <div className="flex flex-col gap-4 bg-white dark:bg-zinc-900 p-4 rounded-lg border border-slate-200 dark:border-zinc-800">
+                    
+                    {/* Input de Busca */}
+                    <div className="w-full">
+                        <Input 
+                            label="Buscar Matrícula/Nome" 
+                            value={editQuery} 
+                            onChange={e => setEditQuery(e.target.value)} 
+                        />
+                    </div>
+
+                    {/* Grade de Filtros (5 colunas) */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4 items-end w-full">
+                        
+                        {/* 1. Turno */}
+                        <div className="flex flex-col gap-1 w-full">
+                            <label className="text-xs font-bold text-slate-500 dark:text-zinc-400 uppercase tracking-wide">Turno</label>
+                            <select 
+                                className="w-full bg-slate-50 dark:bg-zinc-950 border border-slate-200 dark:border-zinc-800 rounded-xl px-4 py-2.5 text-slate-900 dark:text-zinc-100 text-sm focus:outline-none focus:ring-2 focus:ring-cyan-500/20 focus:border-cyan-500"
+                                value={editFilterShift}
+                                onChange={e => setEditFilterShift(e.target.value)}
+                            >
+                                <option value="ALL">Todos</option>
+                                <option value="1º TURNO">1º TURNO</option>
+                                <option value="2º TURNO">2º TURNO</option>
+                            </select>
+                        </div>
+
+                        {/* 2. Setor */}
+                        <div className="flex flex-col gap-1 w-full">
+                            <label className="text-xs font-bold text-slate-500 dark:text-zinc-400 uppercase tracking-wide">Setor</label>
+                            <select value={editFilterSector} onChange={e => setEditFilterSector(e.target.value)} className="w-full bg-slate-50 dark:bg-zinc-950 border border-slate-200 dark:border-zinc-800 rounded-xl px-4 py-2.5 text-slate-900 dark:text-zinc-100 text-sm focus:outline-none focus:ring-2 focus:ring-cyan-500/20 focus:border-cyan-500">
+                                <option value="ALL">Todos</option>
+                                {['PRODUÇÃO', 'LOGISTICA', 'ASG', 'MANUTENÇÃO', 'RETRABALHO', 'QUALIDADE', 'REPARO', 'PCP'].map(s => <option key={s} value={s}>{s}</option>)}
+                            </select>
+                        </div>
+
+                        {/* 3. Líder */}
+                        <div className="flex flex-col gap-1 w-full">
+                            <label className="text-xs font-bold text-slate-500 dark:text-zinc-400 uppercase tracking-wide">Líder</label>
+                            <select value={editFilterLeader} onChange={e => setEditFilterLeader(e.target.value)} className="w-full bg-slate-50 dark:bg-zinc-950 border border-slate-200 dark:border-zinc-800 rounded-xl px-4 py-2.5 text-slate-900 dark:text-zinc-100 text-sm focus:outline-none focus:ring-2 focus:ring-cyan-500/20 focus:border-cyan-500">
+                                <option value="ALL">Todos</option>
+                                {uniqueLeaders.map((t: any) => (
+                                    <option key={t.id} value={t.id}>{t.label}</option>
+                                ))}
+                            </select>
+                        </div>
+
+                        {/* NOVO FILTRO: IDL-ST */}
+                        <div className="flex flex-col gap-1 w-full">
+                            <label className="text-xs font-bold text-slate-500 dark:text-zinc-400 uppercase tracking-wide">IDL-ST</label>
+                            <select value={editFilterIdlSt} onChange={e => setEditFilterIdlSt(e.target.value)} className="w-full bg-slate-50 dark:bg-zinc-950 border border-slate-200 dark:border-zinc-800 rounded-xl px-4 py-2.5 text-slate-900 dark:text-zinc-100 text-sm focus:outline-none focus:ring-2 focus:ring-cyan-500/20 focus:border-cyan-500">
+                                <option value="ALL">Todos</option>
+                                {uniqueIdlSt.map(t => <option key={t as string} value={t as string}>{t as React.ReactNode}</option>)}
+                            </select>
+                        </div>
+
+                        {/* Checkbox de Inativos */}
+                        <div className="flex items-center gap-2 h-10 mt-auto select-none">
+                            <input
+                                type="checkbox"
+                                id="showInactiveEdicao"
+                                checked={showInactiveEdicao}
+                                onChange={e => setShowInactiveEdicao(e.target.checked)}
+                                className="w-4 h-4 rounded bg-slate-100 dark:bg-zinc-900 border-slate-300 dark:border-zinc-700 text-cyan-500 focus:ring-cyan-500/20"
+                            />
+                            <label htmlFor="showInactiveEdicao" className="text-xs font-bold text-slate-500 dark:text-zinc-400 uppercase cursor-pointer">
+                                Mostrar Desligados
+                            </label>
+                        </div>
+                    </div>
+                    <div className="flex flex-wrap gap-2 w-full justify-end mt-2">
+                        <Button onClick={handleEditSearch} className="w-full md:w-auto"><Search size={16} /> Buscar Banco de Dados</Button>
+                    </div>
+                </div>
+            </div>
 
             {!editFound && (
-                <Card>
-                    <p className="text-sm font-bold text-slate-500 uppercase tracking-wide mb-3">Selecione um colaborador para editar</p>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                        {employees
-                            .filter(e => e.superiorId === currentUser.matricula)
-                            .filter(e => showInactive || isActiveEmployee(e))
-                            .filter(e => !editQuery || e.matricula.toLowerCase().includes(editQuery.toLowerCase()) || e.fullName.toLowerCase().includes(editQuery.toLowerCase()))
-                            .map(emp => (
+                <>
+                    <div className="mt-4">
+                        <div className="bg-white dark:bg-zinc-900 p-4 rounded-lg shadow-sm border border-gray-200 dark:border-zinc-800 mb-6">
+                            <h3 className="text-sm font-bold text-gray-700 dark:text-zinc-100 uppercase tracking-wider mb-3">Resumo da Edição</h3>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                <div>
+                                    <h4 className="text-xs font-semibold text-gray-500 dark:text-zinc-400 mb-2 uppercase">Por Tipo</h4>
+                                    <div className="grid grid-cols-2 lg:grid-cols-3 gap-2">
+                                        {Object.entries(editCountByType || {}).sort().map(([t, c]) => (
+                                            <div key={t} onClick={() => setEditFilterType(prev => prev === t ? 'ALL' : t)} className={`flex justify-between items-center p-2 rounded border transition-colors cursor-pointer select-none ${editFilterType === t ? 'bg-cyan-950/40 border-cyan-500 text-cyan-400' : 'bg-gray-50 dark:bg-zinc-800/50 border-gray-100 dark:border-zinc-700 hover:bg-gray-100 dark:hover:bg-zinc-800'}`}>
+                                                <span className={`text-xs font-semibold truncate mr-2 ${editFilterType === t ? 'text-cyan-300' : 'text-gray-600 dark:text-zinc-300'}`}>{t}</span>
+                                                <span className={`text-sm font-bold ${editFilterType === t ? 'text-cyan-400' : 'text-blue-600 dark:text-cyan-400'}`}>{c as React.ReactNode}</span>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                                <div>
+                                    <h4 className="text-xs font-semibold text-gray-500 dark:text-zinc-400 mb-2 uppercase">Por Função</h4>
+                                    <div className="grid grid-cols-2 lg:grid-cols-3 gap-2">
+                                        {Object.entries(editCountByRole || {}).sort().map(([r, c]) => (
+                                            <div key={r} onClick={() => setEditFilterRole(prev => prev === r ? 'ALL' : r)} className={`flex justify-between items-center p-2 rounded border transition-colors cursor-pointer select-none ${editFilterRole === r ? 'bg-cyan-950/40 border-cyan-500 text-cyan-400' : 'bg-gray-50 dark:bg-zinc-800/50 border-gray-100 dark:border-zinc-700 hover:bg-gray-100 dark:hover:bg-zinc-800'}`}>
+                                                <span className={`text-xs font-semibold truncate mr-2 ${editFilterRole === r ? 'text-cyan-300' : 'text-gray-600 dark:text-zinc-300'}`}>{r}</span>
+                                                <span className={`text-sm font-bold ${editFilterRole === r ? 'text-cyan-400' : 'text-blue-600 dark:text-cyan-400'}`}>{c as React.ReactNode}</span>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            </div>
+                            <div className="mt-4 flex justify-end">
+                                <div className="flex justify-between items-center p-3 bg-blue-50 dark:bg-cyan-900/20 rounded border border-blue-200 dark:border-cyan-900/40 shadow-sm w-full md:w-1/4">
+                                    <span className="text-sm text-blue-800 dark:text-cyan-400 font-black uppercase">TOTAL GERAL</span>
+                                    <span className="text-xl font-black text-blue-700 dark:text-cyan-300">{editFilteredEmployees.length}</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <Card>
+                        <p className="text-sm font-bold text-slate-500 uppercase tracking-wide mb-3">Selecione um colaborador para editar</p>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                            {editFilteredEmployees.map(emp => (
                                 <div
                                     key={emp.matricula}
                                     onClick={() => {
@@ -2303,8 +2479,9 @@ export const PeopleManagementModule = ({ onBack, currentUser, hasTabAccess }: Pe
                                     </div>
                                 </div>
                             ))}
-                    </div>
-                </Card>
+                        </div>
+                    </Card>
+                </>
             )}
 
             {editFound && (
