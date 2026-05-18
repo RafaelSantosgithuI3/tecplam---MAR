@@ -350,7 +350,8 @@ const CACHE_LOADERS = {
             status: true,
             gloveSize: true,
             gloveType: true,
-            gloveExchanges: true
+            gloveExchanges: true,
+            photo: true
         }
     }),
     [CACHE_KEYS.BOXES]: async () => prisma.scrapBox.findMany({
@@ -2168,6 +2169,7 @@ app.get('/api/employees', async (req, res) => {
                 select: {
                     matricula: true,
                     fullName: true,
+                    photo: true, // <- ADICIONADO
                     shift: true,
                     role: true,
                     sector: true,
@@ -2199,6 +2201,7 @@ app.get('/api/employees', async (req, res) => {
                     select: {
                         matricula: true,
                         fullName: true,
+                        photo: true, // <- ADICIONADO
                         shift: true,
                         role: true,
                         sector: true,
@@ -2226,7 +2229,47 @@ app.get('/api/employees', async (req, res) => {
 
 app.post('/api/employees', async (req, res) => {
     try {
-        const { matricula, photo, fullName, shift, role, sector, superiorId, idlSt, type, status, address, addressNum, whatsapp, neighborhood, gloveSize, gloveType, gloveExchanges, isEdit } = req.body;
+        const { matricula, photo, fullName, shift, role, sector, superiorId, idlSt, type, status, address, addressNum, whatsapp, neighborhood, gloveSize, gloveType, gloveExchanges, isEdit, originalMatricula } = req.body;
+
+        // Caso especial: matrícula alterada (temporários)
+        if (originalMatricula && String(originalMatricula) !== String(matricula)) {
+            const employee = await prisma.$transaction(async (tx) => {
+                const old = await tx.employee.findUnique({ where: { matricula: String(originalMatricula) } });
+                if (!old) throw new Error('Registro original não encontrado.');
+
+                // Verifica se a nova matrícula já existe
+                const conflict = await tx.employee.findUnique({ where: { matricula: String(matricula) } });
+                if (conflict) throw new Error('A nova matrícula já está em uso.');
+
+                await tx.employee.delete({ where: { matricula: String(originalMatricula) } });
+
+                return tx.employee.create({
+                    data: {
+                        matricula: String(matricula),
+                        photo: photo ?? old.photo,
+                        fullName: fullName || old.fullName,
+                        shift: shift || old.shift,
+                        role: role || old.role,
+                        sector: sector || old.sector,
+                        superiorId: superiorId ?? old.superiorId,
+                        idlSt: idlSt || old.idlSt,
+                        type: type || old.type,
+                        status: status || old.status,
+                        address: address ?? old.address,
+                        addressNum: addressNum ?? old.addressNum,
+                        neighborhood: neighborhood ?? old.neighborhood,
+                        whatsapp: whatsapp ?? old.whatsapp,
+                        gloveSize: gloveSize ?? old.gloveSize,
+                        gloveType: gloveType ?? old.gloveType,
+                        gloveExchanges: gloveExchanges ? Number(gloveExchanges) : old.gloveExchanges
+                    }
+                });
+            });
+
+            await refreshRamCollection(CACHE_KEYS.EMPLOYEES);
+            broadcastSyncDelta(CACHE_KEYS.EMPLOYEES, 'replace', { items: getRamCollection(CACHE_KEYS.EMPLOYEES) });
+            return res.json({ message: "Matrícula atualizada com sucesso", employee });
+        }
 
         if (!isEdit) {
             const existing = await prisma.employee.findUnique({ where: { matricula: String(matricula) } });
@@ -2249,6 +2292,54 @@ app.post('/api/employees', async (req, res) => {
     } catch (e) {
         console.error("Save Employee Error:", e);
         console.error(e);
+        res.status(500).json({ error: e.message || GENERIC_SERVER_ERROR_MESSAGE });
+    }
+});
+
+app.post('/api/employees/bulk', async (req, res) => {
+    const { employees } = req.body;
+    if (!Array.isArray(employees)) return res.status(400).json({ error: 'Payload inválido' });
+
+    try {
+        await prisma.$transaction(async (tx) => {
+            for (const emp of employees) {
+                const safeFullName = emp.fullName || "Colaborador/Líder";
+                const safeSector = emp.sector || "NÃO INFORMADO";
+                const safeIdlSt = emp.idlSt || "INDIRETO";
+                const safeType = emp.type || "EFETIVO";
+
+                await tx.employee.upsert({
+                    where: { matricula: String(emp.matricula) },
+                    update: {
+                        fullName: emp.fullName,
+                        shift: emp.shift,
+                        role: emp.role,
+                        sector: emp.sector,
+                        superiorId: emp.superiorId,
+                        idlSt: emp.idlSt,
+                        type: emp.type
+                    },
+                    create: {
+                        matricula: String(emp.matricula),
+                        fullName: safeFullName,
+                        shift: emp.shift,
+                        role: emp.role,
+                        sector: safeSector,
+                        superiorId: emp.superiorId,
+                        idlSt: safeIdlSt,
+                        type: safeType,
+                        status: 'ATIVO'
+                    }
+                });
+            }
+        });
+
+        const cachedEmployees = await refreshRamCollection(CACHE_KEYS.EMPLOYEES);
+        broadcastSyncDelta(CACHE_KEYS.EMPLOYEES, 'replace', { items: cachedEmployees });
+        
+        res.json({ message: "Importação concluída com sucesso", count: employees.length });
+    } catch (e) {
+        console.error("Bulk Employee Error:", e);
         res.status(500).json({ error: GENERIC_SERVER_ERROR_MESSAGE });
     }
 });

@@ -16,6 +16,11 @@ interface PeopleManagementModuleProps {
 
 type Tab = 'CADASTRO' | 'CONSULTA' | 'PRESENCA' | 'LAYOUT' | 'LUVAS' | 'EDICAO';
 
+const toTitleCase = (str: string) => {
+    if (!str) return '';
+    return str.toLowerCase().split(' ').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ');
+};
+
 export const PeopleManagementModule = ({ onBack, currentUser, hasTabAccess }: PeopleManagementModuleProps) => {
     const PEOPLE_MANAGEMENT_ACTIVE_TAB_KEY = 'activeTab_PeopleManagementModule';
     const sortByLocale = <T,>(items: T[], getValue: (item: T) => unknown) => {
@@ -65,6 +70,7 @@ export const PeopleManagementModule = ({ onBack, currentUser, hasTabAccess }: Pe
     };
     const [tab, setTab] = useState<Tab>(determineInitialTab());
     const [employees, setEmployees] = useState<any[]>([]);
+    const [users, setUsers] = useState<any[]>([]);
     const [leaders, setLeaders] = useState<any[]>([]);
     const [models, setModels] = useState<any[]>([]);
     const [workstations, setWorkstations] = useState<any[]>([]);
@@ -109,11 +115,12 @@ export const PeopleManagementModule = ({ onBack, currentUser, hasTabAccess }: Pe
 
     const loadBaseData = async () => {
         try {
-            const users = await apiFetch('/users', { useCache: true });
-            if (Array.isArray(users)) {
+            const fetchedUsers = await apiFetch('/users', { useCache: true });
+            if (Array.isArray(fetchedUsers)) {
+                setUsers(fetchedUsers);
                 setLeaders(
                     sortByLocale(
-                        users.filter(u => isLeadershipRole(u?.role) && isActiveEmployee(u)),
+                        fetchedUsers.filter(u => isLeadershipRole(u?.role) && isActiveEmployee(u)),
                         (u: any) => u?.fullName || u?.name
                     )
                 );
@@ -219,7 +226,7 @@ export const PeopleManagementModule = ({ onBack, currentUser, hasTabAccess }: Pe
                     {formData.photo && <img src={formData.photo} alt="Preview" className="h-20 w-20 object-cover rounded mt-2" />}
                 </div>
                 <Input label="Matrícula" value={formData.matricula} onChange={e => setFormData({ ...formData, matricula: e.target.value })} onBlur={handleMatriculaBlur} />
-                <Input label="Nome Completo" value={formData.fullName} onChange={e => setFormData({ ...formData, fullName: e.target.value })} />
+                <Input label="Nome Completo" value={formData.fullName} onChange={e => setFormData({ ...formData, fullName: toTitleCase(e.target.value) })} />
                 <div className="flex flex-col gap-2">
                     <label className="text-sm font-medium text-slate-700 dark:text-zinc-300">Turno</label>
                     <select className="w-full bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 rounded-xl px-4 py-3 text-slate-900 dark:text-zinc-100" value={formData.shift} onChange={e => setFormData({ ...formData, shift: e.target.value })}>
@@ -289,6 +296,44 @@ export const PeopleManagementModule = ({ onBack, currentUser, hasTabAccess }: Pe
     const [searchQuery, setSearchQuery] = useState('');
     const [consultResult, setConsultResult] = useState<any>(null);
     const [showMissesModal, setShowMissesModal] = useState(false);
+    const [consultShiftFilter, setConsultShiftFilter] = useState('');
+
+    const [filterType, setFilterType] = useState('ALL');
+    const [filterIdlSt, setFilterIdlSt] = useState('ALL');
+    const [filterRole, setFilterRole] = useState('ALL');
+    const [filterSector, setFilterSector] = useState('ALL');
+
+    const safeEmployees = Array.isArray(employees) ? employees : [];
+    const uniqueTypes = useMemo(() => Array.from(new Set(safeEmployees.map(e => e.type).filter(Boolean))).sort(), [employees]);
+    const uniqueIdlSt = useMemo(() => Array.from(new Set(safeEmployees.map(e => e.idlSt).filter(Boolean))).sort(), [employees]);
+    const uniqueRoles = useMemo(() => Array.from(new Set(safeEmployees.map(e => e.role).filter(Boolean))).sort(), [employees]);
+    const uniqueSectors = useMemo(() => Array.from(new Set(safeEmployees.map(e => e.sector).filter(Boolean))).sort(), [employees]);
+
+    const filteredEmployees = useMemo(() => {
+        const list = employees.filter(e => e.superiorId === currentUser.matricula && isActiveEmployee(e));
+        return list.filter((emp: any) => {
+            const matchesShift = !consultShiftFilter || emp.shift === consultShiftFilter;
+            const matchesSearch = !searchQuery || emp.matricula.toLowerCase().includes(searchQuery.toLowerCase()) || emp.fullName.toLowerCase().includes(searchQuery.toLowerCase());
+            const matchesType = filterType === 'ALL' || emp.type === filterType;
+            const matchesIdlSt = filterIdlSt === 'ALL' || emp.idlSt === filterIdlSt;
+            const matchesRole = filterRole === 'ALL' || emp.role === filterRole;
+            const matchesSector = filterSector === 'ALL' || emp.sector === filterSector;
+            
+            return matchesShift && matchesSearch && matchesType && matchesIdlSt && matchesRole && matchesSector;
+        }).sort((a: any, b: any) => String(a.fullName || a.name || '').localeCompare(String(b.fullName || b.name || '')));
+    }, [employees, currentUser.matricula, filterType, filterIdlSt, filterRole, filterSector, searchQuery, consultShiftFilter]);
+
+    const countByType = useMemo(() => filteredEmployees.reduce((acc, emp) => {
+        const key = emp.type || 'Não Definido';
+        acc[key] = (acc[key] || 0) + 1;
+        return acc;
+    }, {} as Record<string, number>), [filteredEmployees]);
+
+    const countByRole = useMemo(() => filteredEmployees.reduce((acc, emp) => {
+        const key = emp.role || 'Não Definida';
+        acc[key] = (acc[key] || 0) + 1;
+        return acc;
+    }, {} as Record<string, number>), [filteredEmployees]);
 
     // Filters for modal
     const [historyFilterType, setHistoryFilterType] = useState<'semana' | 'mes' | 'ano' | 'todos'>('mes');
@@ -362,17 +407,51 @@ export const PeopleManagementModule = ({ onBack, currentUser, hasTabAccess }: Pe
 
     const renderConsulta = () => (
         <div className="space-y-4">
-            <Card className="flex gap-2 items-end">
-                <div className="flex-1">
-                    <Input label="Buscar Matrícula" value={searchQuery} onChange={e => setSearchQuery(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleConsult()} />
+            <div className="flex flex-col gap-4 bg-white dark:bg-zinc-900 p-4 rounded-lg border border-slate-200 dark:border-zinc-800">
+                <div className="w-full">
+                    <Input label="Buscar Matrícula/Nome" value={searchQuery} onChange={e => setSearchQuery(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleConsult()} />
                 </div>
-                {isAndroid && (
-                    <Button variant="secondary" onClick={() => setShowScanner(true)}>
-                        <Scan size={16} /> Ler QR Code
-                    </Button>
-                )}
-                <Button onClick={handleConsult}><Search size={16} /> Buscar</Button>
-            </Card>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-3 xl:grid-cols-3 gap-4 items-end w-full">
+                    <div className="flex flex-col gap-1 w-full">
+                        <label className="text-xs font-bold text-slate-500 dark:text-zinc-400 uppercase tracking-wide">Turno</label>
+                        <select
+                            className="w-full bg-slate-50 dark:bg-zinc-950 border border-slate-200 dark:border-zinc-800 rounded-xl px-4 py-2.5 text-slate-900 dark:text-zinc-100 text-sm focus:outline-none focus:ring-2 focus:ring-cyan-500/20 focus:border-cyan-500"
+                            value={consultShiftFilter}
+                            onChange={e => setConsultShiftFilter(e.target.value)}
+                        >
+                            <option value="">Todos</option>
+                            <option value="1º TURNO">1º TURNO</option>
+                            <option value="2º TURNO">2º TURNO</option>
+                        </select>
+                    </div>
+
+                    <div className="flex flex-col gap-1 w-full">
+                        <label className="text-xs font-bold text-slate-500 dark:text-zinc-400 uppercase tracking-wide">IDL-ST</label>
+                        <select value={filterIdlSt} onChange={e => setFilterIdlSt(e.target.value)} className="w-full bg-slate-50 dark:bg-zinc-950 border border-slate-200 dark:border-zinc-800 rounded-xl px-4 py-2.5 text-slate-900 dark:text-zinc-100 text-sm focus:outline-none focus:ring-2 focus:ring-cyan-500/20 focus:border-cyan-500">
+                            <option value="ALL">Todos</option>
+                            {uniqueIdlSt.map(t => <option key={t as string} value={t as string}>{t as React.ReactNode}</option>)}
+                        </select>
+                    </div>
+
+                    <div className="flex flex-col gap-1 w-full">
+                        <label className="text-xs font-bold text-slate-500 dark:text-zinc-400 uppercase tracking-wide">Setor</label>
+                        <select value={filterSector} onChange={e => setFilterSector(e.target.value)} className="w-full bg-slate-50 dark:bg-zinc-950 border border-slate-200 dark:border-zinc-800 rounded-xl px-4 py-2.5 text-slate-900 dark:text-zinc-100 text-sm focus:outline-none focus:ring-2 focus:ring-cyan-500/20 focus:border-cyan-500">
+                            <option value="ALL">Todos</option>
+                            {uniqueSectors.map(t => <option key={t as string} value={t as string}>{t as React.ReactNode}</option>)}
+                        </select>
+                    </div>
+                </div>
+
+                <div className="flex flex-wrap gap-2 w-full justify-end mt-2">
+                    {isAndroid && (
+                        <Button variant="secondary" onClick={() => setShowScanner(true)} className="w-full md:w-auto">
+                            <Scan size={16} /> Ler QR Code
+                        </Button>
+                    )}
+                    <Button onClick={handleConsult} className="w-full md:w-auto"><Search size={16} /> Buscar</Button>
+                </div>
+            </div>
 
             {showScanner && (
                 <QRStreamReader
@@ -387,10 +466,43 @@ export const PeopleManagementModule = ({ onBack, currentUser, hasTabAccess }: Pe
 
             {!consultResult && (
                 <div className="mt-4">
+                    <div className="bg-white dark:bg-zinc-900 p-4 rounded-lg shadow-sm border border-gray-200 dark:border-zinc-800 mb-6">
+                        <h3 className="text-sm font-bold text-gray-700 dark:text-zinc-100 uppercase tracking-wider mb-3">Resumo da Consulta</h3>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                            <div>
+                                <h4 className="text-xs font-semibold text-gray-500 dark:text-zinc-400 mb-2 uppercase">Por Tipo</h4>
+                                <div className="grid grid-cols-2 lg:grid-cols-3 gap-2">
+                                    {Object.entries(countByType).sort().map(([t, c]) => (
+                                        <div key={t} onClick={() => setFilterType(prev => prev === t ? 'ALL' : t)} className={`flex justify-between items-center p-2 rounded border transition-colors cursor-pointer select-none ${filterType === t ? 'bg-cyan-950/40 border-cyan-500 text-cyan-400' : 'bg-gray-50 dark:bg-zinc-800/50 border-gray-100 dark:border-zinc-700 hover:bg-gray-100 dark:hover:bg-zinc-800'}`}>
+                                            <span className={`text-xs font-semibold truncate mr-2 ${filterType === t ? 'text-cyan-300' : 'text-gray-600 dark:text-zinc-300'}`}>{t}</span>
+                                            <span className={`text-sm font-bold ${filterType === t ? 'text-cyan-400' : 'text-blue-600 dark:text-cyan-400'}`}>{c as React.ReactNode}</span>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                            <div>
+                                <h4 className="text-xs font-semibold text-gray-500 dark:text-zinc-400 mb-2 uppercase">Por Função</h4>
+                                <div className="grid grid-cols-2 lg:grid-cols-3 gap-2">
+                                    {Object.entries(countByRole).sort().map(([r, c]) => (
+                                        <div key={r} onClick={() => setFilterRole(prev => prev === r ? 'ALL' : r)} className={`flex justify-between items-center p-2 rounded border transition-colors cursor-pointer select-none ${filterRole === r ? 'bg-cyan-950/40 border-cyan-500 text-cyan-400' : 'bg-gray-50 dark:bg-zinc-800/50 border-gray-100 dark:border-zinc-700 hover:bg-gray-100 dark:hover:bg-zinc-800'}`}>
+                                            <span className={`text-xs font-semibold truncate mr-2 ${filterRole === r ? 'text-cyan-300' : 'text-gray-600 dark:text-zinc-300'}`}>{r}</span>
+                                            <span className={`text-sm font-bold ${filterRole === r ? 'text-cyan-400' : 'text-blue-600 dark:text-cyan-400'}`}>{c as React.ReactNode}</span>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        </div>
+                        <div className="mt-4 flex justify-end">
+                            <div className="flex justify-between items-center p-3 bg-blue-50 dark:bg-cyan-900/20 rounded border border-blue-200 dark:border-cyan-900/40 shadow-sm w-full md:w-1/4">
+                                <span className="text-sm text-blue-800 dark:text-cyan-400 font-black uppercase">TOTAL GERAL</span>
+                                <span className="text-xl font-black text-blue-700 dark:text-cyan-300">{filteredEmployees.length}</span>
+                            </div>
+                        </div>
+                    </div>
+
                     <p className="text-sm font-bold text-slate-500 uppercase tracking-wide mb-2">Colaboradores da sua equipe</p>
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                        {subordinados
-                            .filter(e => !searchQuery || e.matricula.toLowerCase().includes(searchQuery.toLowerCase()) || e.fullName.toLowerCase().includes(searchQuery.toLowerCase()))
+                        {filteredEmployees
                             .map(emp => (
                                 <div key={emp.matricula} onClick={() => { setSearchQuery(emp.matricula); handleConsult(emp.matricula); }} className="flex items-center gap-3 p-3 rounded-xl border border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 hover:border-cyan-500 cursor-pointer">
                                     {emp.photo ? <img src={emp.photo} className="w-10 h-10 rounded-full object-cover shrink-0" /> : <div className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center shrink-0"><UserIcon size={20} className="text-slate-400" /></div>}
@@ -410,10 +522,14 @@ export const PeopleManagementModule = ({ onBack, currentUser, hasTabAccess }: Pe
                     <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-stretch">
                         <Card className="flex flex-col items-center text-center w-full">
                             {consultResult.photo ? (
-                                <img src={consultResult.photo} alt="Colaborador" className="w-52 h-52 object-cover rounded-2xl border border-slate-200 mx-auto" />
+                                <img 
+                                    src={consultResult.photo} 
+                                    alt="Colaborador" 
+                                    className="w-48 h-64 object-cover object-center rounded-2xl border border-slate-200 dark:border-zinc-700 mx-auto shadow-md" 
+                                />
                             ) : (
-                                <div className="w-52 h-52 bg-slate-200 dark:bg-zinc-800 rounded-full flex items-center justify-center shrink-0 mx-auto">
-                                    <UserIcon size={80} className="text-slate-400" />
+                                <div className="w-48 h-64 bg-slate-200 dark:bg-zinc-800 rounded-2xl flex items-center justify-center shrink-0 mx-auto border border-slate-300 dark:border-zinc-700 shadow-md">
+                                    <UserIcon size={64} className="text-slate-400 dark:text-zinc-500" />
                                 </div>
                             )}
                             <div className="flex flex-col justify-center items-center w-full mt-4">
@@ -660,7 +776,9 @@ export const PeopleManagementModule = ({ onBack, currentUser, hasTabAccess }: Pe
     const todayAttendanceDate = () => new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().split('T')[0];
     const [startDate, setStartDate] = useState(() => todayAttendanceDate());
     const [endDate, setEndDate] = useState(() => todayAttendanceDate());
+    const [absenceFilterMode, setAbsenceFilterMode] = useState<'DIA' | 'SEMANA' | 'MES' | 'ANO'>('DIA');
     const [attendanceShiftFilter, setAttendanceShiftFilter] = useState<'ALL' | '1º TURNO' | '2º TURNO'>('ALL');
+    const [attendanceLeaderFilter, setAttendanceLeaderFilter] = useState('ALL');
     const [attEditingLog, setAttEditingLog] = useState<any>(null);
     const [attDate, setAttDate] = useState(() => todayAttendanceDate());
     const [previewBuffer, setPreviewBuffer] = useState<ArrayBuffer | null>(null);
@@ -706,10 +824,50 @@ export const PeopleManagementModule = ({ onBack, currentUser, hasTabAccess }: Pe
     const shouldShowAttTimeInput = attType === 'ATRASO' || attType === 'SAIDA';
     const attTimeLabel = attType === 'SAIDA' ? 'Horário de Saída' : 'Horário de Chegada';
 
+    const getDateRange = (mode: string, s: string, e: string): [string, string] => {
+        if (mode === 'DIA') return [s, s];
+        if (mode === 'SEMANA' && s) {
+            const match = s.match(/^(\d{4})-W(\d{2})$/);
+            if (match) {
+                const jan4 = new Date(Number(match[1]), 0, 4);
+                const weekStart = new Date(jan4.getTime() + ((Number(match[2]) - 1) * 7 - ((jan4.getDay() + 6) % 7)) * 86400000);
+                const weekEnd = new Date(weekStart.getTime() + 6 * 86400000);
+                const fmt = (d: Date) => d.toISOString().substring(0, 10);
+                return [fmt(weekStart), fmt(weekEnd)];
+            }
+            return [s, s];
+        }
+        if (mode === 'MES') {
+            const ms = s ? `${s}-01` : '';
+            let me = '';
+            if (s) { const [y, m] = s.split('-').map(Number); me = new Date(y, m, 0).toISOString().substring(0, 10); }
+            return [ms, me];
+        }
+        if (mode === 'ANO') {
+            return [s ? `${s}-01-01` : '', s ? `${s}-12-31` : ''];
+        }
+        return [s, s];
+    };
+
+    const uniqueLeaders = useMemo(() => {
+        const safeEmployees = Array.isArray(employees) ? employees : [];
+        const leaderIds = Array.from(new Set(safeEmployees.map((e: any) => e.superiorId || e.leader).filter(Boolean)));
+        return leaderIds.map(id => {
+            const userObj = users.find((u: any) => String(u.matricula) === String(id) || String(u.username) === String(id));
+            return {
+                id: id,
+                label: userObj ? `${id} - ${userObj.name || userObj.fullName}` : `${id} - LÍDER NÃO ENCONTRADO`
+            };
+        }).sort((a, b) => String(a.label).localeCompare(String(b.label)));
+    }, [employees, users]);
+
     const filteredAttendanceLogs = useMemo(() => {
-        const team = employees.filter((employee: any) => employee.superiorId === currentUser.matricula && isActiveEmployee(employee));
-        const normalizedStartDate = String(startDate || '').trim();
-        const normalizedEndDate = String(endDate || '').trim();
+        const team = employees.filter((employee: any) => 
+            employee.superiorId === currentUser.matricula && 
+            isActiveEmployee(employee) && 
+            (attendanceLeaderFilter === 'ALL' || employee.superiorId === attendanceLeaderFilter || employee.leader === attendanceLeaderFilter)
+        );
+        const [rangeStart, rangeEnd] = getDateRange(absenceFilterMode, startDate, endDate);
 
         return team
             .flatMap((employee: any) =>
@@ -724,13 +882,27 @@ export const PeopleManagementModule = ({ onBack, currentUser, hasTabAccess }: Pe
             .filter((log: any) => ['FALTA', 'ATRASO', 'ATESTADO', 'SAIDA'].includes(String(log?.type || '').toUpperCase()))
             .filter((log: any) => {
                 const logDate = String(log?.date || '').substring(0, 10);
-                const isAfterStart = !normalizedStartDate || logDate >= normalizedStartDate;
-                const isBeforeEnd = !normalizedEndDate || logDate <= normalizedEndDate;
+                const isAfterStart = !rangeStart || logDate >= rangeStart;
+                const isBeforeEnd = !rangeEnd || logDate <= rangeEnd;
                 return Boolean(logDate) && isAfterStart && isBeforeEnd;
             })
             .filter((log: any) => attendanceShiftFilter === 'ALL' || log.shift === attendanceShiftFilter)
             .sort((a: any, b: any) => String(b.date || '').localeCompare(String(a.date || '')));
-    }, [employees, startDate, endDate, attendanceShiftFilter]);
+    }, [employees, startDate, endDate, absenceFilterMode, attendanceShiftFilter, attendanceLeaderFilter]);
+
+    const [attTypeFilter, setAttTypeFilter] = useState<string>('ALL');
+
+    const groupedRecords = useMemo(() => {
+        const groups: Record<string, Record<string, any[]>> = { 'FALTA': {}, 'ATESTADO': {}, 'ATRASO': {}, 'SAIDA': {} };
+        filteredAttendanceLogs.forEach(record => {
+            const type = (record.type || 'FALTA').toUpperCase();
+            const empKey = `${record.fullName || 'Desconhecido'} (${record.matricula})`;
+            if (!groups[type]) groups[type] = {};
+            if (!groups[type][empKey]) groups[type][empKey] = [];
+            groups[type][empKey].push(record);
+        });
+        return groups;
+    }, [filteredAttendanceLogs]);
 
     const handleSearchSubordinado = () => {
         const found = employees
@@ -762,7 +934,13 @@ export const PeopleManagementModule = ({ onBack, currentUser, hasTabAccess }: Pe
         setAttType(normalizedType);
         setAttTime(['ATRASO', 'SAIDA'].includes(normalizedType) ? String(log?.delayMinutes || '') : '');
         setAttDate(normalizeAttendanceDate(log?.date) || todayAttendanceDate());
-        window.scrollTo({ top: 0, behavior: 'smooth' });
+        
+        const formElement = document.getElementById('form-cadastro-falta');
+        if (formElement) {
+            formElement.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        } else {
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+        }
     };
 
     const handleDeleteAttendance = async (log: any) => {
@@ -791,6 +969,15 @@ export const PeopleManagementModule = ({ onBack, currentUser, hasTabAccess }: Pe
         }
     };
 
+    const getSortedAttendanceData = () => {
+        return [...filteredAttendanceLogs].sort((a: any, b: any) => {
+            if (a.type !== b.type) return String(a.type || '').localeCompare(String(b.type || ''));
+            const nameA = a.fullName || a.matricula;
+            const nameB = b.fullName || b.matricula;
+            return String(nameA).localeCompare(String(nameB));
+        });
+    };
+
     const handleExportAttendance = async () => {
         if (!filteredAttendanceLogs.length) {
             alert('Nenhum registro encontrado para exportação.');
@@ -799,8 +986,9 @@ export const PeopleManagementModule = ({ onBack, currentUser, hasTabAccess }: Pe
 
         try {
             const safeShift = (attendanceShiftFilter === 'ALL' ? 'todos_os_turnos' : attendanceShiftFilter).replace(/[^a-zA-Z0-9_-]+/g, '_');
+            const dataToExport = getSortedAttendanceData();
             await downloadAttendanceExcel(
-                filteredAttendanceLogs.map((log: any) => ({
+                dataToExport.map((log: any) => ({
                     matricula: log.matricula,
                     fullName: log.fullName,
                     shift: log.shift,
@@ -828,8 +1016,9 @@ export const PeopleManagementModule = ({ onBack, currentUser, hasTabAccess }: Pe
         }
 
         try {
+            const dataToExport = getSortedAttendanceData();
             const buffer = await getAttendanceExcelBuffer(
-                filteredAttendanceLogs.map((log: any) => ({
+                dataToExport.map((log: any) => ({
                     matricula: log.matricula,
                     fullName: log.fullName,
                     shift: log.shift,
@@ -906,10 +1095,31 @@ export const PeopleManagementModule = ({ onBack, currentUser, hasTabAccess }: Pe
     };
 
     const renderPresenca = () => {
-        const team = employees.filter(e => e.superiorId === currentUser.matricula && isActiveEmployee(e) && (attendanceShiftFilter === 'ALL' || e.shift === attendanceShiftFilter));
-        const filteredTeam = attSearchQuery
+        const hasLogForOperationalDay = (emp: any, dateStr: string) => {
+            const empLogs = Array.isArray(emp?.attendanceLogs) ? emp.attendanceLogs : [];
+            return empLogs.some((log: any) => {
+                if (!['FALTA', 'ATESTADO', 'ATRASO', 'SAIDA'].includes(String(log?.type || '').toUpperCase())) return false;
+                const logDateStr = String(log?.date || '').substring(0, 10);
+                if (String(emp.shift || '').toUpperCase().includes('2')) {
+                    const sel = new Date(dateStr + 'T00:00:00');
+                    const nextDay = new Date(sel.getTime() + 86400000);
+                    const nextDayStr = nextDay.toISOString().substring(0, 10);
+                    return logDateStr === dateStr || logDateStr === nextDayStr;
+                }
+                return logDateStr === dateStr;
+            });
+        };
+
+        const team = employees.filter(e => 
+            e.superiorId === currentUser.matricula && 
+            isActiveEmployee(e) && 
+            (attendanceShiftFilter === 'ALL' || e.shift === attendanceShiftFilter) &&
+            (attendanceLeaderFilter === 'ALL' || e.superiorId === attendanceLeaderFilter || e.leader === attendanceLeaderFilter)
+        );
+        const filteredTeam = (attSearchQuery
             ? team.filter(e => e.matricula.includes(attSearchQuery) || e.fullName.toLowerCase().includes(attSearchQuery.toLowerCase()))
-            : team;
+            : team
+        ).filter(emp => !hasLogForOperationalDay(emp, attDate)).sort((a: any, b: any) => String(a.fullName || a.name || '').localeCompare(String(b.fullName || b.name || '')));
         const totalFaltas = filteredAttendanceLogs.filter((log: any) => log.type === 'FALTA').length;
         const totalAtrasos = filteredAttendanceLogs.filter((log: any) => log.type === 'ATRASO').length;
         const totalAtestados = filteredAttendanceLogs.filter((log: any) => log.type === 'ATESTADO').length;
@@ -917,107 +1127,171 @@ export const PeopleManagementModule = ({ onBack, currentUser, hasTabAccess }: Pe
 
         return (
             <div className="space-y-4">
-                <Card className="flex flex-col gap-3 xl:flex-row xl:items-end">
-                    <div className="flex-1">
-                        <Input label="Filtrar Subordinado na Lista (Nome ou Matrícula)" value={attSearchQuery} onChange={e => setAttSearchQuery(e.target.value)} />
-                    </div>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 min-w-[320px]">
-                        <div className="flex flex-col gap-1">
-                            <label className="text-xs font-bold text-slate-500 dark:text-zinc-400 uppercase tracking-wide">Data Inicial</label>
-                            <input
-                                type="date"
-                                className="bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 rounded-xl px-4 py-2.5 text-slate-900 dark:text-zinc-100 text-sm"
-                                value={startDate}
-                                onChange={e => setStartDate(e.target.value || '')}
-                            />
-                        </div>
-                        <div className="flex flex-col gap-1">
-                            <label className="text-xs font-bold text-slate-500 dark:text-zinc-400 uppercase tracking-wide">Data Final</label>
-                            <input
-                                type="date"
-                                className="bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 rounded-xl px-4 py-2.5 text-slate-900 dark:text-zinc-100 text-sm"
-                                value={endDate}
-                                onChange={e => setEndDate(e.target.value || '')}
-                            />
-                        </div>
-                    </div>
-                    <div className="flex flex-col gap-1 min-w-[180px]">
-                        <label className="text-xs font-bold text-slate-500 dark:text-zinc-400 uppercase tracking-wide">Turno</label>
-                        <select className="bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 rounded-xl px-4 py-2.5 text-slate-900 dark:text-zinc-100 text-sm" value={attendanceShiftFilter} onChange={e => setAttendanceShiftFilter(e.target.value as 'ALL' | '1º TURNO' | '2º TURNO')}>
-                            <option value="ALL">Todos</option>
-                            <option value="1º TURNO">1º TURNO</option>
-                            <option value="2º TURNO">2º TURNO</option>
-                        </select>
-                    </div>
-                    <div className="flex flex-wrap gap-2">
-                        <Button onClick={handleSearchSubordinado}><Search size={16} /> Buscar Externo</Button>
-                        <Button variant="secondary" onClick={handleExportAttendance}><Download size={16} /> Exportar Excel</Button>
-                        <Button variant="secondary" onClick={handleDownloadAttendanceJpg}><Download size={16} /> Baixar JPG</Button>
-                    </div>
-                </Card>
+                <Card>
+                    <div className="flex flex-col xl:flex-row gap-6 mb-6 items-start w-full">
+                        <div className="flex-1 w-full flex flex-col gap-4">
+                            <div className="flex flex-col gap-3 w-full">
+                                <div className="w-full">
+                                    <Input label="Filtrar Subordinado na Lista (Nome ou Matrícula)" value={attSearchQuery} onChange={e => setAttSearchQuery(e.target.value)} />
+                                </div>
+                                
+                                <div className="flex flex-col xl:flex-row gap-3 w-full">
+                                    <div className="flex flex-col gap-1 min-w-[160px]">
+                                        <label className="text-xs font-bold text-slate-500 dark:text-zinc-400 uppercase tracking-wide">Modo de Período</label>
+                                        <select
+                                            value={absenceFilterMode}
+                                            onChange={e => { setAbsenceFilterMode(e.target.value as any); setStartDate(''); }}
+                                            className="bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 rounded-xl px-4 py-2.5 text-slate-900 dark:text-zinc-100 text-sm focus:outline-none focus:ring-2 focus:ring-cyan-500/20 focus:border-cyan-500"
+                                        >
+                                            <option value="DIA">Dia Específico</option>
+                                            <option value="SEMANA">Por Semana</option>
+                                            <option value="MES">Por Mês</option>
+                                            <option value="ANO">Por Ano</option>
+                                        </select>
+                                    </div>
+                                    <div className="flex items-end gap-2 flex-1">
+                                        {absenceFilterMode === 'DIA' && (
+                                            <div className="flex flex-col gap-1 w-full">
+                                                <label className="text-xs font-bold text-slate-500 dark:text-zinc-400 uppercase tracking-wide">Data</label>
+                                                <input type="date" className="bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 rounded-xl px-4 py-2.5 text-slate-900 dark:text-zinc-100 text-sm focus:outline-none focus:ring-2 focus:ring-cyan-500/20 focus:border-cyan-500 w-full" value={startDate} onChange={e => setStartDate(e.target.value)} />
+                                            </div>
+                                        )}
+                                        {absenceFilterMode === 'SEMANA' && (
+                                            <div className="flex flex-col gap-1 w-full">
+                                                <label className="text-xs font-bold text-slate-500 dark:text-zinc-400 uppercase tracking-wide">Semana</label>
+                                                <input type="week" className="bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 rounded-xl px-4 py-2.5 text-slate-900 dark:text-zinc-100 text-sm focus:outline-none focus:ring-2 focus:ring-cyan-500/20 focus:border-cyan-500 w-full" value={startDate} onChange={e => setStartDate(e.target.value)} />
+                                            </div>
+                                        )}
+                                        {absenceFilterMode === 'MES' && (
+                                            <div className="flex flex-col gap-1 w-full">
+                                                <label className="text-xs font-bold text-slate-500 dark:text-zinc-400 uppercase tracking-wide">Mês</label>
+                                                <input type="month" className="bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 rounded-xl px-4 py-2.5 text-slate-900 dark:text-zinc-100 text-sm focus:outline-none focus:ring-2 focus:ring-cyan-500/20 focus:border-cyan-500 w-full" value={startDate} onChange={e => setStartDate(e.target.value)} />
+                                            </div>
+                                        )}
+                                        {absenceFilterMode === 'ANO' && (
+                                            <div className="flex flex-col gap-1 w-full">
+                                                <label className="text-xs font-bold text-slate-500 dark:text-zinc-400 uppercase tracking-wide">Ano</label>
+                                                <input type="number" min={2020} max={2100} step={1} placeholder="AAAA" className="bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 rounded-xl px-4 py-2.5 text-slate-900 dark:text-zinc-100 text-sm focus:outline-none focus:ring-2 focus:ring-cyan-500/20 focus:border-cyan-500 w-full" value={startDate} onChange={e => setStartDate(e.target.value)} />
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
 
-                <Card className="space-y-4">
-                    <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
-                        <div className="rounded-xl border border-red-200 dark:border-red-900/40 bg-red-50 dark:bg-red-900/10 p-4">
-                            <p className="text-xs font-bold uppercase tracking-wide text-red-600 dark:text-red-400">Total de Faltas</p>
-                            <p className="text-2xl font-black text-slate-900 dark:text-zinc-100 mt-2">{totalFaltas}</p>
+                                <div className="flex flex-col xl:flex-row gap-3 w-full">
+                                    <div className="flex flex-col gap-1 flex-1">
+                                        <label className="text-xs font-bold text-slate-500 dark:text-zinc-400 uppercase tracking-wide">Turno</label>
+                                        <select className="bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 rounded-xl px-4 py-2.5 text-slate-900 dark:text-zinc-100 text-sm w-full focus:outline-none focus:ring-2 focus:ring-cyan-500/20 focus:border-cyan-500" value={attendanceShiftFilter} onChange={e => setAttendanceShiftFilter(e.target.value as 'ALL' | '1º TURNO' | '2º TURNO')}>
+                                            <option value="ALL">Todos os Turnos</option>
+                                            <option value="1º TURNO">1º TURNO</option>
+                                            <option value="2º TURNO">2º TURNO</option>
+                                        </select>
+                                    </div>
+                                    <div className="flex flex-col gap-1 flex-1">
+                                        <label className="text-xs font-bold text-slate-500 dark:text-zinc-400 uppercase tracking-wide">Líder</label>
+                                        <select className="bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 rounded-xl px-4 py-2.5 text-slate-900 dark:text-zinc-100 text-sm w-full focus:outline-none focus:ring-2 focus:ring-cyan-500/20 focus:border-cyan-500" value={attendanceLeaderFilter} onChange={e => setAttendanceLeaderFilter(e.target.value)}>
+                                            <option value="ALL">Todos os Líderes</option>
+                                            {uniqueLeaders.map(leader => (
+                                                <option key={leader.id as string} value={leader.id as string}>{leader.label}</option>
+                                            ))}
+                                        </select>
+                                    </div>
+                                </div>
+                            </div>
+                            <div className="flex flex-wrap gap-2">
+                                <Button onClick={handleSearchSubordinado}><Search size={16} /> Buscar Externo</Button>
+                                <Button variant="secondary" onClick={handleExportAttendance}><Download size={16} /> Exportar Excel</Button>
+                                <Button variant="secondary" onClick={handleDownloadAttendanceJpg}><Download size={16} /> Baixar JPG</Button>
+                            </div>
                         </div>
-                        <div className="rounded-xl border border-orange-200 dark:border-orange-900/40 bg-orange-50 dark:bg-orange-900/10 p-4">
-                            <p className="text-xs font-bold uppercase tracking-wide text-orange-600 dark:text-orange-400">Total de Atrasos</p>
-                            <p className="text-2xl font-black text-slate-900 dark:text-zinc-100 mt-2">{totalAtrasos}</p>
-                        </div>
-                        <div className="rounded-xl border border-amber-200 dark:border-amber-900/40 bg-amber-50 dark:bg-amber-900/10 p-4">
-                            <p className="text-xs font-bold uppercase tracking-wide text-amber-600 dark:text-amber-400">Total de Atestados</p>
-                            <p className="text-2xl font-black text-slate-900 dark:text-zinc-100 mt-2">{totalAtestados}</p>
-                        </div>
-                        <div className="rounded-xl border border-cyan-200 dark:border-cyan-900/40 bg-cyan-50 dark:bg-cyan-900/10 p-4">
-                            <p className="text-xs font-bold uppercase tracking-wide text-cyan-600 dark:text-cyan-400">Total de Saídas</p>
-                            <p className="text-2xl font-black text-slate-900 dark:text-zinc-100 mt-2">{totalSaidas}</p>
+
+                        <div className="w-full xl:w-[450px] shrink-0 bg-slate-50 dark:bg-zinc-900/50 p-3 rounded-lg border border-slate-200 dark:border-zinc-800">
+                            <h3 className="text-xs font-bold text-slate-500 dark:text-zinc-500 uppercase tracking-widest mb-3 border-b border-slate-200 dark:border-zinc-800 pb-1">
+                                Resumo de Ocorrências
+                            </h3>
+                            <div className="grid grid-cols-2 gap-3">
+                                {[
+                                    { key: 'FALTA', label: 'Faltas', color: 'red', count: totalFaltas },
+                                    { key: 'ATRASO', label: 'Atrasos', color: 'orange', count: totalAtrasos },
+                                    { key: 'ATESTADO', label: 'Atestados', color: 'amber', count: totalAtestados },
+                                    { key: 'SAIDA', label: 'Saídas', color: 'cyan', count: totalSaidas },
+                                ].map(item => (
+                                    <div
+                                        key={item.key}
+                                        onClick={() => setAttTypeFilter(prev => prev === item.key ? 'ALL' : item.key)}
+                                        className={`flex flex-col justify-center items-center p-3 rounded-lg border cursor-pointer transition-colors ${
+                                            attTypeFilter === item.key
+                                                ? `border-${item.color}-500 bg-${item.color}-950 ring-2 ring-${item.color}-500/30`
+                                                : `border-${item.color}-200 dark:border-${item.color}-900/40 bg-${item.color}-50 dark:bg-${item.color}-900/10 hover:border-${item.color}-400`
+                                        }`}
+                                    >
+                                        <p className={`text-[10px] font-bold uppercase tracking-wide ${attTypeFilter === item.key ? `text-${item.color}-300` : `text-${item.color}-600 dark:text-${item.color}-400`}`}>Total {item.label}</p>
+                                        <p className={`text-xl font-black mt-1 ${attTypeFilter === item.key ? 'text-white' : 'text-slate-900 dark:text-zinc-100'}`}>{item.count}</p>
+                                    </div>
+                                ))}
+                            </div>
                         </div>
                     </div>
-                    <div className="overflow-x-auto">
-                        {filteredAttendanceLogs.length === 0 ? (
-                            <p className="text-sm text-slate-500">Nenhuma ocorrência encontrada para os filtros selecionados.</p>
-                        ) : (
-                            <table className="w-full text-sm">
-                                <thead className="bg-slate-50 dark:bg-zinc-950 text-slate-500 dark:text-zinc-400">
-                                    <tr>
-                                        <th className="p-3 text-left">Matrícula</th>
-                                        <th className="p-3 text-left">Nome do Colaborador</th>
-                                        <th className="p-3 text-left">Turno</th>
-                                        <th className="p-3 text-left">Função</th>
-                                        <th className="p-3 text-left">Tipo de Ocorrência</th>
-                                        <th className="p-3 text-left">Data da Ocorrência</th>
-                                        <th className="p-3 text-left">Horário Informado</th>
-                                        <th className="p-3 text-left">Ações</th>
-                                    </tr>
-                                </thead>
-                                <tbody className="divide-y divide-slate-200 dark:divide-zinc-800">
-                                    {filteredAttendanceLogs.map((log: any, index: number) => (
-                                        <tr key={`${log.matricula}-${log.date}-${log.type}-${index}`} className="bg-white dark:bg-zinc-900">
-                                            <td className="p-3 font-mono text-slate-700 dark:text-zinc-300">{log.matricula}</td>
-                                            <td className="p-3 text-slate-700 dark:text-zinc-300">{log.fullName}</td>
-                                            <td className="p-3 text-slate-700 dark:text-zinc-300">{log.shift}</td>
-                                            <td className="p-3 text-slate-700 dark:text-zinc-300">{log.role}</td>
-                                            <td className="p-3 text-slate-700 dark:text-zinc-300">{log.type}</td>
-                                            <td className="p-3 text-slate-700 dark:text-zinc-300">{formatAttendanceDisplayDate(log.date)}</td>
-                                            <td className="p-3 text-slate-700 dark:text-zinc-300">{['ATRASO', 'SAIDA'].includes(String(log.type || '').toUpperCase()) ? formatAttendanceTime(log.delayMinutes) : '-'}</td>
-                                            <td className="p-3 text-slate-700 dark:text-zinc-300">
-                                                <div className="flex flex-wrap gap-2">
-                                                    <button onClick={() => handleEditAttendanceLog(log)} className="inline-flex items-center gap-1 rounded-lg border border-cyan-200 px-2.5 py-1 text-xs font-bold text-cyan-700 hover:bg-cyan-50 dark:border-cyan-900/40 dark:text-cyan-300 dark:hover:bg-cyan-900/20">
-                                                        <Pencil size={12} /> Editar
-                                                    </button>
-                                                    <button onClick={() => handleDeleteAttendance(log)} className="inline-flex items-center gap-1 rounded-lg border border-red-200 px-2.5 py-1 text-xs font-bold text-red-700 hover:bg-red-50 dark:border-red-900/40 dark:text-red-300 dark:hover:bg-red-900/20">
-                                                        <Trash2 size={12} /> Excluir
-                                                    </button>
+
+                    {attTypeFilter !== 'ALL' && attTypeFilter !== null && (
+                        <div className="mt-6 border-t border-slate-200 dark:border-zinc-800 pt-6 space-y-4">
+                            <h3 className="text-sm font-bold text-cyan-400 mb-4 uppercase">
+                                Detalhando: {attTypeFilter === 'FALTA' ? 'Faltas' : attTypeFilter === 'ATESTADO' ? 'Atestados' : attTypeFilter === 'ATRASO' ? 'Atrasos' : 'Saídas'}
+                            </h3>
+                            {filteredAttendanceLogs.filter(log => log.type === attTypeFilter).length === 0 ? (
+                                <p className="text-sm text-slate-500">Nenhuma ocorrência encontrada para este tipo.</p>
+                            ) : (
+                                <div className="space-y-6">
+                                    {(['FALTA', 'ATESTADO', 'ATRASO', 'SAIDA'] as const)
+                                        .filter(type => attTypeFilter === 'ALL' || attTypeFilter === type)
+                                        .filter(type => Object.keys(groupedRecords[type] || {}).length > 0)
+                                        .map(type => {
+                                            const typeColors: Record<string, { border: string; bg: string; text: string; badge: string }> = {
+                                                FALTA: { border: 'border-red-200 dark:border-red-900/40', bg: 'bg-red-50 dark:bg-red-900/10', text: 'text-red-700 dark:text-red-400', badge: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300' },
+                                                ATESTADO: { border: 'border-amber-200 dark:border-amber-900/40', bg: 'bg-amber-50 dark:bg-amber-900/10', text: 'text-amber-700 dark:text-amber-400', badge: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300' },
+                                                ATRASO: { border: 'border-orange-200 dark:border-orange-900/40', bg: 'bg-orange-50 dark:bg-orange-900/10', text: 'text-orange-700 dark:text-orange-400', badge: 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300' },
+                                                SAIDA: { border: 'border-cyan-200 dark:border-cyan-900/40', bg: 'bg-cyan-50 dark:bg-cyan-900/10', text: 'text-cyan-700 dark:text-cyan-400', badge: 'bg-cyan-100 text-cyan-700 dark:bg-cyan-900/30 dark:text-cyan-300' },
+                                            };
+                                            const tc = typeColors[type];
+                                            const typeLabel: Record<string, string> = { FALTA: 'Faltas', ATESTADO: 'Atestados', ATRASO: 'Atrasos', SAIDA: 'Saídas Antecipadas' };
+                                            const empEntries = Object.entries(groupedRecords[type] || {}).sort(([a], [b]) => a.localeCompare(b));
+                                            const totalTypeRecords = empEntries.reduce((sum, [, logs]) => sum + logs.length, 0);
+
+                                            return (
+                                                <div key={type} className={`rounded-xl border ${tc.border} overflow-hidden`}>
+                                                    <div className={`${tc.bg} px-4 py-3 flex items-center justify-between`}>
+                                                        <h4 className={`text-sm font-black uppercase tracking-wider ${tc.text}`}>{typeLabel[type]}</h4>
+                                                        <div className="flex items-center gap-3">
+                                                            <span className={`text-xs font-bold px-2.5 py-1 rounded-full ${tc.badge}`}>{empEntries.length} colaborador{empEntries.length !== 1 ? 'es' : ''}</span>
+                                                            <span className={`text-xs font-bold px-2.5 py-1 rounded-full ${tc.badge}`}>{totalTypeRecords} registro{totalTypeRecords !== 1 ? 's' : ''}</span>
+                                                        </div>
+                                                    </div>
+                                                    <div className="divide-y divide-slate-100 dark:divide-zinc-800">
+                                                        {empEntries.map(([empName, logs]) => (
+                                                            <div key={empName} className="px-4 py-3 bg-white dark:bg-zinc-900">
+                                                                <div className="flex items-center justify-between mb-2">
+                                                                    <p className="font-bold text-sm text-slate-800 dark:text-zinc-100">{empName}</p>
+                                                                    <span className={`text-[10px] font-black uppercase px-2 py-0.5 rounded-full ${tc.badge}`}>{logs.length}x</span>
+                                                                </div>
+                                                                <div className="flex flex-wrap gap-2">
+                                                                    {logs.sort((a: any, b: any) => String(b.date || '').localeCompare(String(a.date || ''))).map((log: any, i: number) => (
+                                                                        <div key={`${log.date}-${i}`} className="inline-flex items-center gap-2 bg-slate-50 dark:bg-zinc-800/60 rounded-lg px-3 py-1.5 text-xs border border-slate-200 dark:border-zinc-700 group">
+                                                                            <span className="font-semibold text-slate-700 dark:text-zinc-300">{formatAttendanceDisplayDate(log.date)}</span>
+                                                                            {['ATRASO', 'SAIDA'].includes(type) && <span className="text-slate-400">({formatAttendanceTime(log.delayMinutes)})</span>}
+                                                                            <button onClick={() => handleEditAttendanceLog(log)} className="opacity-0 group-hover:opacity-100 transition-opacity text-cyan-600 hover:text-cyan-800 dark:text-cyan-400"><Pencil size={11} /></button>
+                                                                            <button onClick={() => handleDeleteAttendance(log)} className="opacity-0 group-hover:opacity-100 transition-opacity text-red-500 hover:text-red-700 dark:text-red-400"><Trash2 size={11} /></button>
+                                                                        </div>
+                                                                    ))}
+                                                                </div>
+                                                            </div>
+                                                        ))}
+                                                    </div>
                                                 </div>
-                                            </td>
-                                        </tr>
-                                    ))}
-                                </tbody>
-                            </table>
-                        )}
-                    </div>
+                                            );
+                                        })}
+                                </div>
+                            )}
+                        </div>
+                    )}
                 </Card>
 
                 {!attSelectedEmployee ? (
@@ -1057,7 +1331,7 @@ export const PeopleManagementModule = ({ onBack, currentUser, hasTabAccess }: Pe
                         )}
                     </Card>
                 ) : (
-                    <Card className="space-y-4 border-cyan-200 dark:border-cyan-900">
+                    <Card id="form-cadastro-falta" className="space-y-4 border-cyan-200 dark:border-cyan-900">
                         <div className="flex justify-between items-start">
                             <div className="flex items-center gap-4">
                                 {attSelectedEmployee.photo ? (
@@ -1121,13 +1395,13 @@ export const PeopleManagementModule = ({ onBack, currentUser, hasTabAccess }: Pe
                         </div>
                     </Card>
                 )}
-            {previewBuffer && (
-                <ExcelFidelityPreview
-                    buffer={previewBuffer}
-                    onClose={() => setPreviewBuffer(null)}
-                    title={`absenteísmos (turno: ${attendanceShiftFilter})`}
-                />
-            )}
+                {previewBuffer && (
+                    <ExcelFidelityPreview
+                        buffer={previewBuffer}
+                        onClose={() => setPreviewBuffer(null)}
+                        title={`absenteísmos (turno: ${attendanceShiftFilter})`}
+                    />
+                )}
             </div>
         );
     };
@@ -1406,8 +1680,8 @@ export const PeopleManagementModule = ({ onBack, currentUser, hasTabAccess }: Pe
                     <h3 className="text-sm font-bold text-slate-700 dark:text-zinc-300 uppercase tracking-wider mb-3">Resumo por Função</h3>
                     <div className="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-5 gap-3">
                         {Object.entries(
-                            (()=>{
-                                const displayList = currentUser ? [{...currentUser, role: currentUser.role || 'Líder de Produção'}, ...subordinados] : subordinados;
+                            (() => {
+                                const displayList = currentUser ? [{ ...currentUser, role: currentUser.role || 'Líder de Produção' }, ...subordinados] : subordinados;
                                 return displayList.reduce((acc, emp) => {
                                     const role = emp.role || 'Não Definida';
                                     acc[role] = (acc[role] || 0) + 1;
@@ -1415,14 +1689,14 @@ export const PeopleManagementModule = ({ onBack, currentUser, hasTabAccess }: Pe
                                 }, {} as Record<string, number>);
                             })()
                         )
-                        .sort(([roleA], [roleB]) => roleA.localeCompare(roleB))
-                        .map(([role, count]) => (
-                            <div key={role} className="flex justify-between items-center p-3 bg-slate-50 dark:bg-zinc-800 rounded-lg border border-slate-100 dark:border-zinc-700">
-                                <span className="text-xs text-slate-600 dark:text-zinc-400 font-semibold">{role}</span>
-                                <span className="text-lg font-bold text-cyan-600 dark:text-cyan-400">{count as React.ReactNode}</span>
-                            </div>
-                        ))}
-                        
+                            .sort(([roleA], [roleB]) => roleA.localeCompare(roleB))
+                            .map(([role, count]) => (
+                                <div key={role} className="flex justify-between items-center p-3 bg-slate-50 dark:bg-zinc-800 rounded-lg border border-slate-100 dark:border-zinc-700">
+                                    <span className="text-xs text-slate-600 dark:text-zinc-400 font-semibold">{role}</span>
+                                    <span className="text-lg font-bold text-cyan-600 dark:text-cyan-400">{count as React.ReactNode}</span>
+                                </div>
+                            ))}
+
                         {/* Card Totalizador */}
                         <div className="flex justify-between items-center p-3 bg-cyan-50 dark:bg-cyan-900/30 rounded-lg border border-cyan-200 dark:border-cyan-800/50 shadow-sm">
                             <span className="text-sm text-cyan-800 dark:text-cyan-300 font-black uppercase">TOTAL</span>
@@ -1603,66 +1877,66 @@ export const PeopleManagementModule = ({ onBack, currentUser, hasTabAccess }: Pe
                                             return String(aEmployee?.fullName || '').localeCompare(String(bEmployee?.fullName || ''));
                                         })
                                         .map(([matricula, layouts]) => {
-                                        const employee = subordinados.find(s => s.matricula === matricula);
-                                        if (!employee) return null;
+                                            const employee = subordinados.find(s => s.matricula === matricula);
+                                            if (!employee) return null;
 
-                                        const postoAtualLayout = layouts.find(l => l.postoAtual);
-                                        const postoAtualId = postoAtualLayout?.id;
+                                            const postoAtualLayout = layouts.find(l => l.postoAtual);
+                                            const postoAtualId = postoAtualLayout?.id;
 
-                                        return (
-                                            <tr key={matricula} className="hover:bg-slate-50 dark:hover:bg-zinc-800/50">
-                                                <td className="p-4 font-mono">{matricula}</td>
-                                                <td className="p-4 font-medium text-slate-900 dark:text-zinc-100">{employee.fullName}</td>
-                                                <td className="p-4">{employee.role}</td>
-                                                <td className="p-4 text-xs text-slate-600">
-                                                    <div className="flex flex-col gap-1">
-                                                        {layouts.map((layout, idx) => (
-                                                            <div key={idx} className="flex items-center justify-between gap-2 bg-slate-50 dark:bg-zinc-800 px-2 py-1 rounded">
-                                                                <span>{layout.ordemPosto}</span>
-                                                                <button
-                                                                    onClick={() => handleRemoveLayoutEntry(layout.id)}
-                                                                    className="text-xs text-red-500 hover:text-red-700 font-bold"
-                                                                >
-                                                                    ✕
-                                                                </button>
-                                                            </div>
-                                                        ))}
-                                                    </div>
-                                                </td>
-                                                <td className="p-4 text-xs text-slate-600">
-                                                    <select
-                                                        className="bg-slate-50 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 rounded px-2 py-1 text-xs outline-none"
-                                                        value={postoAtualLayout?.id || ''}
-                                                        onChange={(e) => {
-                                                            if (e.target.value) {
-                                                                handleUpdatePostoAtual(parseInt(e.target.value));
-                                                            }
-                                                        }}
-                                                    >
-                                                        <option value="">Nenhum</option>
-                                                        {layouts
-                                                            .filter(layout => {
-                                                                const posto = String(layout?.ordemPosto || '');
-                                                                const capacity = capacityByPosto.get(posto);
-                                                                if (!capacity || capacity <= 0) return true;
-
-                                                                const allocated = allocatedByPosto.get(posto) || 0;
-                                                                const isCurrentEmployeePosto = layout.id === postoAtualId;
-                                                                return isCurrentEmployeePosto || allocated < capacity;
-                                                            })
-                                                            .map((layout) => (
-                                                                <option key={layout.id} value={layout.id}>
-                                                                    {layout.ordemPosto}
-                                                                </option>
+                                            return (
+                                                <tr key={matricula} className="hover:bg-slate-50 dark:hover:bg-zinc-800/50">
+                                                    <td className="p-4 font-mono">{matricula}</td>
+                                                    <td className="p-4 font-medium text-slate-900 dark:text-zinc-100">{employee.fullName}</td>
+                                                    <td className="p-4">{employee.role}</td>
+                                                    <td className="p-4 text-xs text-slate-600">
+                                                        <div className="flex flex-col gap-1">
+                                                            {layouts.map((layout, idx) => (
+                                                                <div key={idx} className="flex items-center justify-between gap-2 bg-slate-50 dark:bg-zinc-800 px-2 py-1 rounded">
+                                                                    <span>{layout.ordemPosto}</span>
+                                                                    <button
+                                                                        onClick={() => handleRemoveLayoutEntry(layout.id)}
+                                                                        className="text-xs text-red-500 hover:text-red-700 font-bold"
+                                                                    >
+                                                                        ✕
+                                                                    </button>
+                                                                </div>
                                                             ))}
-                                                    </select>
-                                                </td>
-                                                <td className="p-4 text-right flex justify-end gap-2">
-                                                    <Button variant="danger" onClick={() => handleRemoveLine(matricula)}>Retirar Colaborador</Button>
-                                                </td>
-                                            </tr>
-                                        );
-                                    });
+                                                        </div>
+                                                    </td>
+                                                    <td className="p-4 text-xs text-slate-600">
+                                                        <select
+                                                            className="bg-slate-50 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 rounded px-2 py-1 text-xs outline-none"
+                                                            value={postoAtualLayout?.id || ''}
+                                                            onChange={(e) => {
+                                                                if (e.target.value) {
+                                                                    handleUpdatePostoAtual(parseInt(e.target.value));
+                                                                }
+                                                            }}
+                                                        >
+                                                            <option value="">Nenhum</option>
+                                                            {layouts
+                                                                .filter(layout => {
+                                                                    const posto = String(layout?.ordemPosto || '');
+                                                                    const capacity = capacityByPosto.get(posto);
+                                                                    if (!capacity || capacity <= 0) return true;
+
+                                                                    const allocated = allocatedByPosto.get(posto) || 0;
+                                                                    const isCurrentEmployeePosto = layout.id === postoAtualId;
+                                                                    return isCurrentEmployeePosto || allocated < capacity;
+                                                                })
+                                                                .map((layout) => (
+                                                                    <option key={layout.id} value={layout.id}>
+                                                                        {layout.ordemPosto}
+                                                                    </option>
+                                                                ))}
+                                                        </select>
+                                                    </td>
+                                                    <td className="p-4 text-right flex justify-end gap-2">
+                                                        <Button variant="danger" onClick={() => handleRemoveLine(matricula)}>Retirar Colaborador</Button>
+                                                    </td>
+                                                </tr>
+                                            );
+                                        });
                                 })()}
                             </tbody>
                         </table>
@@ -2048,7 +2322,7 @@ export const PeopleManagementModule = ({ onBack, currentUser, hasTabAccess }: Pe
                             <input type="file" accept="image/*" onChange={handlePhotoChange} className="block w-full text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-sm file:font-semibold file:bg-cyan-50 file:text-cyan-700 hover:file:bg-cyan-100 dark:file:bg-zinc-800 dark:file:text-cyan-400" />
                             {formData.photo && <img src={formData.photo} alt="Preview" className="h-20 w-20 object-cover rounded mt-2" />}
                         </div>
-                        <Input label="Nome Completo" value={formData.fullName} onChange={e => setFormData({ ...formData, fullName: e.target.value })} />
+                        <Input label="Nome Completo" value={formData.fullName} onChange={e => setFormData({ ...formData, fullName: toTitleCase(e.target.value) })} />
                         <div className="flex flex-col gap-2">
                             <label className="text-sm font-medium text-slate-700 dark:text-zinc-300">Turno</label>
                             <select className="w-full bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 rounded-xl px-4 py-3 text-slate-900 dark:text-zinc-100" value={formData.shift} onChange={e => setFormData({ ...formData, shift: e.target.value })}>

@@ -1,0 +1,333 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  matricula String  @id
+  name      String?
+  role      String?
+  shift     String?
+  email     String?
+  password  String?
+  isAdmin   Boolean @default(false) @map("is_admin")
+  status    String? @default("ATIVO")
+
+  @@map("users")
+}
+
+model Log {
+  id            Int     @id @default(autoincrement())
+  userId        String? @map("user_id")
+  userName      String? @map("user_name")
+  userRole      String? @map("user_role")
+  line          String?
+  date          String?
+  itemsCount    Int?    @map("items_count")
+  ngCount       Int?    @map("ng_count")
+  observation   String?
+  data          String?
+  itemsSnapshot String? @map("items_snapshot")
+
+  @@map("logs_lider")
+}
+
+model MaintenanceLog {
+  id                Int     @id @default(autoincrement())
+  userId            String? @map("user_id")
+  userName          String? @map("user_name")
+  userRole          String? @map("user_role")
+  line              String?
+  date              String?
+  itemsCount        Int?    @map("items_count")
+  ngCount           Int?    @map("ng_count")
+  observation       String?
+  data              String?
+  maintenanceTarget String? @map("maintenance_target")
+  itemsSnapshot     String? @map("items_snapshot")
+
+  @@map("logs_manutencao")
+}
+
+model ChecklistItem {
+  id       Int     @id @default(autoincrement())
+  category String?
+  text     String?
+  evidence String?
+  imageUrl String? @map("image_url")
+
+  @@map("items_lider")
+}
+
+model MaintenanceChecklistItem {
+  id       Int     @id @default(autoincrement())
+  category String?
+  text     String?
+  evidence String?
+  imageUrl String? @map("image_url")
+
+  @@map("items_manutencao")
+}
+
+model LineStop {
+  id           String  @id @default(uuid())
+  userId       String? @map("user_id")
+  userName     String? @map("user_name")
+  userRole     String? @map("user_role")
+  line         String?
+  date         String?
+  status       String?
+  data         String?
+  signedDocUrl String? @map("signed_doc_url")
+  shift        String?
+
+  @@map("line_stops")
+}
+
+model Meeting {
+  id           String  @id
+  title        String?
+  date         String?
+  startTime    String? @map("start_time")
+  endTime      String? @map("end_time")
+  photoUrl     String? @map("photo_url")
+  participants String?
+  topics       String?
+  createdBy    String? @map("created_by")
+
+  @@map("meetings")
+}
+
+model ScrapLog {
+  id              Int       @id @default(autoincrement())
+  userId          String?   @map("user_id")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  date            String?
+  time            String?
+  week            Int?
+  shift           String?
+  leaderName      String?   @map("leader_name")
+  pqc             String?
+  model           String?
+  qty             Int?
+  item            String?
+  status          String?
+  code            String?
+  description     String?
+  unitValue       Float?    @map("unit_value")
+  totalValue      Float?    @map("total_value")
+  usedModel       String?   @map("used_model")
+  responsible     String?
+  station         String?
+  reason          String?
+  rootCause       String?   @map("root_cause")
+  countermeasure  String?
+  line            String?
+  nfNumber        String?   @map("nf_number")
+  sentBy          String?   @map("sent_by")
+  sentAt          DateTime? @map("sent_at")
+  plant           String?
+  situation       String    @default("PENDING")
+  qrCode          String?   @map("qr_code")
+  boxId           Int?      @map("box_id")
+  immediateAction String?   @map("immediate_action")
+  box             ScrapBox? @relation(fields: [boxId], references: [id])
+
+  @@index([date])
+  @@index([situation])
+  @@index([nfNumber])
+  @@index([createdAt])
+  @@index([qrCode])
+  @@index([code])
+  @@index([boxId])
+  @@map("scrap_data")
+}
+
+model Material {
+  code        String  @id
+  model       String?
+  description String?
+  item        String?
+  plant       String?
+  price       Float?
+
+  @@map("materials")
+}
+
+model RecoveryRequest {
+  id        Int      @id @default(autoincrement())
+  matricula String
+  name      String
+  role      String
+  status    String   @default("PENDING")
+  createdAt DateTime @default(now())
+
+  @@map("recovery_requests")
+}
+
+model ConfigLine {
+  name String @id
+
+  @@map("config_lines")
+}
+
+model ConfigRole {
+  name String @id
+
+  @@map("config_roles")
+}
+
+model ConfigModel {
+  name        String  @id
+  sku         String?
+  unifiedCode String?
+
+  @@map("config_models")
+}
+
+model ConfigStation {
+  name String @id
+
+  @@map("config_stations")
+}
+
+model ConfigPermission {
+  role    String
+  module  String
+  tab     String @default("")
+  allowed Int?
+
+  @@id([role, module, tab])
+  @@map("config_permissions")
+}
+
+model PreparationLog {
+  id           Int      @id @default(autoincrement())
+  date         String
+  shift        String
+  line         String
+  model        String
+  sku          String?
+  plate        Int?
+  rear         Int?
+  btFt         Int?     @map("bt_ft")
+  pba          Int?
+  currentRfCal Float?   @map("current_rf_cal")
+  input        Int?
+  preKey       Int?     @map("pre_key")
+  lcia         Int?
+  audio        Int?
+  radiation    Int?
+  imei         Int?
+  vct          Int?
+  revision     Int?
+  desmonte     Int?
+  oven         Int?
+  repair       Int?
+  observation  String?
+  responsible  String?
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  @@index([date])
+  @@index([shift])
+  @@index([model])
+  @@map("preparation_logs")
+}
+
+model ScrapBox {
+  id        Int        @id @default(autoincrement())
+  type      String
+  status    String     @default("OPEN")
+  nfNumber  String?    @map("nf_number")
+  createdAt DateTime   @default(now()) @map("created_at")
+  closedAt  DateTime?  @map("closed_at")
+  plant     String?
+  scraps    ScrapLog[]
+
+  @@index([nfNumber])
+  @@index([createdAt])
+  @@map("scrap_boxes")
+}
+
+model Notice {
+  id          Int      @id @default(autoincrement())
+  message     String
+  targetRoles String
+  expiresAt   DateTime
+  createdAt   DateTime @default(now())
+  createdBy   String
+
+  @@map("notices")
+}
+
+model Employee {
+  matricula       String          @id @unique
+  photo           String?
+  fullName        String
+  shift           String
+  role            String
+  sector          String
+  superiorId      String?
+  idlSt           String?
+  type            String?
+  status          String?
+  address         String?
+  addressNum      String?
+  whatsapp        String?
+  previousLeaders String?
+  gloveSize       String?
+  gloveType       String?
+  gloveExchanges  Int?
+  neighborhood    String?
+  attendanceLogs  AttendanceLog[]
+  layouts         Layout[]
+
+  @@map("employees")
+}
+
+model Layout {
+  id         Int      @id @default(autoincrement())
+  matricula  String
+  modelo     String
+  ordemPosto String
+  postoAtual Boolean  @default(false)
+  employee   Employee @relation(fields: [matricula], references: [matricula])
+
+  @@map("layout")
+}
+
+model ProductionModel {
+  id           Int           @id @default(autoincrement())
+  name         String
+  workstations Workstation[]
+
+  @@map("production_models")
+}
+
+model Workstation {
+  id                Int              @id @default(autoincrement())
+  name              String
+  modelName         String?
+  order             String?
+  peopleNeeded      Int
+  productionModelId Int?             @map("production_model_id")
+  productionModel   ProductionModel? @relation(fields: [productionModelId], references: [id])
+
+  @@map("workstations")
+}
+
+model AttendanceLog {
+  id           Int      @id @default(autoincrement())
+  employeeId   String
+  date         String
+  type         String
+  delayMinutes String?
+  loggedById   String
+  employee     Employee @relation(fields: [employeeId], references: [matricula])
+
+  @@map("attendance_logs")
+}
