@@ -2059,7 +2059,7 @@ export const exportLeaderLayout = async (leader: any, subordinados: any[]) => {
     saveAs(blob, `LAYOUT_LIDER_${safeName}.xlsx`);
 };
 
-export const exportModelLayout = async (model: string, workstations: any[], employees: any[], leaderName: string) => {
+export const exportModelLayout = async (model: string, workstations: any[], employees: any[], leaderName: string, targetLeaderMatricula: string) => {
     try {
         const workbook = new ExcelJS.Workbook();
         const response = await fetch('/template_layout.xlsx');
@@ -2073,6 +2073,11 @@ export const exportModelLayout = async (model: string, workstations: any[], empl
             const titleCell = sheet.getCell('A1');
             titleCell.value = `LAYOUT DO MODELO: ${String(model || 'N/A').toUpperCase()}`;
         } catch (e) { console.warn('Falha ao injetar título do modelo', e); }
+
+        // BARREIRA DE LIDERANÇA: Filtra apenas subordinados diretos do líder alvo
+        const validEmployees = (Array.isArray(employees) ? employees : []).filter(emp =>
+            String(emp.superiorId || emp.leader || '').trim() === String(targetLeaderMatricula).trim()
+        );
 
         const normalize = (value: any) => String(value || '').trim();
         const workstationMatchesModel = (workstation: any) => {
@@ -2105,7 +2110,7 @@ export const exportModelLayout = async (model: string, workstations: any[], empl
             console.warn('Aviso: falha ao buscar layouts, assumindo array vazio:', apiErr);
         }
         const postosDoModelo = new Set(modelWorkstations.map((w: any) => normalize(w?.name)));
-        const montadorEmployees = (Array.isArray(employees) ? employees : [])
+        const montadorEmployees = validEmployees
             .filter((emp: any) => String(emp?.role || '').toUpperCase().includes('MONTADOR'));
         const employeeByMatricula = new Map(montadorEmployees.map((emp: any) => [String(emp?.matricula || ''), emp]));
 
@@ -2115,6 +2120,9 @@ export const exportModelLayout = async (model: string, workstations: any[], empl
             .forEach((layout: any) => {
                 currentByMatricula.set(String(layout?.matricula || ''), layout);
             });
+
+        // Rastreador de matrículas já inseridas na planilha
+        const allocatedMatriculas = new Set<string>();
 
         let rowNumber = 3;
 
@@ -2132,6 +2140,7 @@ export const exportModelLayout = async (model: string, workstations: any[], empl
                 row.getCell(2).value = employee?.fullName || '';
                 row.getCell(3).value = postoName;
                 applyRowBorderABC(row);
+                allocatedMatriculas.add(String(employee?.matricula || '').trim());
                 rowNumber++;
             });
 
@@ -2166,8 +2175,32 @@ export const exportModelLayout = async (model: string, workstations: any[], empl
             const row = sheet.getRow(rowNumber);
             row.getCell(1).value = employee?.matricula || '';
             row.getCell(2).value = employee?.fullName || '';
-            row.getCell(3).value = 'Posto a definir';
+            row.getCell(3).value = 'POSTO A DEFINIR';
             applyRowBorderABC(row);
+            allocatedMatriculas.add(String(employee?.matricula || '').trim());
+            rowNumber++;
+        });
+
+        // ── NÃO ALOCADOS: Apenas MONTADOR(A) da equipe sem nenhum posto ──
+        const unallocatedEmployees = validEmployees
+            .filter(emp =>
+                !allocatedMatriculas.has(String(emp?.matricula || '').trim()) &&
+                String(emp?.role || '').toUpperCase().includes('MONTADOR')
+            )
+            .sort((a: any, b: any) => normalize(a?.fullName).localeCompare(normalize(b?.fullName)));
+
+        unallocatedEmployees.forEach((employee: any, index: number) => {
+            const row = sheet.getRow(rowNumber);
+            row.getCell(1).value = employee?.matricula || '';
+            row.getCell(2).value = employee?.fullName || '';
+            row.getCell(3).value = 'POSTO A DEFINIR';
+            applyRowBorderABC(row);
+            // Zebrado laranja direto na criação da linha
+            if (index % 2 === 1) {
+                row.eachCell((cell) => {
+                    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFCE4D6' } };
+                });
+            }
             rowNumber++;
         });
 
@@ -2179,7 +2212,7 @@ export const exportModelLayout = async (model: string, workstations: any[], empl
             const row = sheet.getRow(ri);
             const cellCValue = String(row.getCell(3).value || '').toUpperCase();
 
-            if (cellCValue.includes('Posto a Definir')) {
+            if (cellCValue.includes('POSTO A DEFINIR')) {
                 useOrangeTheme = true;
                 rowsSincePostoADefinir = 1;
             }

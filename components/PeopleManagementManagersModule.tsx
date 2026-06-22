@@ -2848,7 +2848,7 @@ export const PeopleManagementManagersModule: React.FC<Props> = ({ onBack, curren
                             <Button className="flex-1" onClick={() => {
                                 if (!printSelectedModel) return alert('Selecione um modelo');
                                 const leaderObj = leaders.find(l => l.matricula === selectedLeaderId);
-                                exportModelLayout(printSelectedModel, workstations, employees.filter(isActiveEmployee), leaderObj?.name || 'LIDER');
+                                exportModelLayout(printSelectedModel, workstations, employees.filter(isActiveEmployee), leaderObj?.name || 'LIDER', selectedLeaderId);
                                 setShowPrintModal(false);
                             }}>Gerar Excel</Button>
                         </div>

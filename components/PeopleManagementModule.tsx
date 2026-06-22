@@ -2593,7 +2593,7 @@ export const PeopleManagementModule = ({ onBack, currentUser, hasTabAccess }: Pe
                             <Button variant="outline" className="flex-1" onClick={() => setShowPrintModal(false)}>Cancelar</Button>
                             <Button className="flex-1" onClick={() => {
                                 if (!printSelectedModel) return alert('Selecione um modelo');
-                                exportModelLayout(printSelectedModel, workstations, employees.filter(isActiveEmployee), currentUser?.fullName || currentUser?.name || 'LIDER');
+                                exportModelLayout(printSelectedModel, workstations, employees.filter(isActiveEmployee), currentUser?.fullName || currentUser?.name || 'LIDER', currentUser.matricula);
                                 setShowPrintModal(false);
                             }}>Gerar Excel</Button>
                         </div>

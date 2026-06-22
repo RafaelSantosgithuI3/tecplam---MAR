@@ -397,7 +397,7 @@ const warmRamCache = async () => {
     const cacheKeys = Object.values(CACHE_KEYS);
     const results = await Promise.allSettled(cacheKeys.map((cacheKey) => refreshRamCollection(cacheKey)));
     const loaded = results.filter((result) => result.status === 'fulfilled').length;
-    console.log(`✅ RAM Cache aquecido: ${loaded}/${cacheKeys.length} coleções prontas.`);
+    console.log(`✅ RAM Cache inicializado: ${loaded}/${cacheKeys.length} coleções prontas.`);
     return GLOBAL_RAM_CACHE;
 };
 
@@ -469,13 +469,13 @@ const apiRateLimiter = rateLimit({
 
 const isPublicApiPath = (path = '', method = '') => {
     const safePath = path.toLowerCase();
-    
+
     // Libera as rotas de Autenticação e Registro
     if (safePath.includes('/login') || safePath.includes('/register') || safePath.includes('/recover')) return true;
-    
+
     // Libera rotas do sistema/streaming
     if (safePath.includes('/sync-stream') || safePath.includes('/template-logo')) return true;
-    
+
     // Libera APENAS LEITURA para popular o formulário de cadastro
     if (safePath.includes('/config/roles') && method === 'GET') return true;
 
@@ -2336,7 +2336,7 @@ app.post('/api/employees/bulk', async (req, res) => {
 
         const cachedEmployees = await refreshRamCollection(CACHE_KEYS.EMPLOYEES);
         broadcastSyncDelta(CACHE_KEYS.EMPLOYEES, 'replace', { items: cachedEmployees });
-        
+
         res.json({ message: "Importação concluída com sucesso", count: employees.length });
     } catch (e) {
         console.error("Bulk Employee Error:", e);
